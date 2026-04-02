@@ -221,7 +221,8 @@ export const SyncEventSchema = z.discriminatedUnion('type', [
             title: z.string(),
             body: z.string(),
             sessionId: z.string(),
-            url: z.string()
+            url: z.string(),
+            kind: z.enum(['permission-request', 'ready']).optional()
         })
     }),
     SessionEventBaseSchema.extend({

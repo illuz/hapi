@@ -14,6 +14,8 @@ import { queryKeys } from '@/lib/query-keys'
 import { AppContextProvider } from '@/lib/app-context'
 import { fetchLatestMessages } from '@/lib/message-window-store'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
+import { playNotificationSound } from '@/lib/readyChime'
+import { getStoredEventSound, getStoredPlaybackMode, type SoundEvent } from '@/lib/readySound'
 import { useTranslation } from '@/lib/use-translation'
 import { VoiceProvider } from '@/lib/voice-context'
 import { requireHubUrlForLogin } from '@/lib/runtime-config'
@@ -227,11 +229,31 @@ function AppInner() {
 
     const handleSseEvent = useCallback(() => {}, [])
     const handleToast = useCallback((event: ToastEvent) => {
+        const playbackMode = getStoredPlaybackMode()
+        const visibilityState = typeof document !== 'undefined' ? document.visibilityState : 'visible'
+        const shouldPlaySound = (
+            playbackMode === 'always'
+            || (playbackMode === 'background' && visibilityState !== 'visible')
+        )
+
+        if (shouldPlaySound) {
+            const soundEvent: SoundEvent = event.data.kind === 'ready'
+                ? 'ready'
+                : event.data.kind === 'permission-request'
+                    ? 'permission'
+                    : 'general'
+            const soundVariant = getStoredEventSound(soundEvent)
+            if (soundVariant !== 'off') {
+                void playNotificationSound(soundVariant)
+            }
+        }
+
         addToast({
             title: event.data.title,
             body: event.data.body,
             sessionId: event.data.sessionId,
-            url: event.data.url
+            url: event.data.url,
+            kind: event.data.kind
         })
     }, [addToast])
 

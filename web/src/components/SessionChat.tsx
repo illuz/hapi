@@ -305,6 +305,18 @@ export function SessionChat(props: {
         setForceScrollToken((token) => token + 1)
     }, [agentFlavor, props.availableSlashCommands, props.onSend, props.session.id, addToast, haptic, t])
 
+    const handleSendContinue = useCallback(() => {
+        handleSend('continue')
+    }, [handleSend])
+
+    const handleSendCommit = useCallback(() => {
+        handleSend('ok, commit it')
+    }, [handleSend])
+
+    const handleSendCommitAndPush = useCallback(() => {
+        handleSend('ok, commit it and push')
+    }, [handleSend])
+
     const attachmentAdapter = useMemo(() => {
         if (!props.session.active) {
             return undefined
@@ -369,6 +381,7 @@ export function SessionChat(props: {
                     />
 
                     <HappyComposer
+                        sessionId={props.session.id}
                         disabled={props.isSending}
                         permissionMode={props.session.permissionMode}
                         collaborationMode={codexCollaborationModeSupported ? props.session.collaborationMode : undefined}
@@ -390,6 +403,9 @@ export function SessionChat(props: {
                         onModelChange={handleModelChange}
                         onEffortChange={handleEffortChange}
                         onSwitchToRemote={handleSwitchToRemote}
+                        onSendContinue={handleSendContinue}
+                        onSendCommit={handleSendCommit}
+                        onSendCommitAndPush={handleSendCommitAndPush}
                         onTerminal={props.session.active && terminalSupported ? handleViewTerminal : undefined}
                         terminalUnsupported={props.session.active && !terminalSupported}
                         autocompleteSuggestions={props.autocompleteSuggestions}

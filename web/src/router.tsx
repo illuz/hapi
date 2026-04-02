@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
     Navigate,
@@ -29,12 +29,13 @@ import { useSendMessage } from '@/hooks/mutations/useSendMessage'
 import { queryKeys } from '@/lib/query-keys'
 import { useToast } from '@/lib/toast-context'
 import { useTranslation } from '@/lib/use-translation'
-import { fetchLatestMessages, seedMessageWindowFromSession } from '@/lib/message-window-store'
+import { clearMessageWindow, fetchLatestMessages, seedMessageWindowFromSession } from '@/lib/message-window-store'
 import type { Machine } from '@/types/api'
 import FilesPage from '@/routes/sessions/files'
 import FilePage from '@/routes/sessions/file'
 import TerminalPage from '@/routes/sessions/terminal'
 import SettingsPage from '@/routes/settings'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 function BackIcon(props: { className?: string }) {
     return (
@@ -95,6 +96,66 @@ function SettingsIcon(props: { className?: string }) {
     )
 }
 
+function RefreshIcon(props: { className?: string }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={props.className}
+        >
+            <path d="M21 2v6h-6" />
+            <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+            <path d="M3 22v-6h6" />
+            <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+        </svg>
+    )
+}
+
+function TrashIcon(props: { className?: string }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={props.className}
+        >
+            <path d="M3 6h18" />
+            <path d="M8 6V4h8v2" />
+            <path d="M19 6l-1 14H6L5 6" />
+            <path d="M10 11v6" />
+            <path d="M14 11v6" />
+        </svg>
+    )
+}
+
+function HapiLogo(props: { className?: string }) {
+    return (
+        <div className={`flex items-center gap-2 ${props.className ?? ''}`}>
+            <img
+                src="/icon.svg"
+                alt="HAPI"
+                className="h-7 w-7 rounded-md shadow-sm"
+            />
+            <span className="text-sm font-semibold tracking-[0.18em] text-[var(--app-fg)]">
+                HAPI
+            </span>
+        </div>
+    )
+}
+
 function getMachineTitle(machine: Machine): string {
     if (machine.metadata?.displayName) return machine.metadata.displayName
     if (machine.metadata?.host) return machine.metadata.host
@@ -104,11 +165,14 @@ function getMachineTitle(machine: Machine): string {
 function SessionsPage() {
     const { api } = useAppContext()
     const navigate = useNavigate()
+    const queryClient = useQueryClient()
     const pathname = useLocation({ select: location => location.pathname })
     const matchRoute = useMatchRoute()
     const { t } = useTranslation()
     const { sessions, isLoading, error, refetch } = useSessions(api)
     const { machines } = useMachines(api, true)
+    const [cleanupDialogOpen, setCleanupDialogOpen] = useState(false)
+    const [isCleaningInactive, setIsCleaningInactive] = useState(false)
 
     const handleRefresh = useCallback(() => {
         void refetch()
@@ -124,9 +188,41 @@ function SessionsPage() {
         }
         return labels
     }, [machines])
+    const inactiveSessions = useMemo(
+        () => sessions.filter((session) => !session.active),
+        [sessions]
+    )
     const sessionMatch = matchRoute({ to: '/sessions/$sessionId', fuzzy: true })
     const selectedSessionId = sessionMatch && sessionMatch.sessionId !== 'new' ? sessionMatch.sessionId : null
     const isSessionsIndex = pathname === '/sessions' || pathname === '/sessions/'
+
+    const handleCleanupInactive = useCallback(async () => {
+        if (!api) {
+            throw new Error('API unavailable')
+        }
+        if (inactiveSessions.length === 0) {
+            return
+        }
+
+        setIsCleaningInactive(true)
+        try {
+            const deletedSessionIds: string[] = []
+            for (const session of inactiveSessions) {
+                await api.deleteSession(session.id)
+                deletedSessionIds.push(session.id)
+                queryClient.removeQueries({ queryKey: queryKeys.session(session.id) })
+                clearMessageWindow(session.id)
+            }
+
+            if (selectedSessionId && deletedSessionIds.includes(selectedSessionId)) {
+                navigate({ to: '/sessions', replace: true })
+            }
+
+            await queryClient.invalidateQueries({ queryKey: queryKeys.sessions })
+        } finally {
+            setIsCleaningInactive(false)
+        }
+    }, [api, inactiveSessions, navigate, queryClient, selectedSessionId])
 
     return (
         <div className="flex h-full min-h-0">
@@ -135,10 +231,22 @@ function SessionsPage() {
             >
                 <div className="bg-[var(--app-bg)] pt-[env(safe-area-inset-top)]">
                     <div className="mx-auto w-full max-w-content flex items-center justify-between px-3 py-2">
-                        <div className="text-xs text-[var(--app-hint)]">
-                            {t('sessions.count', { n: sessions.length, m: projectCount })}
+                        <div className="flex min-w-0 items-center gap-3">
+                            <HapiLogo className="shrink-0" />
+                            <div className="text-xs text-[var(--app-hint)]">
+                                {t('sessions.count', { n: sessions.length, m: projectCount })}
+                            </div>
                         </div>
                         <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={handleRefresh}
+                                disabled={isLoading}
+                                className="p-1.5 rounded-full text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                                title={t('sessions.refresh')}
+                            >
+                                <RefreshIcon className="h-5 w-5" />
+                            </button>
                             <button
                                 type="button"
                                 onClick={() => navigate({ to: '/settings' })}
@@ -146,6 +254,15 @@ function SessionsPage() {
                                 title={t('settings.title')}
                             >
                                 <SettingsIcon className="h-5 w-5" />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setCleanupDialogOpen(true)}
+                                disabled={inactiveSessions.length === 0 || isCleaningInactive}
+                                className="p-1.5 rounded-full text-[var(--app-hint)] hover:text-red-500 hover:bg-[var(--app-subtle-bg)] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                                title={t('sessions.cleanupInactive')}
+                            >
+                                <TrashIcon className="h-5 w-5" />
                             </button>
                             <button
                                 type="button"
@@ -187,6 +304,18 @@ function SessionsPage() {
                     <Outlet />
                 </div>
             </div>
+
+            <ConfirmDialog
+                isOpen={cleanupDialogOpen}
+                onClose={() => setCleanupDialogOpen(false)}
+                title={t('dialog.cleanupInactive.title')}
+                description={t('dialog.cleanupInactive.description', { count: inactiveSessions.length })}
+                confirmLabel={t('dialog.cleanupInactive.confirm')}
+                confirmingLabel={t('dialog.cleanupInactive.confirming')}
+                onConfirm={handleCleanupInactive}
+                isPending={isCleaningInactive}
+                destructive
+            />
         </div>
     )
 }

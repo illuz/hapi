@@ -39,6 +39,7 @@ export interface TextInputState {
 const defaultSuggestionHandler = async (): Promise<Suggestion[]> => []
 
 export function HappyComposer(props: {
+    sessionId?: string
     disabled?: boolean
     permissionMode?: PermissionMode
     collaborationMode?: CodexCollaborationMode
@@ -56,6 +57,9 @@ export function HappyComposer(props: {
     onModelChange?: (model: string | null) => void
     onEffortChange?: (effort: string | null) => void
     onSwitchToRemote?: () => void
+    onSendContinue?: () => void
+    onSendCommit?: () => void
+    onSendCommitAndPush?: () => void
     onTerminal?: () => void
     terminalUnsupported?: boolean
     autocompletePrefixes?: string[]
@@ -68,6 +72,7 @@ export function HappyComposer(props: {
 }) {
     const { t } = useTranslation()
     const {
+        sessionId,
         disabled = false,
         permissionMode: rawPermissionMode,
         collaborationMode: rawCollaborationMode,
@@ -85,6 +90,9 @@ export function HappyComposer(props: {
         onModelChange,
         onEffortChange,
         onSwitchToRemote,
+        onSendContinue,
+        onSendCommit,
+        onSendCommitAndPush,
         onTerminal,
         terminalUnsupported = false,
         autocompletePrefixes = ['@', '/', '$'],
@@ -130,10 +138,13 @@ export function HappyComposer(props: {
     const [showSettings, setShowSettings] = useState(false)
     const [isAborting, setIsAborting] = useState(false)
     const [isSwitching, setIsSwitching] = useState(false)
+    const [isContinuing, setIsContinuing] = useState(false)
     const [showContinueHint, setShowContinueHint] = useState(false)
 
     const textareaRef = useRef<HTMLTextAreaElement>(null)
     const prevControlledByUser = useRef(controlledByUser)
+    const loadedDraftKeyRef = useRef<string | null>(null)
+    const draftStorageKey = sessionId ? `hapi:composer-draft:${sessionId}` : null
 
     useEffect(() => {
         setInputState((prev) => {
@@ -221,8 +232,12 @@ export function HappyComposer(props: {
     }, [api, suggestions, inputState, autocompletePrefixes, haptic, agentFlavor])
 
     const abortDisabled = controlsDisabled || isAborting || !threadIsRunning
-    const switchDisabled = controlsDisabled || isSwitching || !controlledByUser
     const showSwitchButton = Boolean(controlledByUser && onSwitchToRemote)
+    const switchDisabled = controlsDisabled || isSwitching || isContinuing || !controlledByUser
+    const showContinueButton = Boolean(onSendContinue)
+    const showCommitButton = Boolean(onSendCommit)
+    const showCommitAndPushButton = Boolean(onSendCommitAndPush)
+    const continueDisabled = controlsDisabled || threadIsRunning || isSwitching || isContinuing
     const showTerminalButton = Boolean(onTerminal || terminalUnsupported)
     const terminalDisabled = controlsDisabled || terminalUnsupported
     const terminalLabel = terminalUnsupported ? t('terminal.unsupportedWindows') : t('composer.terminal')
@@ -238,6 +253,55 @@ export function HappyComposer(props: {
         if (controlledByUser) return
         setIsSwitching(false)
     }, [isSwitching, controlledByUser])
+
+    useEffect(() => {
+        if (!isContinuing) return
+        if (controlledByUser) return
+        setIsContinuing(false)
+    }, [isContinuing, controlledByUser])
+
+    useEffect(() => {
+        if (!draftStorageKey || typeof window === 'undefined') {
+            loadedDraftKeyRef.current = null
+            return
+        }
+
+        let savedDraft = ''
+        try {
+            savedDraft = window.localStorage.getItem(draftStorageKey) ?? ''
+        } catch {
+            savedDraft = ''
+        }
+
+        loadedDraftKeyRef.current = draftStorageKey
+        api.composer().setText(savedDraft)
+        setInputState({
+            text: savedDraft,
+            selection: { start: savedDraft.length, end: savedDraft.length }
+        })
+    }, [api, draftStorageKey])
+
+    useEffect(() => {
+        if (!draftStorageKey || typeof window === 'undefined') return
+        if (loadedDraftKeyRef.current !== draftStorageKey) return
+
+        try {
+            if (composerText.length > 0) {
+                window.localStorage.setItem(draftStorageKey, composerText)
+            } else {
+                window.localStorage.removeItem(draftStorageKey)
+            }
+        } catch {
+        }
+    }, [composerText, draftStorageKey])
+
+    const clearDraft = useCallback(() => {
+        if (!draftStorageKey || typeof window === 'undefined') return
+        try {
+            window.localStorage.removeItem(draftStorageKey)
+        } catch {
+        }
+    }, [draftStorageKey])
 
     const handleAbort = useCallback(() => {
         if (abortDisabled) return
@@ -256,6 +320,35 @@ export function HappyComposer(props: {
             setIsSwitching(false)
         }
     }, [switchDisabled, onSwitchToRemote, haptic])
+
+    const handleContinue = useCallback(async () => {
+        if (continueDisabled || !onSendContinue) return
+        haptic('light')
+        setIsContinuing(true)
+        try {
+            if (controlledByUser && onSwitchToRemote) {
+                await onSwitchToRemote()
+            }
+            onSendContinue()
+            setShowContinueHint(false)
+        } catch {
+            setIsContinuing(false)
+        }
+    }, [continueDisabled, onSendContinue, haptic, controlledByUser, onSwitchToRemote])
+
+    const handleCommit = useCallback(async () => {
+        if (continueDisabled || !onSendCommit) return
+        haptic('light')
+        onSendCommit()
+        setShowContinueHint(false)
+    }, [continueDisabled, onSendCommit, haptic])
+
+    const handleCommitAndPush = useCallback(async () => {
+        if (continueDisabled || !onSendCommitAndPush) return
+        haptic('light')
+        onSendCommitAndPush()
+        setShowContinueHint(false)
+    }, [continueDisabled, onSendCommitAndPush, haptic])
 
     const permissionModeOptions = useMemo(
         () => getPermissionModeOptionsForFlavor(agentFlavor),
@@ -286,11 +379,12 @@ export function HappyComposer(props: {
             return
         }
 
-        // Shift+Enter sends the message (works on all platforms including iPadOS with keyboard)
-        if (key === 'Enter' && e.shiftKey) {
+        // Enter inserts newline; Ctrl/Cmd+Enter sends message.
+        if (key === 'Enter' && (e.metaKey || e.ctrlKey)) {
             e.preventDefault()
             if (!canSend) return
             api.composer().send()
+            clearDraft()
             setShowContinueHint(false)
             return
         }
@@ -347,7 +441,8 @@ export function HappyComposer(props: {
         permissionModes,
         canSend,
         api,
-        haptic
+        haptic,
+        clearDraft
     ])
 
     useEffect(() => {
@@ -447,7 +542,8 @@ export function HappyComposer(props: {
 
     const handleSend = useCallback(() => {
         api.composer().send()
-    }, [api])
+        clearDraft()
+    }, [api, clearDraft])
 
     const overlays = useMemo(() => {
         if (showSettings && (showCollaborationSettings || showPermissionSettings || showModelSettings || showEffortSettings)) {
@@ -690,7 +786,7 @@ export function HappyComposer(props: {
                                 placeholder={showContinueHint ? t('misc.typeMessage') : t('misc.typeAMessage')}
                                 disabled={controlsDisabled}
                                 maxRows={5}
-                                submitOnEnter={!isTouch}
+                                submitOnEnter={false}
                                 cancelOnEscape={false}
                                 onChange={handleChange}
                                 onSelect={handleSelect}
@@ -717,6 +813,14 @@ export function HappyComposer(props: {
                             switchDisabled={switchDisabled}
                             isSwitching={isSwitching}
                             onSwitch={handleSwitch}
+                            showContinueButton={showContinueButton}
+                            continueDisabled={continueDisabled}
+                            isContinuing={isContinuing}
+                            onContinue={handleContinue}
+                            showCommitButton={showCommitButton}
+                            onCommit={handleCommit}
+                            showCommitAndPushButton={showCommitAndPushButton}
+                            onCommitAndPush={handleCommitAndPush}
                             voiceEnabled={voiceEnabled}
                             voiceStatus={voiceStatus}
                             voiceMicMuted={voiceMicMuted}

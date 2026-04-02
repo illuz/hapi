@@ -105,6 +105,29 @@ function SwitchToRemoteIcon() {
     )
 }
 
+function ContinueIcon(props: { spinning: boolean }) {
+    if (props.spinning) {
+        return <LoadingIcon />
+    }
+
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        >
+            <path d="M5 12h10" />
+            <path d="m12 5 7 7-7 7" />
+        </svg>
+    )
+}
+
 function TerminalIcon() {
     return (
         <svg
@@ -226,6 +249,33 @@ function LoadingIcon() {
     )
 }
 
+function QuickActionButton(props: {
+    label: string
+    title: string
+    onClick: () => void
+    disabled: boolean
+    tone?: 'amber' | 'emerald' | 'sky'
+}) {
+    const toneClass = props.tone === 'emerald'
+        ? 'hover:border-emerald-500/40 hover:text-emerald-600'
+        : props.tone === 'sky'
+            ? 'hover:border-sky-500/40 hover:text-sky-600'
+            : 'hover:border-amber-500/40 hover:text-amber-600'
+
+    return (
+        <button
+            type="button"
+            aria-label={props.title}
+            title={props.title}
+            disabled={props.disabled}
+            className={`rounded-full border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-1 text-xs font-medium text-[var(--app-fg)]/80 transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${toneClass}`}
+            onClick={props.onClick}
+        >
+            {props.label}
+        </button>
+    )
+}
+
 function UnifiedButton(props: {
     canSend: boolean
     voiceStatus: ConversationStatus
@@ -313,6 +363,14 @@ export function ComposerButtons(props: {
     switchDisabled: boolean
     isSwitching: boolean
     onSwitch: () => void
+    showContinueButton: boolean
+    continueDisabled: boolean
+    isContinuing: boolean
+    onContinue: () => void
+    showCommitButton: boolean
+    onCommit: () => void
+    showCommitAndPushButton: boolean
+    onCommitAndPush: () => void
     voiceEnabled: boolean
     voiceStatus: ConversationStatus
     voiceMicMuted?: boolean
@@ -385,6 +443,41 @@ export function ComposerButtons(props: {
                     >
                         <SwitchToRemoteIcon />
                     </button>
+                ) : null}
+
+                {props.showContinueButton ? (
+                    <div className="ml-1 flex items-center gap-1.5">
+                        <button
+                            type="button"
+                            aria-label={t('composer.continue')}
+                            title={t('composer.continue')}
+                            disabled={props.continueDisabled}
+                            className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--app-border)] bg-[var(--app-bg)] text-[var(--app-fg)]/60 transition-colors hover:border-amber-500/40 hover:text-amber-500 disabled:cursor-not-allowed disabled:opacity-50"
+                            onClick={props.onContinue}
+                        >
+                            <ContinueIcon spinning={props.isContinuing} />
+                        </button>
+
+                        {props.showCommitButton ? (
+                            <QuickActionButton
+                                label={t('composer.commitShort')}
+                                title={t('composer.commit')}
+                                disabled={props.continueDisabled}
+                                onClick={props.onCommit}
+                                tone="emerald"
+                            />
+                        ) : null}
+
+                        {props.showCommitAndPushButton ? (
+                            <QuickActionButton
+                                label={t('composer.commitAndPushShort')}
+                                title={t('composer.commitAndPush')}
+                                disabled={props.continueDisabled}
+                                onClick={props.onCommitAndPush}
+                                tone="sky"
+                            />
+                        ) : null}
+                    </div>
                 ) : null}
 
                 {isVoiceConnected && props.onVoiceMicToggle ? (

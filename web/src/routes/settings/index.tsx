@@ -5,6 +5,17 @@ import { getElevenLabsSupportedLanguages, getLanguageDisplayName, type Language 
 import { getFontScaleOptions, useFontScale, type FontScale } from '@/hooks/useFontScale'
 import { getTerminalFontSizeOptions, useTerminalFontSize, type TerminalFontSize } from '@/hooks/useTerminalFontSize'
 import { useAppearance, getAppearanceOptions, type AppearancePreference } from '@/hooks/useTheme'
+import { playNotificationSound } from '@/lib/readyChime'
+import {
+    getPlaybackModeOptions,
+    getSoundVariantOptions,
+    getStoredEventSound,
+    getStoredPlaybackMode,
+    setStoredEventSound,
+    setStoredPlaybackMode,
+    type SoundPlaybackMode,
+    type SoundVariant,
+} from '@/lib/readySound'
 import { PROTOCOL_VERSION } from '@hapi/protocol'
 
 const locales: { value: Locale; nativeLabel: string }[] = [
@@ -79,11 +90,19 @@ export default function SettingsPage() {
     const [isFontOpen, setIsFontOpen] = useState(false)
     const [isTerminalFontOpen, setIsTerminalFontOpen] = useState(false)
     const [isVoiceOpen, setIsVoiceOpen] = useState(false)
+    const [isPlaybackModeOpen, setIsPlaybackModeOpen] = useState(false)
+    const [isReadySoundOpen, setIsReadySoundOpen] = useState(false)
+    const [isPermissionSoundOpen, setIsPermissionSoundOpen] = useState(false)
+    const [isGeneralSoundOpen, setIsGeneralSoundOpen] = useState(false)
     const containerRef = useRef<HTMLDivElement>(null)
     const appearanceContainerRef = useRef<HTMLDivElement>(null)
     const fontContainerRef = useRef<HTMLDivElement>(null)
     const terminalFontContainerRef = useRef<HTMLDivElement>(null)
     const voiceContainerRef = useRef<HTMLDivElement>(null)
+    const playbackModeContainerRef = useRef<HTMLDivElement>(null)
+    const readySoundContainerRef = useRef<HTMLDivElement>(null)
+    const permissionSoundContainerRef = useRef<HTMLDivElement>(null)
+    const generalSoundContainerRef = useRef<HTMLDivElement>(null)
     const { fontScale, setFontScale } = useFontScale()
     const { terminalFontSize, setTerminalFontSize } = useTerminalFontSize()
     const { appearance, setAppearance } = useAppearance()
@@ -92,15 +111,25 @@ export default function SettingsPage() {
     const [voiceLanguage, setVoiceLanguage] = useState<string | null>(() => {
         return localStorage.getItem('hapi-voice-lang')
     })
+    const [playbackMode, setPlaybackMode] = useState<SoundPlaybackMode>(getStoredPlaybackMode)
+    const [readySound, setReadySound] = useState<SoundVariant>(() => getStoredEventSound('ready'))
+    const [permissionSound, setPermissionSound] = useState<SoundVariant>(() => getStoredEventSound('permission'))
+    const [generalSound, setGeneralSound] = useState<SoundVariant>(() => getStoredEventSound('general'))
 
     const fontScaleOptions = getFontScaleOptions()
     const terminalFontSizeOptions = getTerminalFontSizeOptions()
     const appearanceOptions = getAppearanceOptions()
+    const playbackModeOptions = getPlaybackModeOptions()
+    const soundVariantOptions = getSoundVariantOptions()
     const currentLocale = locales.find((loc) => loc.value === locale)
     const currentAppearanceLabel = appearanceOptions.find((opt) => opt.value === appearance)?.labelKey ?? 'settings.display.appearance.system'
     const currentFontScaleLabel = fontScaleOptions.find((opt) => opt.value === fontScale)?.label ?? '100%'
     const currentTerminalFontSizeLabel = terminalFontSizeOptions.find((opt) => opt.value === terminalFontSize)?.label ?? '13px'
     const currentVoiceLanguage = voiceLanguages.find((lang) => lang.code === voiceLanguage)
+    const currentPlaybackModeLabel = playbackModeOptions.find((opt) => opt.value === playbackMode)?.labelKey ?? 'settings.sound.playback.always'
+    const currentReadySoundLabel = soundVariantOptions.find((opt) => opt.value === readySound)?.labelKey ?? 'settings.sound.option.crystal'
+    const currentPermissionSoundLabel = soundVariantOptions.find((opt) => opt.value === permissionSound)?.labelKey ?? 'settings.sound.option.alert'
+    const currentGeneralSoundLabel = soundVariantOptions.find((opt) => opt.value === generalSound)?.labelKey ?? 'settings.sound.option.chime'
 
     const handleLocaleChange = (newLocale: Locale) => {
         setLocale(newLocale)
@@ -132,9 +161,40 @@ export default function SettingsPage() {
         setIsVoiceOpen(false)
     }
 
+    const handlePlaybackModeChange = (value: SoundPlaybackMode) => {
+        setPlaybackMode(value)
+        setStoredPlaybackMode(value)
+        setIsPlaybackModeOpen(false)
+    }
+
+    const handleReadySoundChange = (value: SoundVariant) => {
+        setReadySound(value)
+        setStoredEventSound('ready', value)
+        setIsReadySoundOpen(false)
+    }
+
+    const handlePermissionSoundChange = (value: SoundVariant) => {
+        setPermissionSound(value)
+        setStoredEventSound('permission', value)
+        setIsPermissionSoundOpen(false)
+    }
+
+    const handleGeneralSoundChange = (value: SoundVariant) => {
+        setGeneralSound(value)
+        setStoredEventSound('general', value)
+        setIsGeneralSoundOpen(false)
+    }
+
+    const handleTestSound = async (value: SoundVariant) => {
+        if (value === 'off') {
+            return
+        }
+        await playNotificationSound(value)
+    }
+
     // Close dropdown when clicking outside
     useEffect(() => {
-        if (!isOpen && !isAppearanceOpen && !isFontOpen && !isTerminalFontOpen && !isVoiceOpen) return
+        if (!isOpen && !isAppearanceOpen && !isFontOpen && !isTerminalFontOpen && !isVoiceOpen && !isPlaybackModeOpen && !isReadySoundOpen && !isPermissionSoundOpen && !isGeneralSoundOpen) return
 
         const handleClickOutside = (event: MouseEvent) => {
             if (isOpen && containerRef.current && !containerRef.current.contains(event.target as Node)) {
@@ -152,15 +212,27 @@ export default function SettingsPage() {
             if (isVoiceOpen && voiceContainerRef.current && !voiceContainerRef.current.contains(event.target as Node)) {
                 setIsVoiceOpen(false)
             }
+            if (isPlaybackModeOpen && playbackModeContainerRef.current && !playbackModeContainerRef.current.contains(event.target as Node)) {
+                setIsPlaybackModeOpen(false)
+            }
+            if (isReadySoundOpen && readySoundContainerRef.current && !readySoundContainerRef.current.contains(event.target as Node)) {
+                setIsReadySoundOpen(false)
+            }
+            if (isPermissionSoundOpen && permissionSoundContainerRef.current && !permissionSoundContainerRef.current.contains(event.target as Node)) {
+                setIsPermissionSoundOpen(false)
+            }
+            if (isGeneralSoundOpen && generalSoundContainerRef.current && !generalSoundContainerRef.current.contains(event.target as Node)) {
+                setIsGeneralSoundOpen(false)
+            }
         }
 
         document.addEventListener('mousedown', handleClickOutside)
         return () => document.removeEventListener('mousedown', handleClickOutside)
-    }, [isOpen, isAppearanceOpen, isFontOpen, isTerminalFontOpen, isVoiceOpen])
+    }, [isOpen, isAppearanceOpen, isFontOpen, isTerminalFontOpen, isVoiceOpen, isPlaybackModeOpen, isReadySoundOpen, isPermissionSoundOpen, isGeneralSoundOpen])
 
     // Close on escape key
     useEffect(() => {
-        if (!isOpen && !isAppearanceOpen && !isFontOpen && !isTerminalFontOpen && !isVoiceOpen) return
+        if (!isOpen && !isAppearanceOpen && !isFontOpen && !isTerminalFontOpen && !isVoiceOpen && !isPlaybackModeOpen && !isReadySoundOpen && !isPermissionSoundOpen && !isGeneralSoundOpen) return
 
         const handleEscape = (event: KeyboardEvent) => {
             if (event.key === 'Escape') {
@@ -169,12 +241,16 @@ export default function SettingsPage() {
                 setIsFontOpen(false)
                 setIsTerminalFontOpen(false)
                 setIsVoiceOpen(false)
+                setIsPlaybackModeOpen(false)
+                setIsReadySoundOpen(false)
+                setIsPermissionSoundOpen(false)
+                setIsGeneralSoundOpen(false)
             }
         }
 
         document.addEventListener('keydown', handleEscape)
         return () => document.removeEventListener('keydown', handleEscape)
-    }, [isOpen, isAppearanceOpen, isFontOpen, isTerminalFontOpen, isVoiceOpen])
+    }, [isOpen, isAppearanceOpen, isFontOpen, isTerminalFontOpen, isVoiceOpen, isPlaybackModeOpen, isReadySoundOpen, isPermissionSoundOpen, isGeneralSoundOpen])
 
     return (
         <div className="flex h-full min-h-0 flex-col">
@@ -460,6 +536,235 @@ export default function SettingsPage() {
                                     })}
                                 </div>
                             )}
+                        </div>
+                    </div>
+
+                    {/* Sound section */}
+                    <div className="border-b border-[var(--app-divider)]">
+                        <div className="px-3 py-2 text-xs font-semibold text-[var(--app-hint)] uppercase tracking-wide">
+                            {t('settings.sound.title')}
+                        </div>
+                        <div ref={playbackModeContainerRef} className="relative">
+                            <button
+                                type="button"
+                                onClick={() => setIsPlaybackModeOpen(!isPlaybackModeOpen)}
+                                className="flex w-full items-center justify-between px-3 py-3 text-left transition-colors hover:bg-[var(--app-subtle-bg)]"
+                                aria-expanded={isPlaybackModeOpen}
+                                aria-haspopup="listbox"
+                            >
+                                <span className="text-[var(--app-fg)]">{t('settings.sound.playback')}</span>
+                                <span className="flex items-center gap-1 text-[var(--app-hint)]">
+                                    <span>{t(currentPlaybackModeLabel)}</span>
+                                    <ChevronDownIcon className={`transition-transform ${isPlaybackModeOpen ? 'rotate-180' : ''}`} />
+                                </span>
+                            </button>
+
+                            {isPlaybackModeOpen && (
+                                <div
+                                    className="absolute right-3 top-full mt-1 min-w-[200px] rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] shadow-lg overflow-hidden z-50"
+                                    role="listbox"
+                                    aria-label={t('settings.sound.playback')}
+                                >
+                                    {playbackModeOptions.map((opt) => {
+                                        const isSelected = playbackMode === opt.value
+                                        return (
+                                            <button
+                                                key={opt.value}
+                                                type="button"
+                                                role="option"
+                                                aria-selected={isSelected}
+                                                onClick={() => handlePlaybackModeChange(opt.value)}
+                                                className={`flex items-center justify-between w-full px-3 py-2 text-base text-left transition-colors ${
+                                                    isSelected
+                                                        ? 'text-[var(--app-link)] bg-[var(--app-subtle-bg)]'
+                                                        : 'text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)]'
+                                                }`}
+                                            >
+                                                <span>{t(opt.labelKey)}</span>
+                                                {isSelected && (
+                                                    <span className="ml-2 text-[var(--app-link)]">
+                                                        <CheckIcon />
+                                                    </span>
+                                                )}
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                        <div ref={readySoundContainerRef} className="relative">
+                            <button
+                                type="button"
+                                onClick={() => setIsReadySoundOpen(!isReadySoundOpen)}
+                                className="flex w-full items-center justify-between px-3 py-3 text-left transition-colors hover:bg-[var(--app-subtle-bg)]"
+                                aria-expanded={isReadySoundOpen}
+                                aria-haspopup="listbox"
+                            >
+                                <span className="text-[var(--app-fg)]">{t('settings.sound.ready')}</span>
+                                <span className="flex items-center gap-1 text-[var(--app-hint)]">
+                                    <span>{t(currentReadySoundLabel)}</span>
+                                    <ChevronDownIcon className={`transition-transform ${isReadySoundOpen ? 'rotate-180' : ''}`} />
+                                </span>
+                            </button>
+
+                            {isReadySoundOpen && (
+                                <div
+                                    className="absolute right-3 top-full mt-1 min-w-[200px] rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] shadow-lg overflow-hidden z-50"
+                                    role="listbox"
+                                    aria-label={t('settings.sound.ready')}
+                                >
+                                    {soundVariantOptions.map((opt) => {
+                                        const isSelected = readySound === opt.value
+                                        return (
+                                            <button
+                                                key={opt.value}
+                                                type="button"
+                                                role="option"
+                                                aria-selected={isSelected}
+                                                onClick={() => handleReadySoundChange(opt.value)}
+                                                className={`flex items-center justify-between w-full px-3 py-2 text-base text-left transition-colors ${
+                                                    isSelected
+                                                        ? 'text-[var(--app-link)] bg-[var(--app-subtle-bg)]'
+                                                        : 'text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)]'
+                                                }`}
+                                            >
+                                                <span>{t(opt.labelKey)}</span>
+                                                {isSelected && (
+                                                    <span className="ml-2 text-[var(--app-link)]">
+                                                        <CheckIcon />
+                                                    </span>
+                                                )}
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                        <div className="px-3 pb-3">
+                            <button
+                                type="button"
+                                onClick={() => void handleTestSound(readySound)}
+                                disabled={readySound === 'off'}
+                                className="rounded-lg border border-[var(--app-border)] px-3 py-2 text-sm text-[var(--app-fg)] transition-colors hover:bg-[var(--app-subtle-bg)] disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                {t('settings.sound.testReady')}
+                            </button>
+                        </div>
+                        <div ref={permissionSoundContainerRef} className="relative">
+                            <button
+                                type="button"
+                                onClick={() => setIsPermissionSoundOpen(!isPermissionSoundOpen)}
+                                className="flex w-full items-center justify-between px-3 py-3 text-left transition-colors hover:bg-[var(--app-subtle-bg)]"
+                                aria-expanded={isPermissionSoundOpen}
+                                aria-haspopup="listbox"
+                            >
+                                <span className="text-[var(--app-fg)]">{t('settings.sound.permission')}</span>
+                                <span className="flex items-center gap-1 text-[var(--app-hint)]">
+                                    <span>{t(currentPermissionSoundLabel)}</span>
+                                    <ChevronDownIcon className={`transition-transform ${isPermissionSoundOpen ? 'rotate-180' : ''}`} />
+                                </span>
+                            </button>
+
+                            {isPermissionSoundOpen && (
+                                <div
+                                    className="absolute right-3 top-full mt-1 min-w-[200px] rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] shadow-lg overflow-hidden z-50"
+                                    role="listbox"
+                                    aria-label={t('settings.sound.permission')}
+                                >
+                                    {soundVariantOptions.map((opt) => {
+                                        const isSelected = permissionSound === opt.value
+                                        return (
+                                            <button
+                                                key={opt.value}
+                                                type="button"
+                                                role="option"
+                                                aria-selected={isSelected}
+                                                onClick={() => handlePermissionSoundChange(opt.value)}
+                                                className={`flex items-center justify-between w-full px-3 py-2 text-base text-left transition-colors ${
+                                                    isSelected
+                                                        ? 'text-[var(--app-link)] bg-[var(--app-subtle-bg)]'
+                                                        : 'text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)]'
+                                                }`}
+                                            >
+                                                <span>{t(opt.labelKey)}</span>
+                                                {isSelected && (
+                                                    <span className="ml-2 text-[var(--app-link)]">
+                                                        <CheckIcon />
+                                                    </span>
+                                                )}
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                        <div className="px-3 pb-3">
+                            <button
+                                type="button"
+                                onClick={() => void handleTestSound(permissionSound)}
+                                disabled={permissionSound === 'off'}
+                                className="rounded-lg border border-[var(--app-border)] px-3 py-2 text-sm text-[var(--app-fg)] transition-colors hover:bg-[var(--app-subtle-bg)] disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                {t('settings.sound.testPermission')}
+                            </button>
+                        </div>
+                        <div ref={generalSoundContainerRef} className="relative">
+                            <button
+                                type="button"
+                                onClick={() => setIsGeneralSoundOpen(!isGeneralSoundOpen)}
+                                className="flex w-full items-center justify-between px-3 py-3 text-left transition-colors hover:bg-[var(--app-subtle-bg)]"
+                                aria-expanded={isGeneralSoundOpen}
+                                aria-haspopup="listbox"
+                            >
+                                <span className="text-[var(--app-fg)]">{t('settings.sound.general')}</span>
+                                <span className="flex items-center gap-1 text-[var(--app-hint)]">
+                                    <span>{t(currentGeneralSoundLabel)}</span>
+                                    <ChevronDownIcon className={`transition-transform ${isGeneralSoundOpen ? 'rotate-180' : ''}`} />
+                                </span>
+                            </button>
+
+                            {isGeneralSoundOpen && (
+                                <div
+                                    className="absolute right-3 top-full mt-1 min-w-[200px] rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] shadow-lg overflow-hidden z-50"
+                                    role="listbox"
+                                    aria-label={t('settings.sound.general')}
+                                >
+                                    {soundVariantOptions.map((opt) => {
+                                        const isSelected = generalSound === opt.value
+                                        return (
+                                            <button
+                                                key={opt.value}
+                                                type="button"
+                                                role="option"
+                                                aria-selected={isSelected}
+                                                onClick={() => handleGeneralSoundChange(opt.value)}
+                                                className={`flex items-center justify-between w-full px-3 py-2 text-base text-left transition-colors ${
+                                                    isSelected
+                                                        ? 'text-[var(--app-link)] bg-[var(--app-subtle-bg)]'
+                                                        : 'text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)]'
+                                                }`}
+                                            >
+                                                <span>{t(opt.labelKey)}</span>
+                                                {isSelected && (
+                                                    <span className="ml-2 text-[var(--app-link)]">
+                                                        <CheckIcon />
+                                                    </span>
+                                                )}
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                        <div className="px-3 pb-3">
+                            <button
+                                type="button"
+                                onClick={() => void handleTestSound(generalSound)}
+                                disabled={generalSound === 'off'}
+                                className="rounded-lg border border-[var(--app-border)] px-3 py-2 text-sm text-[var(--app-fg)] transition-colors hover:bg-[var(--app-subtle-bg)] disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                {t('settings.sound.testGeneral')}
+                            </button>
                         </div>
                     </div>
 

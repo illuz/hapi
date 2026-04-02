@@ -117,7 +117,7 @@ export class ApiSessionClient extends EventEmitter {
             reconnectionAttempts: Infinity,
             reconnectionDelay: 1000,
             reconnectionDelayMax: 5000,
-            transports: ['websocket'],
+            transports: ['polling', 'websocket'],
             autoConnect: false
         })
 

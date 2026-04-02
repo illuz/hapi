@@ -222,7 +222,7 @@ export class ApiMachineClient {
 
     connect(): void {
         this.socket = io(`${configuration.apiUrl}/cli`, {
-            transports: ['websocket'],
+            transports: ['polling', 'websocket'],
             auth: {
                 token: this.token,
                 clientType: 'machine-scoped' as const,

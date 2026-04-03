@@ -59,6 +59,17 @@ export default {
   // Session header
   'session.title': 'Files',
   'session.more': 'More actions',
+  'session.autoContinueShort': 'Auto',
+  'session.autoContinueOn': 'Auto-continue enabled, {n} runs left',
+  'session.autoContinueOff': 'Enable auto-continue with {n} runs',
+  'session.autoContinueSettings': 'Auto-continue settings',
+  'session.autoContinueSettingsDesc': 'Automatically send continue when the last assistant reply contains a keyword in its latest 10 lines.',
+  'session.autoContinueMaxRuns': 'Max runs',
+  'session.autoContinueRemaining': 'Remaining runs',
+  'session.autoContinueKeywords': 'Keywords',
+  'session.autoContinueKeywordsPlaceholder': 'One keyword per line, for example:\nnext step\ncontinue',
+  'session.autoContinueErrorCount': 'Max runs must be at least 1.',
+  'session.autoContinueErrorRemaining': 'Remaining runs must be between 0 and max runs.',
 
   // Session actions
   'session.action.rename': 'Rename',

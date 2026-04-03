@@ -1,4 +1,4 @@
-import { useId, useMemo, useRef, useState } from 'react'
+import { useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Session } from '@/types/api'
 import type { ApiClient } from '@/api/client'
 import { isTelegramApp } from '@/hooks/useTelegram'
@@ -66,6 +66,7 @@ export function SessionHeader(props: {
     onViewFiles?: () => void
     api: ApiClient | null
     onSessionDeleted?: () => void
+    autoContinueButton?: ReactNode
 }) {
     const { t } = useTranslation()
     const { session, api, onSessionDeleted } = props
@@ -150,6 +151,8 @@ export function SessionHeader(props: {
                             ) : null}
                         </div>
                     </div>
+
+                    {props.autoContinueButton ?? null}
 
                     {props.onViewFiles ? (
                         <button

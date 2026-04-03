@@ -59,6 +59,17 @@ export default {
   // Session header
   'session.title': '文件',
   'session.more': '更多操作',
+  'session.autoContinueShort': '接管',
+  'session.autoContinueOn': '自动接管已开启，剩余 {n} 次',
+  'session.autoContinueOff': '开启自动接管，默认可触发 {n} 次',
+  'session.autoContinueSettings': '自动接管设置',
+  'session.autoContinueSettingsDesc': '当助手最后一段回复的最近 10 行包含关键词时，自动发送 continue。',
+  'session.autoContinueMaxRuns': '触发次数',
+  'session.autoContinueRemaining': '剩余次数',
+  'session.autoContinueKeywords': '触发关键词',
+  'session.autoContinueKeywordsPlaceholder': '每行一个关键词，例如：\n下一步\n继续',
+  'session.autoContinueErrorCount': '触发次数必须大于等于 1。',
+  'session.autoContinueErrorRemaining': '剩余次数必须在 0 到触发次数之间。',
 
   // Session actions
   'session.action.rename': '重命名',

@@ -24,11 +24,20 @@ import { useToast } from '@/lib/toast-context'
 import { useTranslation } from '@/lib/use-translation'
 import { SessionHeader } from '@/components/SessionHeader'
 import { TeamPanel } from '@/components/TeamPanel'
+import { AutoContinueDialog } from '@/components/AutoContinueDialog'
 import { usePlatform } from '@/hooks/usePlatform'
 import { useSessionActions } from '@/hooks/mutations/useSessionActions'
 import { useVoiceOptional } from '@/lib/voice-context'
 import { RealtimeVoiceSession, registerSessionStore, registerVoiceHooksStore, voiceHooks } from '@/realtime'
 import { isRemoteTerminalSupported } from '@/utils/terminalSupport'
+import {
+    AUTO_CONTINUE_DEFAULT_REMAINING,
+    AUTO_CONTINUE_DEFAULT_KEYWORDS,
+    getLastAssistantLines,
+    loadAutoContinueState,
+    saveAutoContinueState,
+    shouldAutoContinue
+} from '@/lib/autoContinue'
 
 export function SessionChat(props: {
     api: ApiClient
@@ -60,9 +69,16 @@ export function SessionChat(props: {
     const normalizedCacheRef = useRef<Map<string, { source: DecryptedMessage; normalized: NormalizedMessage | null }>>(new Map())
     const blocksByIdRef = useRef<Map<string, ChatBlock>>(new Map())
     const [forceScrollToken, setForceScrollToken] = useState(0)
+    const [autoContinueEnabled, setAutoContinueEnabled] = useState(false)
+    const [autoContinueRemaining, setAutoContinueRemaining] = useState(AUTO_CONTINUE_DEFAULT_REMAINING)
+    const [autoContinueMaxRuns, setAutoContinueMaxRuns] = useState(AUTO_CONTINUE_DEFAULT_REMAINING)
+    const [autoContinueKeywords, setAutoContinueKeywords] = useState<string[]>(AUTO_CONTINUE_DEFAULT_KEYWORDS)
+    const [autoContinueDialogOpen, setAutoContinueDialogOpen] = useState(false)
     const agentFlavor = props.session.metadata?.flavor ?? null
     const controlledByUser = props.session.agentState?.controlledByUser === true
     const codexCollaborationModeSupported = agentFlavor === 'codex' && !controlledByUser
+    const prevAutoContinueThinkingRef = useRef(props.session.thinking)
+    const lastAutoContinueKeyRef = useRef<string | null>(null)
     const { abortSession, switchSession, setPermissionMode, setCollaborationMode, setModel, setEffort } = useSessionActions(
         props.api,
         props.session.id,
@@ -167,6 +183,34 @@ export function SessionChat(props: {
         normalizedCacheRef.current.clear()
         blocksByIdRef.current.clear()
     }, [props.session.id])
+
+    useEffect(() => {
+        const state = loadAutoContinueState(props.session.id)
+        setAutoContinueEnabled(state.enabled)
+        setAutoContinueRemaining(state.remaining)
+        setAutoContinueMaxRuns(state.maxRuns)
+        setAutoContinueKeywords(state.keywords)
+        lastAutoContinueKeyRef.current = null
+    }, [props.session.id])
+
+    useEffect(() => {
+        prevAutoContinueThinkingRef.current = props.session.thinking
+    }, [props.session.id])
+
+    useEffect(() => {
+        saveAutoContinueState(props.session.id, {
+            enabled: autoContinueEnabled,
+            remaining: autoContinueRemaining,
+            maxRuns: autoContinueMaxRuns,
+            keywords: autoContinueKeywords
+        })
+    }, [props.session.id, autoContinueEnabled, autoContinueRemaining, autoContinueMaxRuns, autoContinueKeywords])
+
+    useEffect(() => {
+        if (autoContinueEnabled && autoContinueRemaining <= 0) {
+            setAutoContinueEnabled(false)
+        }
+    }, [autoContinueEnabled, autoContinueRemaining])
 
     const normalizedMessages: NormalizedMessage[] = useMemo(() => {
         // Clear caches immediately when session changes (before useEffect runs)
@@ -309,6 +353,29 @@ export function SessionChat(props: {
         handleSend('continue')
     }, [handleSend])
 
+    const handleAutoContinueToggle = useCallback(() => {
+        setAutoContinueEnabled((current) => {
+            if (current) {
+                return false
+            }
+
+            setAutoContinueRemaining((remaining) => (
+                remaining > 0 ? remaining : autoContinueMaxRuns
+            ))
+            return true
+        })
+    }, [autoContinueMaxRuns])
+
+    const handleAutoContinueSettingsSave = useCallback((settings: {
+        maxRuns: number
+        remaining: number
+        keywords: string[]
+    }) => {
+        setAutoContinueMaxRuns(settings.maxRuns)
+        setAutoContinueRemaining(settings.remaining)
+        setAutoContinueKeywords(settings.keywords)
+    }, [])
+
     const handleSendCommit = useCallback(() => {
         handleSend('ok, commit it')
     }, [handleSend])
@@ -334,6 +401,91 @@ export function SessionChat(props: {
         allowSendWhenInactive: true
     })
 
+    useEffect(() => {
+        const completedTurn = prevAutoContinueThinkingRef.current && !props.session.thinking
+        prevAutoContinueThinkingRef.current = props.session.thinking
+
+        if (!completedTurn) return
+        if (!autoContinueEnabled || autoContinueRemaining <= 0 || props.isSending) return
+
+        const lastMessage = props.messages[props.messages.length - 1]
+        const completionKey = `${lastMessage?.id ?? 'none'}:${props.messages.length}`
+        if (lastAutoContinueKeyRef.current === completionKey) return
+
+        const recentLines = getLastAssistantLines(reconciled.blocks)
+        if (!shouldAutoContinue(recentLines, autoContinueKeywords)) return
+
+        lastAutoContinueKeyRef.current = completionKey
+        setAutoContinueRemaining((remaining) => Math.max(remaining - 1, 0))
+
+        void (async () => {
+            try {
+                if (controlledByUser) {
+                    await handleSwitchToRemote()
+                }
+                handleSendContinue()
+            } catch (error) {
+                console.error('Auto continue failed:', error)
+            }
+        })()
+    }, [
+        props.session.thinking,
+        props.messages,
+        props.isSending,
+        autoContinueEnabled,
+        autoContinueRemaining,
+        autoContinueKeywords,
+        reconciled.blocks,
+        controlledByUser,
+        handleSendContinue,
+        handleSwitchToRemote
+    ])
+
+    const displayedAutoContinueRemaining = autoContinueEnabled || autoContinueRemaining > 0
+        ? autoContinueRemaining
+        : autoContinueMaxRuns
+
+    const autoContinueButton = (
+        <div className="flex items-center gap-1">
+            <button
+                type="button"
+                onClick={handleAutoContinueToggle}
+                className={`inline-flex h-8 items-center gap-1 rounded-full border px-3 text-xs font-medium transition-colors ${
+                    autoContinueEnabled
+                        ? 'border-[var(--app-link)] bg-[var(--app-link)] text-[var(--app-bg)]'
+                        : 'border-[var(--app-border)] bg-[var(--app-secondary-bg)] text-[var(--app-hint)] hover:text-[var(--app-fg)]'
+                }`}
+                title={t(autoContinueEnabled ? 'session.autoContinueOn' : 'session.autoContinueOff', {
+                    n: displayedAutoContinueRemaining
+                })}
+            >
+                <span>{t('session.autoContinueShort')}</span>
+                <span>{displayedAutoContinueRemaining}</span>
+            </button>
+            <button
+                type="button"
+                onClick={() => setAutoContinueDialogOpen(true)}
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--app-secondary-bg)] text-[var(--app-hint)] transition-colors hover:text-[var(--app-fg)]"
+                title={t('session.autoContinueSettings')}
+            >
+                <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                >
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82L4.21 7.2a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01A1.65 1.65 0 0 0 10 3.25V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                </svg>
+            </button>
+        </div>
+    )
+
     return (
         <div className="flex h-full min-h-0 flex-col">
             <SessionHeader
@@ -342,6 +494,7 @@ export function SessionChat(props: {
                 onViewFiles={props.session.metadata?.path ? handleViewFiles : undefined}
                 api={props.api}
                 onSessionDeleted={props.onBack}
+                autoContinueButton={autoContinueButton}
             />
 
             {props.session.teamState && (
@@ -416,6 +569,15 @@ export function SessionChat(props: {
                     />
                 </div>
             </AssistantRuntimeProvider>
+
+            <AutoContinueDialog
+                isOpen={autoContinueDialogOpen}
+                onClose={() => setAutoContinueDialogOpen(false)}
+                initialMaxRuns={autoContinueMaxRuns}
+                initialRemaining={autoContinueRemaining}
+                initialKeywords={autoContinueKeywords}
+                onSave={handleAutoContinueSettingsSave}
+            />
 
             {/* Voice session component - renders nothing but initializes ElevenLabs */}
             {voice && (

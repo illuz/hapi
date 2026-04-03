@@ -116,6 +116,68 @@ describe('codexSessionScanner', () => {
         expect(events[0].type).toBe('response_item');
     });
 
+    it('adopts a new session created after the initial start window expires', async () => {
+        const targetCwd = '/data/github/happy/hapi';
+        const startupTimestampMs = Date.now();
+        const sessionStartWindowMs = 200;
+        const now = new Date(startupTimestampMs + sessionStartWindowMs + 1000);
+        const lateSessionId = 'session-created-late';
+        const lateSessionsDir = join(
+            testDir,
+            'sessions',
+            String(now.getFullYear()),
+            String(now.getMonth() + 1).padStart(2, '0'),
+            String(now.getDate()).padStart(2, '0')
+        );
+        sessionFile = join(lateSessionsDir, `codex-${lateSessionId}.jsonl`);
+        await mkdir(lateSessionsDir, { recursive: true });
+
+        let matchedSessionId: string | null = null;
+        let failureMessage: string | null = null;
+        scanner = await createCodexSessionScanner({
+            sessionId: null,
+            cwd: targetCwd,
+            startupTimestampMs,
+            sessionStartWindowMs,
+            onEvent: (event) => events.push(event),
+            onSessionFound: (sessionId) => {
+                matchedSessionId = sessionId;
+            },
+            onSessionMatchFailed: (message) => {
+                failureMessage = message;
+            }
+        });
+
+        await wait(500);
+        expect(matchedSessionId).toBeNull();
+        expect(failureMessage).toBeNull();
+
+        await writeFile(
+            sessionFile,
+            [
+                JSON.stringify({
+                    type: 'session_meta',
+                    payload: {
+                        id: lateSessionId,
+                        cwd: targetCwd,
+                        timestamp: new Date(startupTimestampMs + sessionStartWindowMs + 1000).toISOString()
+                    }
+                }),
+                JSON.stringify({
+                    type: 'response_item',
+                    payload: { type: 'function_call', name: 'Tool', call_id: 'call-late', arguments: '{}' }
+                })
+            ].join('\n') + '\n'
+        );
+
+        await wait(2300);
+        expect(matchedSessionId).toBe(lateSessionId);
+        expect(failureMessage).toBeNull();
+        expect(events).toHaveLength(2);
+        expect(events[0].type).toBe('session_meta');
+        expect(events[1].type).toBe('response_item');
+    });
+
     it('fails fast when cwd is missing and no sessionId is provided', async () => {
         const sessionId = 'session-missing-cwd';
         const matchFailedMessage = 'No cwd provided for Codex session matching; refusing to fallback.';
@@ -328,6 +390,68 @@ describe('codexSessionScanner', () => {
 
         await wait(2300);
         expect(matchedSessionId).toBeNull();
+        expect(events).toHaveLength(0);
+    });
+
+    it('warns on ambiguous reused activity after the deadline but keeps scanner alive', async () => {
+        const targetCwd = '/data/github/happy/hapi';
+        const startupTimestampMs = Date.now();
+        const sessionStartWindowMs = 200;
+        const now = new Date(startupTimestampMs);
+        const currentSessionsDir = join(
+            testDir,
+            'sessions',
+            String(now.getFullYear()),
+            String(now.getMonth() + 1).padStart(2, '0'),
+            String(now.getDate()).padStart(2, '0')
+        );
+        await mkdir(currentSessionsDir, { recursive: true });
+
+        const firstSessionId = 'session-reused-warn-a';
+        const secondSessionId = 'session-reused-warn-b';
+        const firstFile = join(currentSessionsDir, `codex-${firstSessionId}.jsonl`);
+        const secondFile = join(currentSessionsDir, `codex-${secondSessionId}.jsonl`);
+        const oldTimestamp = new Date(startupTimestampMs - 10 * 60 * 1000).toISOString();
+
+        await writeFile(
+            firstFile,
+            JSON.stringify({
+                type: 'session_meta',
+                payload: { id: firstSessionId, cwd: targetCwd, timestamp: oldTimestamp }
+            }) + '\n'
+        );
+        await writeFile(
+            secondFile,
+            JSON.stringify({
+                type: 'session_meta',
+                payload: { id: secondSessionId, cwd: targetCwd, timestamp: oldTimestamp }
+            }) + '\n'
+        );
+
+        let failureMessage: string | null = null;
+        scanner = await createCodexSessionScanner({
+            sessionId: null,
+            cwd: targetCwd,
+            startupTimestampMs,
+            sessionStartWindowMs,
+            onEvent: (event) => events.push(event),
+            onSessionMatchFailed: (message) => {
+                failureMessage = message;
+            }
+        });
+
+        await wait(150);
+        await appendFile(firstFile, JSON.stringify({
+            type: 'response_item',
+            payload: { type: 'function_call', name: 'Tool', call_id: 'call-warn-a', arguments: '{}' }
+        }) + '\n');
+        await appendFile(secondFile, JSON.stringify({
+            type: 'response_item',
+            payload: { type: 'function_call', name: 'Tool', call_id: 'call-warn-b', arguments: '{}' }
+        }) + '\n');
+
+        await wait(2300);
+        expect(failureMessage).toContain('refusing reused-session fallback');
         expect(events).toHaveLength(0);
     });
 });

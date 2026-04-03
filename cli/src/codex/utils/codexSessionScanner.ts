@@ -81,6 +81,7 @@ class CodexSessionScannerImpl extends BaseSessionScanner<CodexSessionEvent> {
     private firstRecentActivityCandidateResolved = false;
     private readonly firstRecentActivitySessionIds = new Set<string>();
     private loggedAmbiguousRecentActivity = false;
+    private deadlineWarningEmitted = false;
 
     constructor(opts: CodexSessionScannerOptions, targetCwd: string | null) {
         super({ intervalMs: 2000 });
@@ -190,7 +191,7 @@ class CodexSessionScannerImpl extends BaseSessionScanner<CodexSessionEvent> {
     protected async afterScan(): Promise<void> {
         if (!this.activeSessionId && this.targetCwd) {
             if (this.bestWithinWindow) {
-                logger.debug(`[CODEX_SESSION_SCANNER] Selected session ${this.bestWithinWindow.sessionId} within start window`);
+                logger.debug(`[CODEX_SESSION_SCANNER] Selected session ${this.bestWithinWindow.sessionId} after startup`);
                 this.setActiveSessionId(this.bestWithinWindow.sessionId);
             } else {
                 this.captureFirstRecentActivityCandidate();
@@ -211,18 +212,30 @@ class CodexSessionScannerImpl extends BaseSessionScanner<CodexSessionEvent> {
                 }
 
                 if (!this.activeSessionId) {
-                    if (Date.now() > this.matchDeadlineMs) {
-                        this.matchFailed = true;
-                        this.pendingEventsByFile.clear();
-                        const message = `No Codex session found within ${this.sessionStartWindowMs}ms for cwd ${this.targetCwd}; refusing fallback.`;
-                        logger.warn(`[CODEX_SESSION_SCANNER] ${message}`);
-                        this.onSessionMatchFailed?.(message);
-                    } else if (this.pendingEventsByFile.size > 0) {
+                    if (this.pendingEventsByFile.size > 0) {
                         logger.debug('[CODEX_SESSION_SCANNER] No session candidate matched yet; pending events buffered');
                     }
+                    this.maybeWarnOnExpiredDeadline();
                 }
             }
         }
+    }
+
+    private maybeWarnOnExpiredDeadline(): void {
+        if (this.deadlineWarningEmitted || Date.now() <= this.matchDeadlineMs) {
+            return;
+        }
+
+        const hasAmbiguousReusedActivity = this.firstRecentActivityCandidateResolved && this.firstRecentActivitySessionIds.size > 1;
+        if (!hasAmbiguousReusedActivity) {
+            return;
+        }
+
+        this.deadlineWarningEmitted = true;
+        this.pendingEventsByFile.clear();
+        const message = `No Codex session found within ${this.sessionStartWindowMs}ms for cwd ${this.targetCwd}; refusing reused-session fallback, but still watching for a later new session.`;
+        logger.warn(`[CODEX_SESSION_SCANNER] ${message}`);
+        this.onSessionMatchFailed?.(message);
     }
 
     private captureFirstRecentActivityCandidate(): void {
@@ -372,14 +385,9 @@ class CodexSessionScannerImpl extends BaseSessionScanner<CodexSessionEvent> {
             return null;
         }
 
-        const diff = sessionTimestamp - this.referenceTimestampMs;
-        if (diff > this.sessionStartWindowMs) {
-            return null;
-        }
-
         return {
             sessionId,
-            score: diff
+            score: sessionTimestamp - this.referenceTimestampMs
         };
     }
 

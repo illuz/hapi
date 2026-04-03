@@ -16,7 +16,7 @@ export type ToastContextValue = {
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null)
-const TOAST_DURATION_MS = 6000
+const TOAST_DURATION_MS = 15000
 
 function createToastId(): string {
     if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {

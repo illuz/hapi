@@ -1,4 +1,12 @@
+import type { SoundVariant } from '@/lib/readySound'
+
 let audioContext: AudioContext | null = null
+const AUDIO_FILE_BY_VARIANT = {
+    onMyWay: '/sounds/on-my-way.mp3',
+    orders: '/sounds/orders.mp3',
+    unitReady: '/sounds/red-alert2-unit-ready.mp3',
+    sirYesSir: '/sounds/sir-yes-sir.mp3',
+} as const
 
 function getAudioContext(): AudioContext | null {
     if (typeof window === 'undefined') {
@@ -124,7 +132,20 @@ function playChimeReadySound(context: AudioContext, startAt: number): void {
     }, 700)
 }
 
-export async function playNotificationSound(variant: 'chime' | 'crystal' | 'alert' = 'crystal'): Promise<void> {
+export async function playNotificationSound(variant: Exclude<SoundVariant, 'off'> = 'unitReady'): Promise<void> {
+    const audioFile = AUDIO_FILE_BY_VARIANT[variant as keyof typeof AUDIO_FILE_BY_VARIANT]
+    if (typeof window !== 'undefined' && audioFile) {
+        try {
+            const audio = new Audio(audioFile)
+            audio.preload = 'auto'
+            audio.volume = 1
+            await audio.play()
+            return
+        } catch {
+            // Fall back to synthesized audio below.
+        }
+    }
+
     const context = getAudioContext()
     if (!context) {
         return
@@ -151,6 +172,6 @@ export async function playNotificationSound(variant: 'chime' | 'crystal' | 'aler
     }
 }
 
-export async function playReadyChime(variant: 'chime' | 'crystal' = 'crystal'): Promise<void> {
+export async function playReadyChime(variant: Exclude<SoundVariant, 'off'> = 'unitReady'): Promise<void> {
     await playNotificationSound(variant)
 }

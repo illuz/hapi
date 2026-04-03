@@ -127,9 +127,9 @@ export default function SettingsPage() {
     const currentTerminalFontSizeLabel = terminalFontSizeOptions.find((opt) => opt.value === terminalFontSize)?.label ?? '13px'
     const currentVoiceLanguage = voiceLanguages.find((lang) => lang.code === voiceLanguage)
     const currentPlaybackModeLabel = playbackModeOptions.find((opt) => opt.value === playbackMode)?.labelKey ?? 'settings.sound.playback.always'
-    const currentReadySoundLabel = soundVariantOptions.find((opt) => opt.value === readySound)?.labelKey ?? 'settings.sound.option.crystal'
-    const currentPermissionSoundLabel = soundVariantOptions.find((opt) => opt.value === permissionSound)?.labelKey ?? 'settings.sound.option.alert'
-    const currentGeneralSoundLabel = soundVariantOptions.find((opt) => opt.value === generalSound)?.labelKey ?? 'settings.sound.option.chime'
+    const currentReadySoundLabel = soundVariantOptions.find((opt) => opt.value === readySound)?.labelKey ?? 'settings.sound.option.unitReady'
+    const currentPermissionSoundLabel = soundVariantOptions.find((opt) => opt.value === permissionSound)?.labelKey ?? 'settings.sound.option.orders'
+    const currentGeneralSoundLabel = soundVariantOptions.find((opt) => opt.value === generalSound)?.labelKey ?? 'settings.sound.option.onMyWay'
 
     const handleLocaleChange = (newLocale: Locale) => {
         setLocale(newLocale)

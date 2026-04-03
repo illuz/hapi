@@ -24,35 +24,12 @@ export class PushNotificationChannel implements NotificationChannel {
             : null
         const toolName = request?.tool ? ` (${request.tool})` : ''
 
-        const payload: PushPayload = {
+        await this.deliverToastOrPush(session, {
             title: 'Permission Request',
             body: `${name}${toolName}`,
             tag: `permission-${session.id}`,
-            data: {
-                type: 'permission-request',
-                sessionId: session.id,
-                url: this.buildSessionPath(session.id)
-            }
-        }
-
-        const url = payload.data?.url ?? this.buildSessionPath(session.id)
-        if (this.visibilityTracker.hasVisibleConnection(session.namespace)) {
-            const delivered = await this.sseManager.sendToast(session.namespace, {
-                type: 'toast',
-                data: {
-                    title: payload.title,
-                    body: payload.body,
-                    sessionId: session.id,
-                    url,
-                    kind: 'permission-request'
-                }
-            })
-            if (delivered > 0) {
-                return
-            }
-        }
-
-        await this.pushService.sendToNamespace(session.namespace, payload)
+            kind: 'permission-request'
+        })
     }
 
     async sendReady(session: Session): Promise<void> {
@@ -63,12 +40,59 @@ export class PushNotificationChannel implements NotificationChannel {
         const agentName = getAgentName(session)
         const name = getSessionName(session)
 
-        const payload: PushPayload = {
+        await this.deliverToastOrPush(session, {
             title: 'Ready for input',
             body: `${agentName} is waiting in ${name}`,
             tag: `ready-${session.id}`,
+            kind: 'ready'
+        })
+    }
+
+    async sendMessage(session: Session): Promise<void> {
+        if (!session.active) {
+            return
+        }
+
+        const agentName = getAgentName(session)
+        const name = getSessionName(session)
+
+        await this.deliverToastOrPush(session, {
+            title: 'New message',
+            body: `${agentName} sent a message in ${name}`,
+            tag: `message-${session.id}`,
+            kind: 'message'
+        })
+    }
+
+    async sendFailure(session: Session, message: string): Promise<void> {
+        if (!session.active) {
+            return
+        }
+
+        const name = getSessionName(session)
+        await this.deliverToastOrPush(session, {
+            title: 'Execution failed',
+            body: `${name}: ${message}`,
+            tag: `failure-${session.id}`,
+            kind: 'failure'
+        })
+    }
+
+    private async deliverToastOrPush(
+        session: Session,
+        args: {
+            title: string
+            body: string
+            tag: string
+            kind: 'permission-request' | 'ready' | 'message' | 'failure'
+        }
+    ): Promise<void> {
+        const payload: PushPayload = {
+            title: args.title,
+            body: args.body,
+            tag: args.tag,
             data: {
-                type: 'ready',
+                type: args.kind,
                 sessionId: session.id,
                 url: this.buildSessionPath(session.id)
             }
@@ -83,7 +107,7 @@ export class PushNotificationChannel implements NotificationChannel {
                     body: payload.body,
                     sessionId: session.id,
                     url,
-                    kind: 'ready'
+                    kind: args.kind
                 }
             })
             if (delivered > 0) {

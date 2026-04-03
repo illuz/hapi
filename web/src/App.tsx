@@ -241,7 +241,11 @@ function AppInner() {
                 ? 'ready'
                 : event.data.kind === 'permission-request'
                     ? 'permission'
-                    : 'general'
+                    : event.data.kind === 'message'
+                        ? 'message'
+                        : event.data.kind === 'failure'
+                            ? 'failure'
+                            : 'general'
             const soundVariant = getStoredEventSound(soundEvent)
             if (soundVariant !== 'off') {
                 void playNotificationSound(soundVariant)

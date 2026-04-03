@@ -32,6 +32,8 @@ class FakeSyncEngine {
 class StubChannel implements NotificationChannel {
     readonly readySessions: Session[] = []
     readonly permissionSessions: Session[] = []
+    readonly messageSessions: Session[] = []
+    readonly failures: Array<{ session: Session; message: string }> = []
 
     async sendReady(session: Session): Promise<void> {
         this.readySessions.push(session)
@@ -39,6 +41,14 @@ class StubChannel implements NotificationChannel {
 
     async sendPermissionRequest(session: Session): Promise<void> {
         this.permissionSessions.push(session)
+    }
+
+    async sendMessage(session: Session): Promise<void> {
+        this.messageSessions.push(session)
+    }
+
+    async sendFailure(session: Session, message: string): Promise<void> {
+        this.failures.push({ session, message })
     }
 }
 
@@ -152,6 +162,80 @@ describe('NotificationHub', () => {
         engine.emit(readyEvent)
         await sleep(5)
         expect(channel.readySessions).toHaveLength(2)
+
+        hub.stop()
+    })
+
+    it('sends message notifications for agent text messages', async () => {
+        const engine = new FakeSyncEngine()
+        const channel = new StubChannel()
+        const hub = new NotificationHub(engine as unknown as SyncEngine, [channel], {
+            permissionDebounceMs: 1,
+            readyCooldownMs: 20
+        })
+
+        const session = createSession()
+        engine.setSession(session)
+
+        engine.emit({
+            type: 'message-received',
+            sessionId: session.id,
+            message: {
+                id: 'message-2',
+                seq: 2,
+                localId: null,
+                createdAt: 0,
+                content: {
+                    role: 'agent',
+                    content: {
+                        type: 'codex',
+                        data: { type: 'message', message: 'Hello from agent' }
+                    }
+                }
+            }
+        })
+
+        await sleep(5)
+        expect(channel.messageSessions).toHaveLength(1)
+        expect(channel.failures).toHaveLength(0)
+
+        hub.stop()
+    })
+
+    it('sends failure notifications for failure status events', async () => {
+        const engine = new FakeSyncEngine()
+        const channel = new StubChannel()
+        const hub = new NotificationHub(engine as unknown as SyncEngine, [channel], {
+            permissionDebounceMs: 1,
+            readyCooldownMs: 20
+        })
+
+        const session = createSession()
+        engine.setSession(session)
+
+        engine.emit({
+            type: 'message-received',
+            sessionId: session.id,
+            message: {
+                id: 'message-3',
+                seq: 3,
+                localId: null,
+                createdAt: 0,
+                content: {
+                    role: 'agent',
+                    content: {
+                        id: 'event-2',
+                        type: 'event',
+                        data: { type: 'message', message: 'Process exited unexpectedly' }
+                    }
+                }
+            }
+        })
+
+        await sleep(5)
+        expect(channel.failures).toHaveLength(1)
+        expect(channel.failures[0]?.message).toBe('Process exited unexpectedly')
+        expect(channel.messageSessions).toHaveLength(0)
 
         hub.stop()
     })

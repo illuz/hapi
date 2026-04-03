@@ -2,10 +2,15 @@ import type { SoundVariant } from '@/lib/readySound'
 
 let audioContext: AudioContext | null = null
 const AUDIO_FILE_BY_VARIANT = {
+    building: '/sounds/building.mp3',
+    constructionComplete: '/sounds/construction-complete.mp3',
+    missionAccomplished: '/sounds/mission-accomplished.mp3',
+    newConstructionOptions: '/sounds/new-construction-options.mp3',
     onMyWay: '/sounds/on-my-way.mp3',
     orders: '/sounds/orders.mp3',
     unitReady: '/sounds/red-alert2-unit-ready.mp3',
     sirYesSir: '/sounds/sir-yes-sir.mp3',
+    youHaveLost: '/sounds/you-have-lost.mp3',
 } as const
 
 function getAudioContext(): AudioContext | null {

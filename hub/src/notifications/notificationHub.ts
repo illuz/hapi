@@ -1,6 +1,6 @@
 import type { Session, SyncEngine, SyncEvent } from '../sync/syncEngine'
 import type { NotificationChannel, NotificationHubOptions } from './notificationTypes'
-import { extractMessageEventType } from './eventParsing'
+import { extractMessageEventType, isAgentTextMessage, isFailureEventMessage } from './eventParsing'
 
 export class NotificationHub {
     private readonly channels: NotificationChannel[]
@@ -59,6 +59,21 @@ export class NotificationHub {
             if (eventType === 'ready') {
                 this.sendReadyNotification(event.sessionId).catch((error) => {
                     console.error('[NotificationHub] Failed to send ready notification:', error)
+                })
+                return
+            }
+
+            const failureMessage = isFailureEventMessage(event)
+            if (failureMessage) {
+                this.sendFailureNotification(event.sessionId, failureMessage).catch((error) => {
+                    console.error('[NotificationHub] Failed to send failure notification:', error)
+                })
+                return
+            }
+
+            if (isAgentTextMessage(event)) {
+                this.sendMessageNotification(event.sessionId).catch((error) => {
+                    console.error('[NotificationHub] Failed to send message notification:', error)
                 })
             }
         }
@@ -162,6 +177,36 @@ export class NotificationHub {
                 await channel.sendPermissionRequest(session)
             } catch (error) {
                 console.error('[NotificationHub] Failed to send permission notification:', error)
+            }
+        }
+    }
+
+    private async sendMessageNotification(sessionId: string): Promise<void> {
+        const session = this.getNotifiableSession(sessionId)
+        if (!session) {
+            return
+        }
+
+        for (const channel of this.channels) {
+            try {
+                await channel.sendMessage(session)
+            } catch (error) {
+                console.error('[NotificationHub] Failed to send message notification:', error)
+            }
+        }
+    }
+
+    private async sendFailureNotification(sessionId: string, message: string): Promise<void> {
+        const session = this.getNotifiableSession(sessionId)
+        if (!session) {
+            return
+        }
+
+        for (const channel of this.channels) {
+            try {
+                await channel.sendFailure(session, message)
+            } catch (error) {
+                console.error('[NotificationHub] Failed to send failure notification:', error)
             }
         }
     }

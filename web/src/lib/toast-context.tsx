@@ -6,7 +6,7 @@ export type Toast = {
     body: string
     sessionId: string
     url: string
-    kind?: 'permission-request' | 'ready'
+    kind?: 'permission-request' | 'ready' | 'message' | 'failure'
 }
 
 export type ToastContextValue = {

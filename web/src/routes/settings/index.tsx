@@ -93,6 +93,8 @@ export default function SettingsPage() {
     const [isPlaybackModeOpen, setIsPlaybackModeOpen] = useState(false)
     const [isReadySoundOpen, setIsReadySoundOpen] = useState(false)
     const [isPermissionSoundOpen, setIsPermissionSoundOpen] = useState(false)
+    const [isMessageSoundOpen, setIsMessageSoundOpen] = useState(false)
+    const [isFailureSoundOpen, setIsFailureSoundOpen] = useState(false)
     const [isGeneralSoundOpen, setIsGeneralSoundOpen] = useState(false)
     const containerRef = useRef<HTMLDivElement>(null)
     const appearanceContainerRef = useRef<HTMLDivElement>(null)
@@ -102,6 +104,8 @@ export default function SettingsPage() {
     const playbackModeContainerRef = useRef<HTMLDivElement>(null)
     const readySoundContainerRef = useRef<HTMLDivElement>(null)
     const permissionSoundContainerRef = useRef<HTMLDivElement>(null)
+    const messageSoundContainerRef = useRef<HTMLDivElement>(null)
+    const failureSoundContainerRef = useRef<HTMLDivElement>(null)
     const generalSoundContainerRef = useRef<HTMLDivElement>(null)
     const { fontScale, setFontScale } = useFontScale()
     const { terminalFontSize, setTerminalFontSize } = useTerminalFontSize()
@@ -114,6 +118,8 @@ export default function SettingsPage() {
     const [playbackMode, setPlaybackMode] = useState<SoundPlaybackMode>(getStoredPlaybackMode)
     const [readySound, setReadySound] = useState<SoundVariant>(() => getStoredEventSound('ready'))
     const [permissionSound, setPermissionSound] = useState<SoundVariant>(() => getStoredEventSound('permission'))
+    const [messageSound, setMessageSound] = useState<SoundVariant>(() => getStoredEventSound('message'))
+    const [failureSound, setFailureSound] = useState<SoundVariant>(() => getStoredEventSound('failure'))
     const [generalSound, setGeneralSound] = useState<SoundVariant>(() => getStoredEventSound('general'))
 
     const fontScaleOptions = getFontScaleOptions()
@@ -127,8 +133,10 @@ export default function SettingsPage() {
     const currentTerminalFontSizeLabel = terminalFontSizeOptions.find((opt) => opt.value === terminalFontSize)?.label ?? '13px'
     const currentVoiceLanguage = voiceLanguages.find((lang) => lang.code === voiceLanguage)
     const currentPlaybackModeLabel = playbackModeOptions.find((opt) => opt.value === playbackMode)?.labelKey ?? 'settings.sound.playback.always'
-    const currentReadySoundLabel = soundVariantOptions.find((opt) => opt.value === readySound)?.labelKey ?? 'settings.sound.option.unitReady'
-    const currentPermissionSoundLabel = soundVariantOptions.find((opt) => opt.value === permissionSound)?.labelKey ?? 'settings.sound.option.orders'
+    const currentReadySoundLabel = soundVariantOptions.find((opt) => opt.value === readySound)?.labelKey ?? 'settings.sound.option.constructionComplete'
+    const currentPermissionSoundLabel = soundVariantOptions.find((opt) => opt.value === permissionSound)?.labelKey ?? 'settings.sound.option.sirYesSir'
+    const currentMessageSoundLabel = soundVariantOptions.find((opt) => opt.value === messageSound)?.labelKey ?? 'settings.sound.option.building'
+    const currentFailureSoundLabel = soundVariantOptions.find((opt) => opt.value === failureSound)?.labelKey ?? 'settings.sound.option.youHaveLost'
     const currentGeneralSoundLabel = soundVariantOptions.find((opt) => opt.value === generalSound)?.labelKey ?? 'settings.sound.option.onMyWay'
 
     const handleLocaleChange = (newLocale: Locale) => {
@@ -179,6 +187,18 @@ export default function SettingsPage() {
         setIsPermissionSoundOpen(false)
     }
 
+    const handleMessageSoundChange = (value: SoundVariant) => {
+        setMessageSound(value)
+        setStoredEventSound('message', value)
+        setIsMessageSoundOpen(false)
+    }
+
+    const handleFailureSoundChange = (value: SoundVariant) => {
+        setFailureSound(value)
+        setStoredEventSound('failure', value)
+        setIsFailureSoundOpen(false)
+    }
+
     const handleGeneralSoundChange = (value: SoundVariant) => {
         setGeneralSound(value)
         setStoredEventSound('general', value)
@@ -192,9 +212,17 @@ export default function SettingsPage() {
         await playNotificationSound(value)
     }
 
+    const closeAllSoundMenus = () => {
+        setIsReadySoundOpen(false)
+        setIsPermissionSoundOpen(false)
+        setIsMessageSoundOpen(false)
+        setIsFailureSoundOpen(false)
+        setIsGeneralSoundOpen(false)
+    }
+
     // Close dropdown when clicking outside
     useEffect(() => {
-        if (!isOpen && !isAppearanceOpen && !isFontOpen && !isTerminalFontOpen && !isVoiceOpen && !isPlaybackModeOpen && !isReadySoundOpen && !isPermissionSoundOpen && !isGeneralSoundOpen) return
+        if (!isOpen && !isAppearanceOpen && !isFontOpen && !isTerminalFontOpen && !isVoiceOpen && !isPlaybackModeOpen && !isReadySoundOpen && !isPermissionSoundOpen && !isMessageSoundOpen && !isFailureSoundOpen && !isGeneralSoundOpen) return
 
         const handleClickOutside = (event: MouseEvent) => {
             if (isOpen && containerRef.current && !containerRef.current.contains(event.target as Node)) {
@@ -221,6 +249,12 @@ export default function SettingsPage() {
             if (isPermissionSoundOpen && permissionSoundContainerRef.current && !permissionSoundContainerRef.current.contains(event.target as Node)) {
                 setIsPermissionSoundOpen(false)
             }
+            if (isMessageSoundOpen && messageSoundContainerRef.current && !messageSoundContainerRef.current.contains(event.target as Node)) {
+                setIsMessageSoundOpen(false)
+            }
+            if (isFailureSoundOpen && failureSoundContainerRef.current && !failureSoundContainerRef.current.contains(event.target as Node)) {
+                setIsFailureSoundOpen(false)
+            }
             if (isGeneralSoundOpen && generalSoundContainerRef.current && !generalSoundContainerRef.current.contains(event.target as Node)) {
                 setIsGeneralSoundOpen(false)
             }
@@ -228,11 +262,11 @@ export default function SettingsPage() {
 
         document.addEventListener('mousedown', handleClickOutside)
         return () => document.removeEventListener('mousedown', handleClickOutside)
-    }, [isOpen, isAppearanceOpen, isFontOpen, isTerminalFontOpen, isVoiceOpen, isPlaybackModeOpen, isReadySoundOpen, isPermissionSoundOpen, isGeneralSoundOpen])
+    }, [isOpen, isAppearanceOpen, isFontOpen, isTerminalFontOpen, isVoiceOpen, isPlaybackModeOpen, isReadySoundOpen, isPermissionSoundOpen, isMessageSoundOpen, isFailureSoundOpen, isGeneralSoundOpen])
 
     // Close on escape key
     useEffect(() => {
-        if (!isOpen && !isAppearanceOpen && !isFontOpen && !isTerminalFontOpen && !isVoiceOpen && !isPlaybackModeOpen && !isReadySoundOpen && !isPermissionSoundOpen && !isGeneralSoundOpen) return
+        if (!isOpen && !isAppearanceOpen && !isFontOpen && !isTerminalFontOpen && !isVoiceOpen && !isPlaybackModeOpen && !isReadySoundOpen && !isPermissionSoundOpen && !isMessageSoundOpen && !isFailureSoundOpen && !isGeneralSoundOpen) return
 
         const handleEscape = (event: KeyboardEvent) => {
             if (event.key === 'Escape') {
@@ -242,15 +276,13 @@ export default function SettingsPage() {
                 setIsTerminalFontOpen(false)
                 setIsVoiceOpen(false)
                 setIsPlaybackModeOpen(false)
-                setIsReadySoundOpen(false)
-                setIsPermissionSoundOpen(false)
-                setIsGeneralSoundOpen(false)
+                closeAllSoundMenus()
             }
         }
 
         document.addEventListener('keydown', handleEscape)
         return () => document.removeEventListener('keydown', handleEscape)
-    }, [isOpen, isAppearanceOpen, isFontOpen, isTerminalFontOpen, isVoiceOpen, isPlaybackModeOpen, isReadySoundOpen, isPermissionSoundOpen, isGeneralSoundOpen])
+    }, [isOpen, isAppearanceOpen, isFontOpen, isTerminalFontOpen, isVoiceOpen, isPlaybackModeOpen, isReadySoundOpen, isPermissionSoundOpen, isMessageSoundOpen, isFailureSoundOpen, isGeneralSoundOpen])
 
     return (
         <div className="flex h-full min-h-0 flex-col">
@@ -706,6 +738,122 @@ export default function SettingsPage() {
                                 className="rounded-lg border border-[var(--app-border)] px-3 py-2 text-sm text-[var(--app-fg)] transition-colors hover:bg-[var(--app-subtle-bg)] disabled:cursor-not-allowed disabled:opacity-50"
                             >
                                 {t('settings.sound.testPermission')}
+                            </button>
+                        </div>
+                        <div ref={messageSoundContainerRef} className="relative">
+                            <button
+                                type="button"
+                                onClick={() => setIsMessageSoundOpen(!isMessageSoundOpen)}
+                                className="flex w-full items-center justify-between px-3 py-3 text-left transition-colors hover:bg-[var(--app-subtle-bg)]"
+                                aria-expanded={isMessageSoundOpen}
+                                aria-haspopup="listbox"
+                            >
+                                <span className="text-[var(--app-fg)]">{t('settings.sound.message')}</span>
+                                <span className="flex items-center gap-1 text-[var(--app-hint)]">
+                                    <span>{t(currentMessageSoundLabel)}</span>
+                                    <ChevronDownIcon className={`transition-transform ${isMessageSoundOpen ? 'rotate-180' : ''}`} />
+                                </span>
+                            </button>
+
+                            {isMessageSoundOpen && (
+                                <div
+                                    className="absolute right-3 top-full mt-1 min-w-[200px] rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] shadow-lg overflow-hidden z-50"
+                                    role="listbox"
+                                    aria-label={t('settings.sound.message')}
+                                >
+                                    {soundVariantOptions.map((opt) => {
+                                        const isSelected = messageSound === opt.value
+                                        return (
+                                            <button
+                                                key={opt.value}
+                                                type="button"
+                                                role="option"
+                                                aria-selected={isSelected}
+                                                onClick={() => handleMessageSoundChange(opt.value)}
+                                                className={`flex items-center justify-between w-full px-3 py-2 text-base text-left transition-colors ${
+                                                    isSelected
+                                                        ? 'text-[var(--app-link)] bg-[var(--app-subtle-bg)]'
+                                                        : 'text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)]'
+                                                }`}
+                                            >
+                                                <span>{t(opt.labelKey)}</span>
+                                                {isSelected && (
+                                                    <span className="ml-2 text-[var(--app-link)]">
+                                                        <CheckIcon />
+                                                    </span>
+                                                )}
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                        <div className="px-3 pb-3">
+                            <button
+                                type="button"
+                                onClick={() => void handleTestSound(messageSound)}
+                                disabled={messageSound === 'off'}
+                                className="rounded-lg border border-[var(--app-border)] px-3 py-2 text-sm text-[var(--app-fg)] transition-colors hover:bg-[var(--app-subtle-bg)] disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                {t('settings.sound.testMessage')}
+                            </button>
+                        </div>
+                        <div ref={failureSoundContainerRef} className="relative">
+                            <button
+                                type="button"
+                                onClick={() => setIsFailureSoundOpen(!isFailureSoundOpen)}
+                                className="flex w-full items-center justify-between px-3 py-3 text-left transition-colors hover:bg-[var(--app-subtle-bg)]"
+                                aria-expanded={isFailureSoundOpen}
+                                aria-haspopup="listbox"
+                            >
+                                <span className="text-[var(--app-fg)]">{t('settings.sound.failure')}</span>
+                                <span className="flex items-center gap-1 text-[var(--app-hint)]">
+                                    <span>{t(currentFailureSoundLabel)}</span>
+                                    <ChevronDownIcon className={`transition-transform ${isFailureSoundOpen ? 'rotate-180' : ''}`} />
+                                </span>
+                            </button>
+
+                            {isFailureSoundOpen && (
+                                <div
+                                    className="absolute right-3 top-full mt-1 min-w-[200px] rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] shadow-lg overflow-hidden z-50"
+                                    role="listbox"
+                                    aria-label={t('settings.sound.failure')}
+                                >
+                                    {soundVariantOptions.map((opt) => {
+                                        const isSelected = failureSound === opt.value
+                                        return (
+                                            <button
+                                                key={opt.value}
+                                                type="button"
+                                                role="option"
+                                                aria-selected={isSelected}
+                                                onClick={() => handleFailureSoundChange(opt.value)}
+                                                className={`flex items-center justify-between w-full px-3 py-2 text-base text-left transition-colors ${
+                                                    isSelected
+                                                        ? 'text-[var(--app-link)] bg-[var(--app-subtle-bg)]'
+                                                        : 'text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)]'
+                                                }`}
+                                            >
+                                                <span>{t(opt.labelKey)}</span>
+                                                {isSelected && (
+                                                    <span className="ml-2 text-[var(--app-link)]">
+                                                        <CheckIcon />
+                                                    </span>
+                                                )}
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                        <div className="px-3 pb-3">
+                            <button
+                                type="button"
+                                onClick={() => void handleTestSound(failureSound)}
+                                disabled={failureSound === 'off'}
+                                className="rounded-lg border border-[var(--app-border)] px-3 py-2 text-sm text-[var(--app-fg)] transition-colors hover:bg-[var(--app-subtle-bg)] disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                {t('settings.sound.testFailure')}
                             </button>
                         </div>
                         <div ref={generalSoundContainerRef} className="relative">

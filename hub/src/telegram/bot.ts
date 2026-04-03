@@ -241,6 +241,51 @@ export class HappyBot implements NotificationChannel {
             }
         }
     }
+
+    async sendMessage(session: Session): Promise<void> {
+        if (!session.active) {
+            return
+        }
+
+        const agentName = getAgentName(session)
+        const keyboard = createNotificationKeyboard(session, this.publicUrl)
+        const chatIds = this.getBoundChatIds(session.namespace)
+        if (chatIds.length === 0) {
+            return
+        }
+
+        for (const chatId of chatIds) {
+            try {
+                await this.bot.api.sendMessage(chatId, `${agentName} sent a new message.`, {
+                    reply_markup: keyboard
+                })
+            } catch (error) {
+                console.error(`[HAPIBot] Failed to send message notification to chat ${chatId}:`, error)
+            }
+        }
+    }
+
+    async sendFailure(session: Session, message: string): Promise<void> {
+        if (!session.active) {
+            return
+        }
+
+        const keyboard = createNotificationKeyboard(session, this.publicUrl)
+        const chatIds = this.getBoundChatIds(session.namespace)
+        if (chatIds.length === 0) {
+            return
+        }
+
+        for (const chatId of chatIds) {
+            try {
+                await this.bot.api.sendMessage(chatId, `Execution failed.\n\n${message}`, {
+                    reply_markup: keyboard
+                })
+            } catch (error) {
+                console.error(`[HAPIBot] Failed to send failure notification to chat ${chatId}:`, error)
+            }
+        }
+    }
 }
 
 function buildMiniAppDeepLink(baseUrl: string, startParam: string): string {

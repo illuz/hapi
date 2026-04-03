@@ -48,22 +48,6 @@ export class PushNotificationChannel implements NotificationChannel {
         })
     }
 
-    async sendMessage(session: Session): Promise<void> {
-        if (!session.active) {
-            return
-        }
-
-        const agentName = getAgentName(session)
-        const name = getSessionName(session)
-
-        await this.deliverToastOrPush(session, {
-            title: 'New message',
-            body: `${agentName} sent a message in ${name}`,
-            tag: `message-${session.id}`,
-            kind: 'message'
-        })
-    }
-
     async sendFailure(session: Session, message: string): Promise<void> {
         if (!session.active) {
             return

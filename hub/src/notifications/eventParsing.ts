@@ -1,4 +1,4 @@
-import { AGENT_MESSAGE_PAYLOAD_TYPE, isObject } from '@hapi/protocol'
+import { isObject } from '@hapi/protocol'
 import type { SyncEvent } from '../sync/syncEngine'
 
 type EventEnvelope = {
@@ -53,24 +53,6 @@ function extractEventEnvelopeData(event: SyncEvent): Record<string, unknown> | n
     return isObject(envelope.data) ? envelope.data : null
 }
 
-function extractAgentPayloadData(event: SyncEvent): Record<string, unknown> | null {
-    if (event.type !== 'message-received') {
-        return null
-    }
-
-    const message = event.message?.content
-    if (!isObject(message) || message.role !== 'agent') {
-        return null
-    }
-
-    const content = message.content
-    if (!isObject(content) || content.type !== AGENT_MESSAGE_PAYLOAD_TYPE) {
-        return null
-    }
-
-    return isObject(content.data) ? content.data : null
-}
-
 export function isFailureEventMessage(event: SyncEvent): string | null {
     const data = extractEventEnvelopeData(event)
     if (!data || data.type !== 'message' || typeof data.message !== 'string') {
@@ -93,9 +75,4 @@ export function isFailureEventMessage(event: SyncEvent): string | null {
     }
 
     return null
-}
-
-export function isAgentTextMessage(event: SyncEvent): boolean {
-    const data = extractAgentPayloadData(event)
-    return !!data && data.type === 'message' && typeof data.message === 'string' && data.message.trim().length > 0
 }

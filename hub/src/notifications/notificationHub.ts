@@ -1,6 +1,6 @@
 import type { Session, SyncEngine, SyncEvent } from '../sync/syncEngine'
 import type { NotificationChannel, NotificationHubOptions } from './notificationTypes'
-import { extractMessageEventType, isAgentTextMessage, isFailureEventMessage } from './eventParsing'
+import { extractMessageEventType, isFailureEventMessage } from './eventParsing'
 
 export class NotificationHub {
     private readonly channels: NotificationChannel[]
@@ -69,12 +69,6 @@ export class NotificationHub {
                     console.error('[NotificationHub] Failed to send failure notification:', error)
                 })
                 return
-            }
-
-            if (isAgentTextMessage(event)) {
-                this.sendMessageNotification(event.sessionId).catch((error) => {
-                    console.error('[NotificationHub] Failed to send message notification:', error)
-                })
             }
         }
     }
@@ -177,21 +171,6 @@ export class NotificationHub {
                 await channel.sendPermissionRequest(session)
             } catch (error) {
                 console.error('[NotificationHub] Failed to send permission notification:', error)
-            }
-        }
-    }
-
-    private async sendMessageNotification(sessionId: string): Promise<void> {
-        const session = this.getNotifiableSession(sessionId)
-        if (!session) {
-            return
-        }
-
-        for (const channel of this.channels) {
-            try {
-                await channel.sendMessage(session)
-            } catch (error) {
-                console.error('[NotificationHub] Failed to send message notification:', error)
             }
         }
     }

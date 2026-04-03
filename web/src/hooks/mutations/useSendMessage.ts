@@ -9,6 +9,8 @@ import {
     updateMessageStatus,
 } from '@/lib/message-window-store'
 import { usePlatform } from '@/hooks/usePlatform'
+import { playNotificationSound } from '@/lib/readyChime'
+import { getStoredEventSound } from '@/lib/readySound'
 
 type SendMessageInput = {
     sessionId: string
@@ -91,6 +93,10 @@ export function useSendMessage(
     })
 
     const sendMessage = (text: string, attachments?: AttachmentMetadata[]) => {
+        const messageSound = getStoredEventSound('message')
+        if (messageSound !== 'off') {
+            void playNotificationSound(messageSound)
+        }
         if (!api) {
             options?.onBlocked?.('no-api')
             haptic.notification('error')

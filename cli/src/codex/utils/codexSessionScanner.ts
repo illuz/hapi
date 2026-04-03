@@ -1,6 +1,6 @@
 import { BaseSessionScanner, SessionFileScanEntry, SessionFileScanResult, SessionFileScanStats } from "@/modules/common/session/BaseSessionScanner";
 import { logger } from "@/ui/logger";
-import { join, relative, resolve, sep } from "node:path";
+import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { readFile, readdir, stat } from "node:fs/promises";
 import type { CodexSessionEvent } from "./codexEventConverter";
@@ -73,8 +73,6 @@ class CodexSessionScannerImpl extends BaseSessionScanner<CodexSessionEvent> {
     private readonly referenceTimestampMs: number;
     private readonly sessionStartWindowMs: number;
     private readonly matchDeadlineMs: number;
-    private readonly sessionDatePrefixes: Set<string> | null;
-
     private activeSessionId: string | null;
     private reportedSessionId: string | null;
     private matchFailed = false;
@@ -97,10 +95,6 @@ class CodexSessionScannerImpl extends BaseSessionScanner<CodexSessionEvent> {
         this.referenceTimestampMs = opts.startupTimestampMs ?? Date.now();
         this.sessionStartWindowMs = opts.sessionStartWindowMs ?? DEFAULT_SESSION_START_WINDOW_MS;
         this.matchDeadlineMs = this.referenceTimestampMs + this.sessionStartWindowMs;
-        this.sessionDatePrefixes = this.targetCwd
-            ? getSessionDatePrefixes(this.referenceTimestampMs, this.sessionStartWindowMs)
-            : null;
-
         logger.debug(`[CODEX_SESSION_SCANNER] Init: targetCwd=${this.targetCwd ?? 'none'} startupTs=${new Date(this.referenceTimestampMs).toISOString()} windowMs=${this.sessionStartWindowMs}`);
     }
 
@@ -287,9 +281,6 @@ class CodexSessionScannerImpl extends BaseSessionScanner<CodexSessionEvent> {
             const results: string[] = [];
             for (const entry of entries) {
                 const full = join(dir, entry.name);
-                if (!shouldIncludeSessionPath(full, this.sessionsRoot, this.sessionDatePrefixes)) {
-                    continue;
-                }
                 if (entry.isDirectory()) {
                     results.push(...await this.listSessionFiles(full));
                 } else if (entry.isFile() && entry.name.endsWith('.jsonl')) {
@@ -522,56 +513,4 @@ function parseTimestamp(value: unknown): number | null {
 function normalizePath(value: string): string {
     const resolved = resolve(value);
     return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
-}
-
-function getSessionDatePrefixes(referenceTimestampMs: number, windowMs: number): Set<string> {
-    const startDate = new Date(referenceTimestampMs - windowMs);
-    const endDate = new Date(referenceTimestampMs + windowMs);
-    const current = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
-    const last = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
-    const prefixes = new Set<string>();
-
-    while (current <= last) {
-        const year = String(current.getFullYear());
-        const month = String(current.getMonth() + 1).padStart(2, '0');
-        const day = String(current.getDate()).padStart(2, '0');
-        prefixes.add(`${year}/${month}/${day}`);
-        current.setDate(current.getDate() + 1);
-    }
-
-    return prefixes;
-}
-
-function shouldIncludeSessionPath(
-    fullPath: string,
-    sessionsRoot: string,
-    prefixes: Set<string> | null
-): boolean {
-    if (!prefixes) {
-        return true;
-    }
-
-    const relativePath = relative(sessionsRoot, fullPath);
-    if (!relativePath || relativePath.startsWith('..')) {
-        return true;
-    }
-
-    const normalized = relativePath.split(sep).filter(Boolean).join('/');
-    if (!normalized) {
-        return true;
-    }
-
-    for (const prefix of prefixes) {
-        if (normalized === prefix) {
-            return true;
-        }
-        if (normalized.startsWith(`${prefix}/`)) {
-            return true;
-        }
-        if (prefix.startsWith(`${normalized}/`)) {
-            return true;
-        }
-    }
-
-    return false;
 }

@@ -203,6 +203,60 @@ describe('codexSessionScanner', () => {
         expect(events[0].type).toBe('response_item');
     });
 
+    it('adopts a reused older session file from a previous date when fresh matching activity appears after startup', async () => {
+        const reusedSessionId = 'session-reused-previous-date';
+        const targetCwd = '/data/github/happy/hapi';
+        const startupTimestampMs = Date.now();
+        const previousDate = new Date(startupTimestampMs - 24 * 60 * 60 * 1000);
+        const previousDateDir = join(
+            testDir,
+            'sessions',
+            String(previousDate.getFullYear()),
+            String(previousDate.getMonth() + 1).padStart(2, '0'),
+            String(previousDate.getDate()).padStart(2, '0')
+        );
+        sessionFile = join(previousDateDir, `codex-${reusedSessionId}.jsonl`);
+        await mkdir(previousDateDir, { recursive: true });
+
+        await writeFile(
+            sessionFile,
+            JSON.stringify({
+                type: 'session_meta',
+                payload: {
+                    id: reusedSessionId,
+                    cwd: targetCwd,
+                    timestamp: new Date(startupTimestampMs - 48 * 60 * 60 * 1000).toISOString()
+                }
+            }) + '\n'
+        );
+
+        let matchedSessionId: string | null = null;
+        scanner = await createCodexSessionScanner({
+            sessionId: null,
+            cwd: targetCwd,
+            startupTimestampMs,
+            onEvent: (event) => events.push(event),
+            onSessionFound: (sessionId) => {
+                matchedSessionId = sessionId;
+            }
+        });
+
+        await wait(150);
+        expect(events).toHaveLength(0);
+        expect(matchedSessionId).toBeNull();
+
+        const newLine = JSON.stringify({
+            type: 'response_item',
+            payload: { type: 'function_call', name: 'Tool', call_id: 'call-reused-previous-date', arguments: '{}' }
+        });
+        await appendFile(sessionFile, newLine + '\n');
+
+        await wait(2300);
+        expect(matchedSessionId).toBe(reusedSessionId);
+        expect(events).toHaveLength(1);
+        expect(events[0].type).toBe('response_item');
+    });
+
     it('does not adopt a reused session when first fresh matching activity is ambiguous', async () => {
         const targetCwd = '/data/github/happy/hapi';
         const startupTimestampMs = Date.now();

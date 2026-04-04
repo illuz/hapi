@@ -51,12 +51,17 @@ function createSession(overrides?: Partial<Session>): Session {
 
 function createApp(session: Session) {
     const applySessionConfigCalls: Array<[string, Record<string, unknown>]> = []
+    const updateAutoContinueSettingsCalls: Array<[string, Record<string, unknown>]> = []
     const applySessionConfig = async (sessionId: string, config: Record<string, unknown>) => {
         applySessionConfigCalls.push([sessionId, config])
     }
+    const updateAutoContinueSettings = async (sessionId: string, settings: Record<string, unknown>) => {
+        updateAutoContinueSettingsCalls.push([sessionId, settings])
+    }
     const engine = {
         resolveSessionAccess: () => ({ ok: true, sessionId: session.id, session }),
-        applySessionConfig
+        applySessionConfig,
+        updateAutoContinueSettings
     } as Partial<SyncEngine>
 
     const app = new Hono<WebAppEnv>()
@@ -66,7 +71,7 @@ function createApp(session: Session) {
     })
     app.route('/api', createSessionsRoutes(() => engine as SyncEngine))
 
-    return { app, applySessionConfigCalls }
+    return { app, applySessionConfigCalls, updateAutoContinueSettingsCalls }
 }
 
 describe('sessions routes', () => {
@@ -168,6 +173,34 @@ describe('sessions routes', () => {
         expect(await response.json()).toEqual({ ok: true })
         expect(applySessionConfigCalls).toEqual([
             ['session-1', { effort: 'max' }]
+        ])
+    })
+
+    it('updates auto-continue settings', async () => {
+        const { app, updateAutoContinueSettingsCalls } = createApp(createSession())
+
+        const response = await app.request('/api/sessions/session-1/auto-continue', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+                enabled: true,
+                remaining: 5,
+                maxRuns: 10,
+                keywords: ['下一步'],
+                messageText: 'continue'
+            })
+        })
+
+        expect(response.status).toBe(200)
+        expect(await response.json()).toEqual({ ok: true })
+        expect(updateAutoContinueSettingsCalls).toEqual([
+            ['session-1', {
+                enabled: true,
+                remaining: 5,
+                maxRuns: 10,
+                keywords: ['下一步'],
+                messageText: 'continue'
+            }]
         ])
     })
 })

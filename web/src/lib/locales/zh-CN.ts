@@ -68,6 +68,9 @@ export default {
   'session.autoContinueRemaining': '剩余次数',
   'session.autoContinueKeywords': '触发关键词',
   'session.autoContinueKeywordsPlaceholder': '每行一个关键词，例如：\n下一步\n继续',
+  'session.autoContinueMessage': '自动发送内容',
+  'session.autoContinueMessagePlaceholder': 'continue',
+  'session.autoContinueReset': '重置',
   'session.autoContinueErrorCount': '触发次数必须大于等于 1。',
   'session.autoContinueErrorRemaining': '剩余次数必须在 0 到触发次数之间。',
 

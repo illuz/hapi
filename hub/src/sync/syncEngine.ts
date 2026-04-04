@@ -7,6 +7,7 @@
  * - No E2E encryption; data is stored as JSON in SQLite
  */
 
+import type { AutoContinueSettings } from '@hapi/protocol/types'
 import type { CodexCollaborationMode, DecryptedMessage, PermissionMode, Session, SyncEvent } from '@hapi/protocol/types'
 import type { Server } from 'socket.io'
 import type { Store } from '../store'
@@ -15,6 +16,7 @@ import type { SSEManager } from '../sse/sseManager'
 import { EventPublisher, type SyncEventListener } from './eventPublisher'
 import { MachineCache, type Machine } from './machineCache'
 import { MessageService } from './messageService'
+import { AutoContinueService } from './autoContinueService'
 import {
     RpcGateway,
     type RpcCommandResponse,
@@ -47,6 +49,7 @@ export class SyncEngine {
     private readonly sessionCache: SessionCache
     private readonly machineCache: MachineCache
     private readonly messageService: MessageService
+    private readonly autoContinueService: AutoContinueService
     private readonly rpcGateway: RpcGateway
     private inactivityTimer: NodeJS.Timeout | null = null
 
@@ -60,6 +63,13 @@ export class SyncEngine {
         this.sessionCache = new SessionCache(store, this.eventPublisher)
         this.machineCache = new MachineCache(store, this.eventPublisher)
         this.messageService = new MessageService(store, io, this.eventPublisher)
+        this.autoContinueService = new AutoContinueService({
+            store,
+            getSession: (sessionId) => this.getSession(sessionId),
+            switchSession: (sessionId, to) => this.switchSession(sessionId, to),
+            sendMessage: (sessionId, payload) => this.messageService.sendMessage(sessionId, payload),
+            updateSettings: (sessionId, settings) => this.sessionCache.updateAutoContinueSettings(sessionId, settings)
+        })
         this.rpcGateway = new RpcGateway(io, rpcRegistry)
         this.reloadAll()
         this.inactivityTimer = setInterval(() => this.expireInactive(), 5_000)
@@ -191,7 +201,11 @@ export class SyncEngine {
         effort?: string | null
         collaborationMode?: CodexCollaborationMode
     }): void {
+        const prevThinking = this.getSession(payload.sid)?.thinking === true
         this.sessionCache.handleSessionAlive(payload)
+        if (prevThinking && payload.thinking === false) {
+            void this.autoContinueService.maybeHandleCompletion(payload.sid)
+        }
     }
 
     handleSessionEnd(payload: { sid: string; time: number }): void {
@@ -280,6 +294,10 @@ export class SyncEngine {
 
     async renameSession(sessionId: string, name: string): Promise<void> {
         await this.sessionCache.renameSession(sessionId, name)
+    }
+
+    async updateAutoContinueSettings(sessionId: string, settings: AutoContinueSettings): Promise<void> {
+        await this.sessionCache.updateAutoContinueSettings(sessionId, settings)
     }
 
     async deleteSession(sessionId: string): Promise<void> {

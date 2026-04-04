@@ -1,3 +1,4 @@
+export * from './autoContinue'
 export * from './messages'
 export * from './modes'
 export * from './socket'

@@ -1,4 +1,5 @@
 import { getPermissionModesForFlavor, isPermissionModeAllowedForFlavor, toSessionSummary } from '@hapi/protocol'
+import { AutoContinueSettingsSchema, normalizeAutoContinueSettings } from '@hapi/protocol/autoContinue'
 import { CodexCollaborationModeSchema, PermissionModeSchema } from '@hapi/protocol/schemas'
 import { Hono } from 'hono'
 import { z } from 'zod'
@@ -25,6 +26,8 @@ const effortSchema = z.object({
 const renameSessionSchema = z.object({
     name: z.string().min(1).max(255)
 })
+
+const autoContinueSchema = AutoContinueSettingsSchema.transform((value) => normalizeAutoContinueSettings(value))
 
 const uploadSchema = z.object({
     filename: z.string().min(1).max(255),
@@ -387,6 +390,32 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
                 return c.json({ error: message }, 409)
             }
             return c.json({ error: message }, 500)
+        }
+    })
+
+    app.post('/sessions/:id/auto-continue', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) {
+            return engine
+        }
+
+        const sessionResult = requireSessionFromParam(c, engine)
+        if (sessionResult instanceof Response) {
+            return sessionResult
+        }
+
+        const body = await c.req.json().catch(() => null)
+        const parsed = autoContinueSchema.safeParse(body)
+        if (!parsed.success) {
+            return c.json({ error: 'Invalid body' }, 400)
+        }
+
+        try {
+            await engine.updateAutoContinueSettings(sessionResult.sessionId, parsed.data)
+            return c.json({ ok: true })
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Failed to update auto-continue settings'
+            return c.json({ error: message }, 409)
         }
     })
 

@@ -68,6 +68,9 @@ export default {
   'session.autoContinueRemaining': 'Remaining runs',
   'session.autoContinueKeywords': 'Keywords',
   'session.autoContinueKeywordsPlaceholder': 'One keyword per line, for example:\nnext step\ncontinue',
+  'session.autoContinueMessage': 'Auto-send text',
+  'session.autoContinueMessagePlaceholder': 'continue',
+  'session.autoContinueReset': 'Reset',
   'session.autoContinueErrorCount': 'Max runs must be at least 1.',
   'session.autoContinueErrorRemaining': 'Remaining runs must be between 0 and max runs.',
 

@@ -77,10 +77,7 @@ class CodexSessionScannerImpl extends BaseSessionScanner<CodexSessionEvent> {
     private reportedSessionId: string | null;
     private matchFailed = false;
     private bestWithinWindow: Candidate | null = null;
-    private readonly recentActivitySessionIds = new Set<string>();
-    private firstRecentActivityCandidateResolved = false;
-    private readonly firstRecentActivitySessionIds = new Set<string>();
-    private loggedAmbiguousRecentActivity = false;
+    private sawReusedSessionActivity = false;
     private deadlineWarningEmitted = false;
 
     constructor(opts: CodexSessionScannerOptions, targetCwd: string | null) {
@@ -139,7 +136,6 @@ class CodexSessionScannerImpl extends BaseSessionScanner<CodexSessionEvent> {
 
     protected async beforeScan(): Promise<void> {
         this.bestWithinWindow = null;
-        this.recentActivitySessionIds.clear();
     }
 
     protected async findSessionFiles(): Promise<string[]> {
@@ -172,9 +168,8 @@ class CodexSessionScannerImpl extends BaseSessionScanner<CodexSessionEvent> {
                     this.bestWithinWindow = candidate;
                 }
             }
-            const recentActivityCandidate = this.getRecentActivityCandidateForFile(filePath, stats.newCount);
-            if (recentActivityCandidate) {
-                this.recentActivitySessionIds.add(recentActivityCandidate.sessionId);
+            if (stats.newCount > 0 && this.isReusedSessionActivityFile(filePath)) {
+                this.sawReusedSessionActivity = true;
             }
             if (stats.newCount > 0) {
                 logger.debug(`[CODEX_SESSION_SCANNER] Buffered ${stats.newCount} pending events from ${filePath}`);
@@ -194,23 +189,6 @@ class CodexSessionScannerImpl extends BaseSessionScanner<CodexSessionEvent> {
                 logger.debug(`[CODEX_SESSION_SCANNER] Selected session ${this.bestWithinWindow.sessionId} after startup`);
                 this.setActiveSessionId(this.bestWithinWindow.sessionId);
             } else {
-                this.captureFirstRecentActivityCandidate();
-
-                if (this.firstRecentActivitySessionIds.size === 1) {
-                    const [sessionId] = this.firstRecentActivitySessionIds;
-                    if (sessionId) {
-                        logger.debug(`[CODEX_SESSION_SCANNER] Selected session ${sessionId} from first unique matching activity after startup`);
-                        this.setActiveSessionId(sessionId);
-                    }
-                } else if (
-                    !this.loggedAmbiguousRecentActivity
-                    && this.firstRecentActivityCandidateResolved
-                    && this.firstRecentActivitySessionIds.size > 1
-                ) {
-                    this.loggedAmbiguousRecentActivity = true;
-                    logger.debug('[CODEX_SESSION_SCANNER] First matching activity after startup was ambiguous; refusing reused-session adoption');
-                }
-
                 if (!this.activeSessionId) {
                     if (this.pendingEventsByFile.size > 0) {
                         logger.debug('[CODEX_SESSION_SCANNER] No session candidate matched yet; pending events buffered');
@@ -226,8 +204,7 @@ class CodexSessionScannerImpl extends BaseSessionScanner<CodexSessionEvent> {
             return;
         }
 
-        const hasAmbiguousReusedActivity = this.firstRecentActivityCandidateResolved && this.firstRecentActivitySessionIds.size > 1;
-        if (!hasAmbiguousReusedActivity) {
+        if (!this.sawReusedSessionActivity) {
             return;
         }
 
@@ -236,17 +213,6 @@ class CodexSessionScannerImpl extends BaseSessionScanner<CodexSessionEvent> {
         const message = `No Codex session found within ${this.sessionStartWindowMs}ms for cwd ${this.targetCwd}; refusing reused-session fallback, but still watching for a later new session.`;
         logger.warn(`[CODEX_SESSION_SCANNER] ${message}`);
         this.onSessionMatchFailed?.(message);
-    }
-
-    private captureFirstRecentActivityCandidate(): void {
-        if (this.firstRecentActivityCandidateResolved || this.recentActivitySessionIds.size === 0) {
-            return;
-        }
-
-        this.firstRecentActivityCandidateResolved = true;
-        for (const sessionId of this.recentActivitySessionIds) {
-            this.firstRecentActivitySessionIds.add(sessionId);
-        }
     }
 
     private shouldSkipFile(filePath: string): boolean {
@@ -391,25 +357,18 @@ class CodexSessionScannerImpl extends BaseSessionScanner<CodexSessionEvent> {
         };
     }
 
-    private getRecentActivityCandidateForFile(filePath: string, newCount: number): Candidate | null {
-        if (newCount <= 0) {
-            return null;
-        }
-
-        const sessionId = this.sessionIdByFile.get(filePath);
-        if (!sessionId) {
-            return null;
-        }
-
+    private isReusedSessionActivityFile(filePath: string): boolean {
         const fileCwd = this.sessionCwdByFile.get(filePath);
         if (this.targetCwd && fileCwd !== this.targetCwd) {
-            return null;
+            return false;
         }
 
-        return {
-            sessionId,
-            score: 0
-        };
+        const sessionTimestamp = this.sessionTimestampByFile.get(filePath);
+        if (sessionTimestamp === undefined) {
+            return true;
+        }
+
+        return sessionTimestamp < this.referenceTimestampMs;
     }
 
     private getFilesForSession(sessionId: string): string[] {

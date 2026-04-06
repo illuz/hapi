@@ -211,10 +211,11 @@ describe('codexSessionScanner', () => {
         expect(events).toHaveLength(0);
     });
 
-    it('adopts a reused older session file when fresh matching activity appears after startup', async () => {
+    it('does not adopt a reused older session file when fresh matching activity appears after startup', async () => {
         const reusedSessionId = 'session-reused-old-file';
         const targetCwd = '/data/github/happy/hapi';
         const startupTimestampMs = Date.now();
+        const sessionStartWindowMs = 200;
         const now = new Date(startupTimestampMs);
         const currentSessionsDir = join(
             testDir,
@@ -239,13 +240,18 @@ describe('codexSessionScanner', () => {
         );
 
         let matchedSessionId: string | null = null;
+        let failureMessage: string | null = null;
         scanner = await createCodexSessionScanner({
             sessionId: null,
             cwd: targetCwd,
             startupTimestampMs,
+            sessionStartWindowMs,
             onEvent: (event) => events.push(event),
             onSessionFound: (sessionId) => {
                 matchedSessionId = sessionId;
+            },
+            onSessionMatchFailed: (message) => {
+                failureMessage = message;
             }
         });
 
@@ -260,12 +266,12 @@ describe('codexSessionScanner', () => {
         await appendFile(sessionFile, newLine + '\n');
 
         await wait(2300);
-        expect(matchedSessionId).toBe(reusedSessionId);
-        expect(events).toHaveLength(1);
-        expect(events[0].type).toBe('response_item');
+        expect(matchedSessionId).toBeNull();
+        expect(failureMessage).toContain('refusing reused-session fallback');
+        expect(events).toHaveLength(0);
     });
 
-    it('adopts a reused older session file from a previous date when fresh matching activity appears after startup', async () => {
+    it('does not adopt a reused older session file from a previous date when fresh matching activity appears after startup', async () => {
         const reusedSessionId = 'session-reused-previous-date';
         const targetCwd = '/data/github/happy/hapi';
         const startupTimestampMs = Date.now();
@@ -293,6 +299,7 @@ describe('codexSessionScanner', () => {
         );
 
         let matchedSessionId: string | null = null;
+        let failureMessage: string | null = null;
         scanner = await createCodexSessionScanner({
             sessionId: null,
             cwd: targetCwd,
@@ -300,6 +307,9 @@ describe('codexSessionScanner', () => {
             onEvent: (event) => events.push(event),
             onSessionFound: (sessionId) => {
                 matchedSessionId = sessionId;
+            },
+            onSessionMatchFailed: (message) => {
+                failureMessage = message;
             }
         });
 
@@ -314,12 +324,12 @@ describe('codexSessionScanner', () => {
         await appendFile(sessionFile, newLine + '\n');
 
         await wait(2300);
-        expect(matchedSessionId).toBe(reusedSessionId);
-        expect(events).toHaveLength(1);
-        expect(events[0].type).toBe('response_item');
+        expect(matchedSessionId).toBeNull();
+        expect(failureMessage).toBeNull();
+        expect(events).toHaveLength(0);
     });
 
-    it('does not adopt a reused session when first fresh matching activity is ambiguous', async () => {
+    it('does not adopt a reused session even when fresh matching activity is unique', async () => {
         const targetCwd = '/data/github/happy/hapi';
         const startupTimestampMs = Date.now();
         const now = new Date(startupTimestampMs);
@@ -366,21 +376,6 @@ describe('codexSessionScanner', () => {
 
         await wait(150);
         expect(matchedSessionId).toBeNull();
-
-        const firstNewLine = JSON.stringify({
-            type: 'response_item',
-            payload: { type: 'function_call', name: 'Tool', call_id: 'call-reused-a-1', arguments: '{}' }
-        });
-        const secondNewLine = JSON.stringify({
-            type: 'response_item',
-            payload: { type: 'function_call', name: 'Tool', call_id: 'call-reused-b-1', arguments: '{}' }
-        });
-        await appendFile(firstFile, firstNewLine + '\n');
-        await appendFile(secondFile, secondNewLine + '\n');
-
-        await wait(2300);
-        expect(matchedSessionId).toBeNull();
-        expect(events).toHaveLength(0);
 
         const laterUniqueLine = JSON.stringify({
             type: 'response_item',

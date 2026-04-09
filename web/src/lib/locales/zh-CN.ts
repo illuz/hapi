@@ -68,6 +68,10 @@ export default {
   'session.autoContinueRemaining': '剩余次数',
   'session.autoContinueKeywords': '触发关键词',
   'session.autoContinueKeywordsPlaceholder': '每行一个关键词，例如：\n下一步\n继续',
+  'session.autoContinuePrompt': 'Continue 发送内容',
+  'session.autoContinuePromptPlaceholder': '自动继续或手动点继续时发送的内容',
+  'session.continueBadgeManual': '手动 Continue · 第 {n} 轮',
+  'session.continueBadgeAuto': '自动 Continue · 第 {n} 轮',
   'session.autoContinueErrorCount': '触发次数必须大于等于 1。',
   'session.autoContinueErrorRemaining': '剩余次数必须在 0 到触发次数之间。',
 
@@ -101,6 +105,7 @@ export default {
 
   // Common buttons
   'button.cancel': '取消',
+  'button.reset': '重置',
   'button.save': '保存',
   'button.confirm': '确认',
   'button.close': '关闭',

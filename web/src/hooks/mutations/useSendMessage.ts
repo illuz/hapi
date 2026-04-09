@@ -20,6 +20,10 @@ type SendMessageInput = {
     attachments?: AttachmentMetadata[]
 }
 
+type SendMessageOptions = {
+    localId?: string
+}
+
 type BlockedReason = 'no-api' | 'no-session' | 'pending'
 
 type UseSendMessageOptions = {
@@ -47,7 +51,7 @@ export function useSendMessage(
     sessionId: string | null,
     options?: UseSendMessageOptions
 ): {
-    sendMessage: (text: string, attachments?: AttachmentMetadata[]) => void
+    sendMessage: (text: string, attachments?: AttachmentMetadata[], options?: SendMessageOptions) => string | null
     retryMessage: (localId: string) => void
     isSending: boolean
 } {
@@ -92,7 +96,7 @@ export function useSendMessage(
         },
     })
 
-    const sendMessage = (text: string, attachments?: AttachmentMetadata[]) => {
+    const sendMessage = (text: string, attachments?: AttachmentMetadata[], optionsArg?: SendMessageOptions) => {
         const messageSound = getStoredEventSound('message')
         if (messageSound !== 'off') {
             void playNotificationSound(messageSound)
@@ -100,18 +104,18 @@ export function useSendMessage(
         if (!api) {
             options?.onBlocked?.('no-api')
             haptic.notification('error')
-            return
+            return null
         }
         if (!sessionId) {
             options?.onBlocked?.('no-session')
             haptic.notification('error')
-            return
+            return null
         }
         if (mutation.isPending || resolveGuardRef.current) {
             options?.onBlocked?.('pending')
-            return
+            return null
         }
-        const localId = makeClientSideId('local')
+        const localId = optionsArg?.localId ?? makeClientSideId('local')
         const createdAt = Date.now()
         void (async () => {
             let targetSessionId = sessionId
@@ -141,6 +145,7 @@ export function useSendMessage(
                 attachments,
             })
         })()
+        return localId
     }
 
     const retryMessage = (localId: string) => {

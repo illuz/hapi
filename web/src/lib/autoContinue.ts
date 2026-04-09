@@ -1,18 +1,26 @@
 import type { ChatBlock } from '@/chat/types'
 
-export const AUTO_CONTINUE_DEFAULT_REMAINING = 20
+export const AUTO_CONTINUE_DEFAULT_REMAINING = 80
 export const AUTO_CONTINUE_LINE_LIMIT = 10
 export const AUTO_CONTINUE_DEFAULT_KEYWORDS = ['下一步', '下一个步骤', 'next step', 'what next']
+export const AUTO_CONTINUE_DEFAULT_PROMPT = 'continue'
 
 export type AutoContinueState = {
     enabled: boolean
     remaining: number
     maxRuns: number
     keywords: string[]
+    prompt: string
 }
 
-function getStorageKey(sessionId: string): string {
+type AutoContinueSharedSettings = Pick<AutoContinueState, 'keywords' | 'prompt'>
+
+function getSessionStorageKey(sessionId: string): string {
     return `hapi:auto-continue:${sessionId}`
+}
+
+function getSharedStorageKey(): string {
+    return 'hapi:auto-continue:shared'
 }
 
 function clampCount(value: unknown): number {
@@ -29,6 +37,15 @@ function clampRemaining(value: unknown, fallback: number): number {
     return Math.max(0, Math.floor(value))
 }
 
+export function normalizeAutoContinuePrompt(value: unknown): string {
+    if (typeof value !== 'string') {
+        return AUTO_CONTINUE_DEFAULT_PROMPT
+    }
+
+    const normalized = value.trim()
+    return normalized.length > 0 ? normalized : AUTO_CONTINUE_DEFAULT_PROMPT
+}
+
 export function normalizeAutoContinueKeywords(value: unknown): string[] {
     if (!Array.isArray(value)) {
         return [...AUTO_CONTINUE_DEFAULT_KEYWORDS]
@@ -42,42 +59,71 @@ export function normalizeAutoContinueKeywords(value: unknown): string[] {
     return normalized.length > 0 ? normalized : [...AUTO_CONTINUE_DEFAULT_KEYWORDS]
 }
 
-export function loadAutoContinueState(sessionId: string): AutoContinueState {
+function getDefaultAutoContinueState(): AutoContinueState {
+    return {
+        enabled: false,
+        remaining: AUTO_CONTINUE_DEFAULT_REMAINING,
+        maxRuns: AUTO_CONTINUE_DEFAULT_REMAINING,
+        keywords: [...AUTO_CONTINUE_DEFAULT_KEYWORDS],
+        prompt: AUTO_CONTINUE_DEFAULT_PROMPT
+    }
+}
+
+function loadAutoContinueSharedSettings(): AutoContinueSharedSettings {
     if (typeof window === 'undefined') {
         return {
-            enabled: false,
-            remaining: AUTO_CONTINUE_DEFAULT_REMAINING,
-            maxRuns: AUTO_CONTINUE_DEFAULT_REMAINING,
-            keywords: [...AUTO_CONTINUE_DEFAULT_KEYWORDS]
+            keywords: [...AUTO_CONTINUE_DEFAULT_KEYWORDS],
+            prompt: AUTO_CONTINUE_DEFAULT_PROMPT
         }
     }
 
     try {
-        const raw = window.localStorage.getItem(getStorageKey(sessionId))
+        const raw = window.localStorage.getItem(getSharedStorageKey())
         if (!raw) {
             return {
-                enabled: false,
-                remaining: AUTO_CONTINUE_DEFAULT_REMAINING,
-                maxRuns: AUTO_CONTINUE_DEFAULT_REMAINING,
-                keywords: [...AUTO_CONTINUE_DEFAULT_KEYWORDS]
+                keywords: [...AUTO_CONTINUE_DEFAULT_KEYWORDS],
+                prompt: AUTO_CONTINUE_DEFAULT_PROMPT
             }
         }
 
-        const parsed = JSON.parse(raw) as Partial<AutoContinueState>
+        const parsed = JSON.parse(raw) as Partial<AutoContinueSharedSettings>
+        return {
+            keywords: normalizeAutoContinueKeywords(parsed.keywords),
+            prompt: normalizeAutoContinuePrompt(parsed.prompt)
+        }
+    } catch {
+        return {
+            keywords: [...AUTO_CONTINUE_DEFAULT_KEYWORDS],
+            prompt: AUTO_CONTINUE_DEFAULT_PROMPT
+        }
+    }
+}
+
+export function loadAutoContinueState(sessionId: string): AutoContinueState {
+    const defaults = getDefaultAutoContinueState()
+    const sharedSettings = loadAutoContinueSharedSettings()
+
+    if (typeof window === 'undefined') {
+        return { ...defaults, ...sharedSettings }
+    }
+
+    try {
+        const raw = window.localStorage.getItem(getSessionStorageKey(sessionId))
+        if (!raw) {
+            return { ...defaults, ...sharedSettings }
+        }
+
+        const parsed = JSON.parse(raw) as Partial<Pick<AutoContinueState, 'enabled' | 'remaining' | 'maxRuns'>>
         const maxRuns = clampCount(parsed.maxRuns)
         return {
             enabled: parsed.enabled === true,
             remaining: clampRemaining(parsed.remaining, maxRuns),
             maxRuns,
-            keywords: normalizeAutoContinueKeywords(parsed.keywords)
+            keywords: sharedSettings.keywords,
+            prompt: sharedSettings.prompt
         }
     } catch {
-        return {
-            enabled: false,
-            remaining: AUTO_CONTINUE_DEFAULT_REMAINING,
-            maxRuns: AUTO_CONTINUE_DEFAULT_REMAINING,
-            keywords: [...AUTO_CONTINUE_DEFAULT_KEYWORDS]
-        }
+        return { ...defaults, ...sharedSettings }
     }
 }
 
@@ -87,11 +133,14 @@ export function saveAutoContinueState(sessionId: string, state: AutoContinueStat
     const maxRuns = clampCount(state.maxRuns)
 
     try {
-        window.localStorage.setItem(getStorageKey(sessionId), JSON.stringify({
+        window.localStorage.setItem(getSessionStorageKey(sessionId), JSON.stringify({
             enabled: state.enabled,
             remaining: clampRemaining(state.remaining, maxRuns),
-            maxRuns,
-            keywords: normalizeAutoContinueKeywords(state.keywords)
+            maxRuns
+        }))
+        window.localStorage.setItem(getSharedStorageKey(), JSON.stringify({
+            keywords: normalizeAutoContinueKeywords(state.keywords),
+            prompt: normalizeAutoContinuePrompt(state.prompt)
         }))
     } catch {
     }

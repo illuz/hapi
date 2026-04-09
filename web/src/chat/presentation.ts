@@ -5,6 +5,31 @@ function normalizeTimestamp(value: number): Date {
     return new Date(ms)
 }
 
+export function formatMessageTimestamp(value: number | Date): string {
+    const date = value instanceof Date ? value : normalizeTimestamp(value)
+    if (Number.isNaN(date.getTime())) return typeof value === 'number' ? String(value) : ''
+
+    const now = new Date()
+    const isToday = date.getFullYear() === now.getFullYear()
+        && date.getMonth() === now.getMonth()
+        && date.getDate() === now.getDate()
+
+    if (isToday) {
+        return date.toLocaleTimeString(undefined, {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        })
+    }
+
+    return date.toLocaleString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    })
+}
+
 export function formatUnixTimestamp(value: number): string {
     const date = normalizeTimestamp(value)
     if (Number.isNaN(date.getTime())) return String(value)

@@ -2,10 +2,12 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import type { ChatBlock } from '@/chat/types'
 import {
     AUTO_CONTINUE_DEFAULT_KEYWORDS,
+    AUTO_CONTINUE_DEFAULT_PROMPT,
     AUTO_CONTINUE_DEFAULT_REMAINING,
     getLastAssistantLines,
     loadAutoContinueState,
     normalizeAutoContinueKeywords,
+    normalizeAutoContinuePrompt,
     saveAutoContinueState,
     shouldAutoContinue
 } from './autoContinue'
@@ -20,29 +22,52 @@ describe('autoContinue', () => {
             enabled: false,
             remaining: AUTO_CONTINUE_DEFAULT_REMAINING,
             maxRuns: AUTO_CONTINUE_DEFAULT_REMAINING,
-            keywords: AUTO_CONTINUE_DEFAULT_KEYWORDS
+            keywords: AUTO_CONTINUE_DEFAULT_KEYWORDS,
+            prompt: AUTO_CONTINUE_DEFAULT_PROMPT
         })
     })
 
-    it('persists enabled state, count, and keywords', () => {
+    it('persists enabled state, count, keywords, and prompt', () => {
         saveAutoContinueState('session-1', {
             enabled: true,
             remaining: 17,
             maxRuns: 30,
-            keywords: ['下一步', '继续']
+            keywords: ['下一步', '继续'],
+            prompt: 'go on'
         })
 
         expect(loadAutoContinueState('session-1')).toEqual({
             enabled: true,
             remaining: 17,
             maxRuns: 30,
-            keywords: ['下一步', '继续']
+            keywords: ['下一步', '继续'],
+            prompt: 'go on'
         })
     })
 
     it('normalizes invalid keywords back to defaults', () => {
         expect(normalizeAutoContinueKeywords(['', ' 下一步 ', '下一步', 123])).toEqual(['下一步'])
         expect(normalizeAutoContinueKeywords(null)).toEqual(AUTO_CONTINUE_DEFAULT_KEYWORDS)
+        expect(normalizeAutoContinuePrompt('  keep going  ')).toBe('keep going')
+        expect(normalizeAutoContinuePrompt('   ')).toBe(AUTO_CONTINUE_DEFAULT_PROMPT)
+    })
+
+    it('shares keywords and prompt across sessions in the browser', () => {
+        saveAutoContinueState('session-1', {
+            enabled: true,
+            remaining: 5,
+            maxRuns: 9,
+            keywords: ['shared keyword'],
+            prompt: 'shared prompt'
+        })
+
+        expect(loadAutoContinueState('session-2')).toEqual({
+            enabled: false,
+            remaining: AUTO_CONTINUE_DEFAULT_REMAINING,
+            maxRuns: AUTO_CONTINUE_DEFAULT_REMAINING,
+            keywords: ['shared keyword'],
+            prompt: 'shared prompt'
+        })
     })
 
     it('only scans the latest assistant segment after the last user message', () => {

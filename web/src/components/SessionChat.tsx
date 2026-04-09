@@ -30,9 +30,11 @@ import { useSessionActions } from '@/hooks/mutations/useSessionActions'
 import { useVoiceOptional } from '@/lib/voice-context'
 import { RealtimeVoiceSession, registerSessionStore, registerVoiceHooksStore, voiceHooks } from '@/realtime'
 import { isRemoteTerminalSupported } from '@/utils/terminalSupport'
+import { allocateContinueRoundWithSource } from '@/lib/continueRounds'
 import {
     AUTO_CONTINUE_DEFAULT_REMAINING,
     AUTO_CONTINUE_DEFAULT_KEYWORDS,
+    AUTO_CONTINUE_DEFAULT_PROMPT,
     getLastAssistantLines,
     loadAutoContinueState,
     saveAutoContinueState,
@@ -53,7 +55,7 @@ export function SessionChat(props: {
     onBack: () => void
     onRefresh: () => void
     onLoadMore: () => Promise<unknown>
-    onSend: (text: string, attachments?: AttachmentMetadata[]) => void
+    onSend: (text: string, attachments?: AttachmentMetadata[], options?: { localId?: string }) => string | null
     onFlushPending: () => void
     onAtBottomChange: (atBottom: boolean) => void
     onRetryMessage?: (localId: string) => void
@@ -73,6 +75,7 @@ export function SessionChat(props: {
     const [autoContinueRemaining, setAutoContinueRemaining] = useState(AUTO_CONTINUE_DEFAULT_REMAINING)
     const [autoContinueMaxRuns, setAutoContinueMaxRuns] = useState(AUTO_CONTINUE_DEFAULT_REMAINING)
     const [autoContinueKeywords, setAutoContinueKeywords] = useState<string[]>(AUTO_CONTINUE_DEFAULT_KEYWORDS)
+    const [autoContinuePrompt, setAutoContinuePrompt] = useState(AUTO_CONTINUE_DEFAULT_PROMPT)
     const [autoContinueDialogOpen, setAutoContinueDialogOpen] = useState(false)
     const agentFlavor = props.session.metadata?.flavor ?? null
     const controlledByUser = props.session.agentState?.controlledByUser === true
@@ -93,7 +96,9 @@ export function SessionChat(props: {
     useEffect(() => {
         registerSessionStore({
             getSession: () => props.session as { agentState?: { requests?: Record<string, unknown> } } | null,
-            sendMessage: (_sessionId: string, message: string) => props.onSend(message),
+            sendMessage: (_sessionId: string, message: string) => {
+                props.onSend(message)
+            },
             approvePermission: async (_sessionId: string, requestId: string) => {
                 await props.api.approvePermission(props.session.id, requestId)
                 props.onRefresh()
@@ -190,6 +195,7 @@ export function SessionChat(props: {
         setAutoContinueRemaining(state.remaining)
         setAutoContinueMaxRuns(state.maxRuns)
         setAutoContinueKeywords(state.keywords)
+        setAutoContinuePrompt(state.prompt)
         lastAutoContinueKeyRef.current = null
     }, [props.session.id])
 
@@ -202,9 +208,10 @@ export function SessionChat(props: {
             enabled: autoContinueEnabled,
             remaining: autoContinueRemaining,
             maxRuns: autoContinueMaxRuns,
-            keywords: autoContinueKeywords
+            keywords: autoContinueKeywords,
+            prompt: autoContinuePrompt
         })
-    }, [props.session.id, autoContinueEnabled, autoContinueRemaining, autoContinueMaxRuns, autoContinueKeywords])
+    }, [props.session.id, autoContinueEnabled, autoContinueRemaining, autoContinueMaxRuns, autoContinueKeywords, autoContinuePrompt])
 
     useEffect(() => {
         if (autoContinueEnabled && autoContinueRemaining <= 0) {
@@ -341,17 +348,22 @@ export function SessionChat(props: {
                     sessionId: props.session.id,
                     url: `/sessions/${props.session.id}`
                 })
-                return
+                return null
             }
         }
 
-        props.onSend(text, attachments)
+        const localId = props.onSend(text, attachments)
         setForceScrollToken((token) => token + 1)
+        return localId
     }, [agentFlavor, props.availableSlashCommands, props.onSend, props.session.id, addToast, haptic, t])
 
-    const handleSendContinue = useCallback(() => {
-        handleSend('continue')
-    }, [handleSend])
+    const handleSendContinue = useCallback((source: 'manual' | 'auto' = 'manual') => {
+        const localId = handleSend(autoContinuePrompt)
+        if (localId) {
+            allocateContinueRoundWithSource(props.session.id, localId, source)
+        }
+        return localId
+    }, [autoContinuePrompt, handleSend, props.session.id])
 
     const handleAutoContinueToggle = useCallback(() => {
         setAutoContinueEnabled((current) => {
@@ -370,10 +382,12 @@ export function SessionChat(props: {
         maxRuns: number
         remaining: number
         keywords: string[]
+        prompt: string
     }) => {
         setAutoContinueMaxRuns(settings.maxRuns)
         setAutoContinueRemaining(settings.remaining)
         setAutoContinueKeywords(settings.keywords)
+        setAutoContinuePrompt(settings.prompt)
     }, [])
 
     const handleSendCommit = useCallback(() => {
@@ -423,7 +437,7 @@ export function SessionChat(props: {
                 if (controlledByUser) {
                     await handleSwitchToRemote()
                 }
-                handleSendContinue()
+                handleSendContinue('auto')
             } catch (error) {
                 console.error('Auto continue failed:', error)
             }
@@ -576,6 +590,7 @@ export function SessionChat(props: {
                 initialMaxRuns={autoContinueMaxRuns}
                 initialRemaining={autoContinueRemaining}
                 initialKeywords={autoContinueKeywords}
+                initialPrompt={autoContinuePrompt}
                 onSave={handleAutoContinueSettingsSave}
             />
 

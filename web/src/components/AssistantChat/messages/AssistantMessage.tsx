@@ -2,6 +2,7 @@ import { MessagePrimitive, useAssistantState } from '@assistant-ui/react'
 import { MarkdownText } from '@/components/assistant-ui/markdown-text'
 import { Reasoning, ReasoningGroup } from '@/components/assistant-ui/reasoning'
 import { HappyToolMessage } from '@/components/AssistantChat/messages/ToolMessage'
+import { MessageTimestamp } from '@/components/AssistantChat/messages/MessageTimestamp'
 import { CliOutputBlock } from '@/components/CliOutputBlock'
 import type { HappyChatMessageMetadata } from '@/lib/assistant-runtime'
 
@@ -31,21 +32,28 @@ export function HappyAssistantMessage() {
         const parts = message.content
         return parts.length > 0 && parts.every((part) => part.type === 'tool-call')
     })
+    const createdAt = useAssistantState(({ message }) => message.createdAt ?? null)
     const rootClass = toolOnly
         ? 'py-1 min-w-0 max-w-full overflow-x-hidden'
         : 'px-1 min-w-0 max-w-full overflow-x-hidden'
 
     if (isCliOutput) {
         return (
-            <MessagePrimitive.Root className="px-1 min-w-0 max-w-full overflow-x-hidden">
+            <MessagePrimitive.Root className="flex min-w-0 max-w-full flex-col gap-1 overflow-x-hidden px-1">
                 <CliOutputBlock text={cliText} />
+                <MessageTimestamp createdAt={createdAt} />
             </MessagePrimitive.Root>
         )
     }
 
     return (
-        <MessagePrimitive.Root className={rootClass}>
-            <MessagePrimitive.Content components={MESSAGE_PART_COMPONENTS} />
+        <MessagePrimitive.Root className="flex min-w-0 max-w-full flex-col gap-1 overflow-x-hidden">
+            <div className={rootClass}>
+                <MessagePrimitive.Content components={MESSAGE_PART_COMPONENTS} />
+            </div>
+            <div className="px-1">
+                <MessageTimestamp createdAt={createdAt} />
+            </div>
         </MessagePrimitive.Root>
     )
 }

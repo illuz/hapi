@@ -68,6 +68,10 @@ export default {
   'session.autoContinueRemaining': 'Remaining runs',
   'session.autoContinueKeywords': 'Keywords',
   'session.autoContinueKeywordsPlaceholder': 'One keyword per line, for example:\nnext step\ncontinue',
+  'session.autoContinuePrompt': 'Continue message',
+  'session.autoContinuePromptPlaceholder': 'Message to send when continuing automatically or manually',
+  'session.continueBadgeManual': 'Manual Continue · #{n}',
+  'session.continueBadgeAuto': 'Auto Continue · #{n}',
   'session.autoContinueErrorCount': 'Max runs must be at least 1.',
   'session.autoContinueErrorRemaining': 'Remaining runs must be between 0 and max runs.',
 
@@ -99,6 +103,7 @@ export default {
 
   // Common buttons
   'button.cancel': 'Cancel',
+  'button.reset': 'Reset',
   'button.save': 'Save',
   'button.confirm': 'Confirm',
   'button.close': 'Close',

@@ -138,4 +138,9 @@ describe('autoContinue', () => {
 
         expect(shouldAutoContinue(getLastAssistantLines(blocks), ['下一步'])).toBe(true)
     })
+
+    it('matches newly added default trigger keywords', () => {
+        expect(shouldAutoContinue(['建议下一轮继续验证结果'])).toBe(true)
+        expect(shouldAutoContinue(['continue with the cleanup'])).toBe(true)
+    })
 })

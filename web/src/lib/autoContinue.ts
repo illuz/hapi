@@ -2,7 +2,7 @@ import type { ChatBlock } from '@/chat/types'
 
 export const AUTO_CONTINUE_DEFAULT_REMAINING = 80
 export const AUTO_CONTINUE_LINE_LIMIT = 10
-export const AUTO_CONTINUE_DEFAULT_KEYWORDS = ['下一步', '下一个步骤', 'next step', 'what next']
+export const AUTO_CONTINUE_DEFAULT_KEYWORDS = ['下一步', '下一个步骤', '下一轮', '继续', 'continue', 'next step', 'what next']
 export const AUTO_CONTINUE_DEFAULT_PROMPT = 'continue'
 
 export type AutoContinueState = {

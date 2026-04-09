@@ -72,7 +72,7 @@ export default {
   'session.autoContinueMaxRuns': 'Max runs',
   'session.autoContinueRemaining': 'Remaining runs',
   'session.autoContinueKeywords': 'Keywords',
-  'session.autoContinueKeywordsPlaceholder': 'One keyword per line, for example:\nnext step\ncontinue',
+  'session.autoContinueKeywordsPlaceholder': 'One keyword per line, for example:\nnext round\ncontinue',
   'session.autoContinuePrompt': 'Continue message',
   'session.autoContinuePromptPlaceholder': 'Message to send when continuing automatically or manually',
   'session.continueBadgeManual': 'Manual Continue · #{n}',

@@ -72,7 +72,7 @@ export default {
   'session.autoContinueMaxRuns': '触发次数',
   'session.autoContinueRemaining': '剩余次数',
   'session.autoContinueKeywords': '触发关键词',
-  'session.autoContinueKeywordsPlaceholder': '每行一个关键词，例如：\n下一步\n继续',
+  'session.autoContinueKeywordsPlaceholder': '每行一个关键词，例如：\n下一轮\n继续\ncontinue',
   'session.autoContinuePrompt': 'Continue 发送内容',
   'session.autoContinuePromptPlaceholder': '自动继续或手动点继续时发送的内容',
   'session.continueBadgeManual': '手动 Continue · 第 {n} 轮',

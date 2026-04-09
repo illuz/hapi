@@ -7,6 +7,11 @@ export default {
   'loading.files': 'Loading files…',
   'loading.messages': 'Loading messages…',
   'loading.machines': 'Loading machines…',
+  'session.unavailable.title': 'Session unavailable',
+  'session.unavailable.notFound': 'This session was removed. Return to the session list to continue.',
+  'session.unavailable.generic': 'This session could not be loaded right now.',
+  'session.unavailable.back': 'Back to sessions',
+  'session.unavailable.retry': 'Retry',
 
   // Login / Auth
   'login.title': 'HAPI',

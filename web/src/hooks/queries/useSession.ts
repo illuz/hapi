@@ -1,11 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
-import type { ApiClient } from '@/api/client'
+import { ApiError, type ApiClient } from '@/api/client'
 import type { Session } from '@/types/api'
 import { queryKeys } from '@/lib/query-keys'
 
 export function useSession(api: ApiClient | null, sessionId: string | null): {
     session: Session | null
     isLoading: boolean
+    isNotFound: boolean
     error: string | null
     refetch: () => Promise<unknown>
 } {
@@ -24,6 +25,7 @@ export function useSession(api: ApiClient | null, sessionId: string | null): {
     return {
         session: query.data?.session ?? null,
         isLoading: query.isLoading,
+        isNotFound: query.error instanceof ApiError && query.error.status === 404,
         error: query.error instanceof Error ? query.error.message : query.error ? 'Failed to load session' : null,
         refetch: query.refetch,
     }

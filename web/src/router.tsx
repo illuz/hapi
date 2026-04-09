@@ -13,6 +13,7 @@ import {
 } from '@tanstack/react-router'
 import { App } from '@/App'
 import { SessionChat } from '@/components/SessionChat'
+import { SessionUnavailableState } from '@/components/SessionUnavailableState'
 import { SessionList } from '@/components/SessionList'
 import { NewSession } from '@/components/NewSession'
 import { LoadingState } from '@/components/LoadingState'
@@ -334,6 +335,9 @@ function SessionPage() {
     const { sessionId } = useParams({ from: '/sessions/$sessionId' })
     const {
         session,
+        isLoading: sessionLoading,
+        isNotFound: sessionNotFound,
+        error: sessionError,
         refetch: refetchSession,
     } = useSession(api, sessionId)
     const {
@@ -434,10 +438,21 @@ function SessionPage() {
     }, [refetchMessages, refetchSession])
 
     if (!session) {
+        if (sessionLoading) {
+            return (
+                <div className="flex-1 flex items-center justify-center p-4">
+                    <LoadingState label={t('loading.session')} className="text-sm" />
+                </div>
+            )
+        }
+
         return (
-            <div className="flex-1 flex items-center justify-center p-4">
-                <LoadingState label="Loading session…" className="text-sm" />
-            </div>
+            <SessionUnavailableState
+                error={sessionError}
+                isNotFound={sessionNotFound}
+                onBack={goBack}
+                onRetry={refreshSelectedSession}
+            />
         )
     }
 

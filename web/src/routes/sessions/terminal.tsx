@@ -10,6 +10,7 @@ import { useLongPress } from '@/hooks/useLongPress'
 import { useTranslation } from '@/lib/use-translation'
 import { TerminalView } from '@/components/Terminal/TerminalView'
 import { LoadingState } from '@/components/LoadingState'
+import { SessionUnavailableState } from '@/components/SessionUnavailableState'
 import { Button } from '@/components/ui/button'
 import { isRemoteTerminalSupported } from '@/utils/terminalSupport'
 import {
@@ -184,7 +185,13 @@ export default function TerminalPage() {
     const { sessionId } = useParams({ from: '/sessions/$sessionId/terminal' })
     const { api, token, baseUrl } = useAppContext()
     const goBack = useAppGoBack()
-    const { session } = useSession(api, sessionId)
+    const {
+        session,
+        isLoading: sessionLoading,
+        isNotFound: sessionNotFound,
+        error: sessionError,
+        refetch: refetchSession,
+    } = useSession(api, sessionId)
     const terminalSupported = isRemoteTerminalSupported(session?.metadata)
     const terminalId = useMemo(() => {
         if (typeof crypto?.randomUUID === 'function') {
@@ -393,10 +400,23 @@ export default function TerminalPage() {
     )
 
     if (!session) {
+        if (sessionLoading) {
+            return (
+                <div className="flex h-full items-center justify-center">
+                    <LoadingState label={t('loading.session')} className="text-sm" />
+                </div>
+            )
+        }
+
         return (
-            <div className="flex h-full items-center justify-center">
-                <LoadingState label="Loading session…" className="text-sm" />
-            </div>
+            <SessionUnavailableState
+                error={sessionError}
+                isNotFound={sessionNotFound}
+                onBack={goBack}
+                onRetry={() => {
+                    void refetchSession()
+                }}
+            />
         )
     }
 

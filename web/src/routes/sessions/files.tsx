@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import type { FileSearchItem, GitFileStatus } from '@/types/api'
 import { FileIcon } from '@/components/FileIcon'
+import { SessionUnavailableState } from '@/components/SessionUnavailableState'
 import { DirectoryTree } from '@/components/SessionFiles/DirectoryTree'
 import { useAppContext } from '@/lib/app-context'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
@@ -11,6 +12,8 @@ import { useSessionFileSearch } from '@/hooks/queries/useSessionFileSearch'
 import { encodeBase64 } from '@/lib/utils'
 import { queryKeys } from '@/lib/query-keys'
 import { useQueryClient } from '@tanstack/react-query'
+import { LoadingState } from '@/components/LoadingState'
+import { useTranslation } from '@/lib/use-translation'
 
 function BackIcon(props: { className?: string }) {
     return (
@@ -229,12 +232,19 @@ function FileListSkeleton(props: { label: string; rows?: number }) {
 
 export default function FilesPage() {
     const { api } = useAppContext()
+    const { t } = useTranslation()
     const navigate = useNavigate()
     const queryClient = useQueryClient()
     const goBack = useAppGoBack()
     const { sessionId } = useParams({ from: '/sessions/$sessionId/files' })
     const search = useSearch({ from: '/sessions/$sessionId/files' })
-    const { session } = useSession(api, sessionId)
+    const {
+        session,
+        isLoading: sessionLoading,
+        isNotFound: sessionNotFound,
+        error: sessionError,
+        refetch: refetchSession,
+    } = useSession(api, sessionId)
     const [searchQuery, setSearchQuery] = useState('')
 
     const initialTab = search.tab === 'directories' ? 'directories' : 'changes'
@@ -304,6 +314,27 @@ export default function FilesPage() {
             replace: true,
         })
     }, [navigate, sessionId])
+
+    if (!session) {
+        if (sessionLoading) {
+            return (
+                <div className="flex h-full items-center justify-center">
+                    <LoadingState label={t('loading.session')} className="text-sm" />
+                </div>
+            )
+        }
+
+        return (
+            <SessionUnavailableState
+                error={sessionError}
+                isNotFound={sessionNotFound}
+                onBack={goBack}
+                onRetry={() => {
+                    void refetchSession()
+                }}
+            />
+        )
+    }
 
     return (
         <div className="flex h-full min-h-0 flex-col">

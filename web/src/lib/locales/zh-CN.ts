@@ -7,6 +7,11 @@ export default {
   'loading.files': '加载文件…',
   'loading.messages': '加载消息…',
   'loading.machines': '加载机器…',
+  'session.unavailable.title': '会话不可用',
+  'session.unavailable.notFound': '这个会话已经被删除了。请返回会话列表继续。',
+  'session.unavailable.generic': '当前无法加载这个会话。',
+  'session.unavailable.back': '返回会话列表',
+  'session.unavailable.retry': '重试',
 
   // Login / Auth
   'login.title': 'HAPI',

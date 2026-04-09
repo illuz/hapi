@@ -4,6 +4,8 @@ import { I18nProvider } from '@/lib/i18n-context'
 import TerminalPage from './terminal'
 
 const writeMock = vi.fn()
+const goBackMock = vi.fn()
+const useSessionMock = vi.fn()
 
 vi.mock('@tanstack/react-router', () => ({
     useParams: () => ({ sessionId: 'session-1' })
@@ -18,17 +20,11 @@ vi.mock('@/lib/app-context', () => ({
 }))
 
 vi.mock('@/hooks/useAppGoBack', () => ({
-    useAppGoBack: () => vi.fn()
+    useAppGoBack: () => goBackMock
 }))
 
 vi.mock('@/hooks/queries/useSession', () => ({
-    useSession: () => ({
-        session: {
-            id: 'session-1',
-            active: true,
-            metadata: { path: '/tmp/project' }
-        }
-    })
+    useSession: () => useSessionMock()
 }))
 
 vi.mock('@/hooks/useTerminalSocket', () => ({
@@ -64,6 +60,17 @@ function renderWithProviders() {
 describe('TerminalPage paste behavior', () => {
     beforeEach(() => {
         vi.clearAllMocks()
+        useSessionMock.mockReturnValue({
+            session: {
+                id: 'session-1',
+                active: true,
+                metadata: { path: '/tmp/project' }
+            },
+            isLoading: false,
+            isNotFound: false,
+            error: null,
+            refetch: vi.fn()
+        })
     })
 
     it('does not open manual paste dialog when clipboard text is empty', async () => {
@@ -96,5 +103,23 @@ describe('TerminalPage paste behavior', () => {
         fireEvent.click(screen.getAllByRole('button', { name: 'Paste' })[0])
 
         expect(await screen.findByText('Paste input')).toBeInTheDocument()
+    })
+
+    it('shows a recovery state when the session no longer exists', () => {
+        useSessionMock.mockReturnValue({
+            session: null,
+            isLoading: false,
+            isNotFound: true,
+            error: 'HTTP 404 Not Found: {"error":"Session not found"}',
+            refetch: vi.fn()
+        })
+
+        renderWithProviders()
+
+        expect(screen.getByText('Session unavailable')).toBeInTheDocument()
+        expect(screen.getByText('This session was removed. Return to the session list to continue.')).toBeInTheDocument()
+
+        fireEvent.click(screen.getByRole('button', { name: 'Back to sessions' }))
+        expect(goBackMock).toHaveBeenCalledTimes(1)
     })
 })

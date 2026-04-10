@@ -15,7 +15,7 @@ import type { Suggestion } from '@/hooks/useActiveSuggestions'
 import { normalizeDecryptedMessage } from '@/chat/normalize'
 import { reduceChatBlocks } from '@/chat/reducer'
 import { reconcileChatBlocks } from '@/chat/reconcile'
-import { HappyComposer } from '@/components/AssistantChat/HappyComposer'
+import { HappyComposer, type QuickPromptAction } from '@/components/AssistantChat/HappyComposer'
 import { HappyThread } from '@/components/AssistantChat/HappyThread'
 import { useHappyRuntime } from '@/lib/assistant-runtime'
 import { createAttachmentAdapter } from '@/lib/attachmentAdapter'
@@ -390,12 +390,16 @@ export function SessionChat(props: {
         setAutoContinuePrompt(settings.prompt)
     }, [])
 
-    const handleSendCommit = useCallback(() => {
-        handleSend('ok, commit it')
-    }, [handleSend])
+    const quickPromptActions = useMemo<QuickPromptAction[]>(() => ([
+        { id: 'commit', label: 'ok, commit it', message: 'ok, commit it' },
+        { id: 'commit-and-push', label: 'ok, commit it and push', message: 'ok, commit it and push' },
+        { id: 'plan-1', label: '好的，继续方案一', message: '好的，继续方案一' },
+        { id: 'plan-2', label: '好的，继续方案二', message: '好的，继续方案二' },
+        { id: 'plan-3', label: '好的，继续方案三', message: '好的，继续方案三' }
+    ]), [])
 
-    const handleSendCommitAndPush = useCallback(() => {
-        handleSend('ok, commit it and push')
+    const handleQuickPrompt = useCallback((action: QuickPromptAction) => {
+        handleSend(action.message)
     }, [handleSend])
 
     const attachmentAdapter = useMemo(() => {
@@ -571,8 +575,8 @@ export function SessionChat(props: {
                         onEffortChange={handleEffortChange}
                         onSwitchToRemote={handleSwitchToRemote}
                         onSendContinue={handleSendContinue}
-                        onSendCommit={handleSendCommit}
-                        onSendCommitAndPush={handleSendCommitAndPush}
+                        quickPromptActions={quickPromptActions}
+                        onSendQuickPrompt={handleQuickPrompt}
                         onTerminal={props.session.active && terminalSupported ? handleViewTerminal : undefined}
                         terminalUnsupported={props.session.active && !terminalSupported}
                         autocompleteSuggestions={props.autocompleteSuggestions}

@@ -235,6 +235,7 @@ export default {
   'composer.abort': '中止',
   'composer.switchRemote': '切换到远程模式',
   'composer.continue': '发送 continue',
+  'composer.quickPrompts': '快捷输入',
   'composer.commit': '发送 ok, commit it',
   'composer.commitShort': 'C',
   'composer.commitAndPush': '发送 ok, commit it and push',

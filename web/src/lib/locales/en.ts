@@ -233,6 +233,7 @@ export default {
   'composer.abort': 'Abort',
   'composer.switchRemote': 'Switch to remote mode',
   'composer.continue': 'Send continue',
+  'composer.quickPrompts': 'Quick prompts',
   'composer.commit': 'Send ok, commit it',
   'composer.commitShort': 'C',
   'composer.commitAndPush': 'Send ok, commit it and push',

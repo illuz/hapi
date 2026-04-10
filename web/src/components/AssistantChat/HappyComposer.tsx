@@ -36,6 +36,12 @@ export interface TextInputState {
     selection: { start: number; end: number }
 }
 
+export type QuickPromptAction = {
+    id: string
+    label: string
+    message: string
+}
+
 const defaultSuggestionHandler = async (): Promise<Suggestion[]> => []
 
 export function HappyComposer(props: {
@@ -58,8 +64,8 @@ export function HappyComposer(props: {
     onEffortChange?: (effort: string | null) => void
     onSwitchToRemote?: () => void
     onSendContinue?: () => void
-    onSendCommit?: () => void
-    onSendCommitAndPush?: () => void
+    quickPromptActions?: QuickPromptAction[]
+    onSendQuickPrompt?: (action: QuickPromptAction) => void
     onTerminal?: () => void
     terminalUnsupported?: boolean
     autocompletePrefixes?: string[]
@@ -91,8 +97,8 @@ export function HappyComposer(props: {
         onEffortChange,
         onSwitchToRemote,
         onSendContinue,
-        onSendCommit,
-        onSendCommitAndPush,
+        quickPromptActions = [],
+        onSendQuickPrompt,
         onTerminal,
         terminalUnsupported = false,
         autocompletePrefixes = ['@', '/', '$'],
@@ -140,6 +146,7 @@ export function HappyComposer(props: {
     const [isSwitching, setIsSwitching] = useState(false)
     const [isContinuing, setIsContinuing] = useState(false)
     const [showContinueHint, setShowContinueHint] = useState(false)
+    const [showQuickPrompts, setShowQuickPrompts] = useState(false)
 
     const textareaRef = useRef<HTMLTextAreaElement>(null)
     const prevControlledByUser = useRef(controlledByUser)
@@ -235,8 +242,7 @@ export function HappyComposer(props: {
     const showSwitchButton = Boolean(controlledByUser && onSwitchToRemote)
     const switchDisabled = controlsDisabled || isSwitching || isContinuing || !controlledByUser
     const showContinueButton = Boolean(onSendContinue)
-    const showCommitButton = Boolean(onSendCommit)
-    const showCommitAndPushButton = Boolean(onSendCommitAndPush)
+    const showQuickPromptButton = quickPromptActions.length > 0 && Boolean(onSendQuickPrompt)
     const continueDisabled = controlsDisabled || threadIsRunning || isSwitching || isContinuing
     const showTerminalButton = Boolean(onTerminal || terminalUnsupported)
     const terminalDisabled = controlsDisabled || terminalUnsupported
@@ -325,6 +331,7 @@ export function HappyComposer(props: {
         if (continueDisabled || !onSendContinue) return
         haptic('light')
         setIsContinuing(true)
+        setShowQuickPrompts(false)
         try {
             if (controlledByUser && onSwitchToRemote) {
                 await onSwitchToRemote()
@@ -336,19 +343,13 @@ export function HappyComposer(props: {
         }
     }, [continueDisabled, onSendContinue, haptic, controlledByUser, onSwitchToRemote])
 
-    const handleCommit = useCallback(async () => {
-        if (continueDisabled || !onSendCommit) return
+    const handleQuickPrompt = useCallback(async (action: QuickPromptAction) => {
+        if (continueDisabled || !onSendQuickPrompt) return
         haptic('light')
-        onSendCommit()
+        onSendQuickPrompt(action)
         setShowContinueHint(false)
-    }, [continueDisabled, onSendCommit, haptic])
-
-    const handleCommitAndPush = useCallback(async () => {
-        if (continueDisabled || !onSendCommitAndPush) return
-        haptic('light')
-        onSendCommitAndPush()
-        setShowContinueHint(false)
-    }, [continueDisabled, onSendCommitAndPush, haptic])
+        setShowQuickPrompts(false)
+    }, [continueDisabled, onSendQuickPrompt, haptic])
 
     const permissionModeOptions = useMemo(
         () => getPermissionModeOptionsForFlavor(agentFlavor),
@@ -494,7 +495,15 @@ export function HappyComposer(props: {
     const handleSettingsToggle = useCallback(() => {
         haptic('light')
         setShowSettings(prev => !prev)
+        setShowQuickPrompts(false)
     }, [haptic])
+
+    const handleQuickPromptToggle = useCallback(() => {
+        if (!showQuickPromptButton || continueDisabled) return
+        haptic('light')
+        setShowSettings(false)
+        setShowQuickPrompts(prev => !prev)
+    }, [showQuickPromptButton, continueDisabled, haptic])
 
     const handleSubmit = useCallback((event?: ReactFormEvent<HTMLFormElement>) => {
         if (event && !attachmentsReady) {
@@ -502,6 +511,7 @@ export function HappyComposer(props: {
             return
         }
         setShowContinueHint(false)
+        setShowQuickPrompts(false)
     }, [attachmentsReady])
 
     const handlePermissionChange = useCallback((mode: PermissionMode) => {
@@ -543,6 +553,7 @@ export function HappyComposer(props: {
     const handleSend = useCallback(() => {
         api.composer().send()
         clearDraft()
+        setShowQuickPrompts(false)
     }, [api, clearDraft])
 
     const overlays = useMemo(() => {
@@ -714,6 +725,36 @@ export function HappyComposer(props: {
             )
         }
 
+        if (showQuickPrompts && showQuickPromptButton) {
+            return (
+                <div className="absolute bottom-[100%] mb-2 w-full">
+                    <FloatingOverlay maxHeight={320}>
+                        <div className="py-2">
+                            <div className="px-3 pb-1 text-xs font-semibold text-[var(--app-hint)]">
+                                {t('composer.quickPrompts')}
+                            </div>
+                            {quickPromptActions.map((action) => (
+                                <button
+                                    key={action.id}
+                                    type="button"
+                                    disabled={continueDisabled}
+                                    className={`flex w-full items-center px-3 py-2 text-left text-sm transition-colors ${
+                                        continueDisabled
+                                            ? 'cursor-not-allowed opacity-50'
+                                            : 'cursor-pointer hover:bg-[var(--app-secondary-bg)]'
+                                    }`}
+                                    onClick={() => void handleQuickPrompt(action)}
+                                    onMouseDown={(e) => e.preventDefault()}
+                                >
+                                    {action.label}
+                                </button>
+                            ))}
+                        </div>
+                    </FloatingOverlay>
+                </div>
+            )
+        }
+
         if (suggestions.length > 0) {
             return (
                 <div className="absolute bottom-[100%] mb-2 w-full">
@@ -731,15 +772,19 @@ export function HappyComposer(props: {
         return null
     }, [
         showSettings,
+        showQuickPrompts,
+        showQuickPromptButton,
         showCollaborationSettings,
         showPermissionSettings,
         showModelSettings,
         showEffortSettings,
         claudeModelOptions,
         claudeEffortOptions,
+        quickPromptActions,
         suggestions,
         selectedIndex,
         controlsDisabled,
+        continueDisabled,
         collaborationMode,
         permissionMode,
         model,
@@ -750,6 +795,7 @@ export function HappyComposer(props: {
         handlePermissionChange,
         handleModelChange,
         handleEffortChange,
+        handleQuickPrompt,
         handleSuggestionSelect,
         t
     ])
@@ -817,10 +863,8 @@ export function HappyComposer(props: {
                             continueDisabled={continueDisabled}
                             isContinuing={isContinuing}
                             onContinue={handleContinue}
-                            showCommitButton={showCommitButton}
-                            onCommit={handleCommit}
-                            showCommitAndPushButton={showCommitAndPushButton}
-                            onCommitAndPush={handleCommitAndPush}
+                            showQuickPromptButton={showQuickPromptButton}
+                            onQuickPromptToggle={handleQuickPromptToggle}
                             voiceEnabled={voiceEnabled}
                             voiceStatus={voiceStatus}
                             voiceMicMuted={voiceMicMuted}

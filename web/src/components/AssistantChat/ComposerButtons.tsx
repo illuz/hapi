@@ -249,30 +249,22 @@ function LoadingIcon() {
     )
 }
 
-function QuickActionButton(props: {
-    label: string
-    title: string
-    onClick: () => void
-    disabled: boolean
-    tone?: 'amber' | 'emerald' | 'sky'
-}) {
-    const toneClass = props.tone === 'emerald'
-        ? 'hover:border-emerald-500/40 hover:text-emerald-600'
-        : props.tone === 'sky'
-            ? 'hover:border-sky-500/40 hover:text-sky-600'
-            : 'hover:border-amber-500/40 hover:text-amber-600'
-
+function QuickPromptIcon() {
     return (
-        <button
-            type="button"
-            aria-label={props.title}
-            title={props.title}
-            disabled={props.disabled}
-            className={`rounded-full border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-1 text-xs font-medium text-[var(--app-fg)]/80 transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${toneClass}`}
-            onClick={props.onClick}
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
         >
-            {props.label}
-        </button>
+            <path d="M12 5v14" />
+            <path d="m19 12-7 7-7-7" />
+        </svg>
     )
 }
 
@@ -367,10 +359,8 @@ export function ComposerButtons(props: {
     continueDisabled: boolean
     isContinuing: boolean
     onContinue: () => void
-    showCommitButton: boolean
-    onCommit: () => void
-    showCommitAndPushButton: boolean
-    onCommitAndPush: () => void
+    showQuickPromptButton: boolean
+    onQuickPromptToggle: () => void
     voiceEnabled: boolean
     voiceStatus: ConversationStatus
     voiceMicMuted?: boolean
@@ -458,24 +448,17 @@ export function ComposerButtons(props: {
                             <ContinueIcon spinning={props.isContinuing} />
                         </button>
 
-                        {props.showCommitButton ? (
-                            <QuickActionButton
-                                label={t('composer.commitShort')}
-                                title={t('composer.commit')}
+                        {props.showQuickPromptButton ? (
+                            <button
+                                type="button"
+                                aria-label={t('composer.quickPrompts')}
+                                title={t('composer.quickPrompts')}
                                 disabled={props.continueDisabled}
-                                onClick={props.onCommit}
-                                tone="emerald"
-                            />
-                        ) : null}
-
-                        {props.showCommitAndPushButton ? (
-                            <QuickActionButton
-                                label={t('composer.commitAndPushShort')}
-                                title={t('composer.commitAndPush')}
-                                disabled={props.continueDisabled}
-                                onClick={props.onCommitAndPush}
-                                tone="sky"
-                            />
+                                className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--app-border)] bg-[var(--app-bg)] text-[var(--app-fg)]/60 transition-colors hover:border-sky-500/40 hover:text-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
+                                onClick={props.onQuickPromptToggle}
+                            >
+                                <QuickPromptIcon />
+                            </button>
                         ) : null}
                     </div>
                 ) : null}

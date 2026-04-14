@@ -1,9 +1,34 @@
+const path = require('node:path');
+
+const rootDir = __dirname;
+
+function getBunTargetDir() {
+    const platformMap = {
+        darwin: 'darwin',
+        linux: 'linux',
+        win32: 'windows',
+    };
+    const archMap = {
+        arm64: 'arm64',
+        x64: 'x64',
+    };
+
+    const platform = platformMap[process.platform];
+    const arch = archMap[process.arch];
+
+    if (!platform || !arch) {
+        throw new Error(`Unsupported platform/arch for ecosystem config: ${process.platform}/${process.arch}`);
+    }
+
+    return `bun-${platform}-${arch}`;
+}
+
 module.exports = {
     apps: [
         {
             name: 'hapi-hub',
-            cwd: '/Users/illuz/github/hapi',
-            script: '/Users/illuz/github/hapi/cli/dist-exe/bun-darwin-arm64/hapi',
+            cwd: rootDir,
+            script: path.join(rootDir, 'cli', 'dist-exe', getBunTargetDir(), 'hapi'),
             args: 'hub --no-relay',
             interpreter: 'none',
             autorestart: true,

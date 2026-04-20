@@ -492,7 +492,7 @@ export function SessionList(props: {
                                         className="h-4 w-4 text-[var(--app-hint)] shrink-0"
                                         collapsed={isCollapsed}
                                     />
-                                    <span className="font-semibold text-sm break-words min-w-0" title={group.directory}>
+                                    <span className="text-sm font-medium break-words min-w-0 text-[#AFC0D8]" title={group.directory}>
                                         {group.displayName}
                                     </span>
                                     <span className="shrink-0 rounded-full bg-[var(--app-subtle-bg)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--app-hint)]">

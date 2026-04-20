@@ -12,6 +12,7 @@ import {
     setSessionModel,
     setSessionTeamState,
     setSessionTodos,
+    setSessionStarred,
     updateSessionAgentState,
     updateSessionMetadata
 } from './sessions'
@@ -67,6 +68,10 @@ export class SessionStore {
 
     setSessionEffort(id: string, effort: string | null, namespace: string, options?: { touchUpdatedAt?: boolean }): boolean {
         return setSessionEffort(this.db, id, effort, namespace, options)
+    }
+
+    setSessionStarred(id: string, starred: boolean, namespace: string): boolean {
+        return setSessionStarred(this.db, id, starred, namespace)
     }
 
     getSession(id: string): StoredSession | null {

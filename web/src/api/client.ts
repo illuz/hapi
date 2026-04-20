@@ -414,11 +414,19 @@ export class ApiClient {
         )
     }
 
-    async renameSession(sessionId: string, name: string): Promise<void> {
+    async updateSession(sessionId: string, updates: { name?: string; starred?: boolean }): Promise<void> {
         await this.request(`/api/sessions/${encodeURIComponent(sessionId)}`, {
             method: 'PATCH',
-            body: JSON.stringify({ name })
+            body: JSON.stringify(updates)
         })
+    }
+
+    async renameSession(sessionId: string, name: string): Promise<void> {
+        await this.updateSession(sessionId, { name })
+    }
+
+    async setSessionStarred(sessionId: string, starred: boolean): Promise<void> {
+        await this.updateSession(sessionId, { starred })
     }
 
     async deleteSession(sessionId: string): Promise<void> {

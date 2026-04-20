@@ -174,6 +174,7 @@ export const SessionSchema = z.object({
     thinkingAt: z.number(),
     todos: TodosSchema.optional(),
     teamState: TeamStateSchema.optional(),
+    starred: z.boolean().default(false),
     model: z.string().nullable(),
     effort: z.string().nullable(),
     permissionMode: PermissionModeSchema.optional(),

@@ -81,6 +81,8 @@ export default {
   'session.autoContinueErrorRemaining': '剩余次数必须在 0 到触发次数之间。',
 
   // Session actions
+  'session.action.star': '星标',
+  'session.action.unstar': '取消星标',
   'session.action.rename': '重命名',
   'session.action.archive': '归档',
   'session.action.delete': '删除',
@@ -103,7 +105,7 @@ export default {
   'dialog.delete.confirm': '删除',
   'dialog.delete.confirming': '删除中…',
   'dialog.cleanupInactive.title': '清理非活跃会话',
-  'dialog.cleanupInactive.description': '确定要删除 {count} 个非活跃会话吗？此操作无法撤销。',
+  'dialog.cleanupInactive.description': '确定要删除 {count} 个未加星的非活跃会话吗？此操作无法撤销。',
   'dialog.cleanupInactive.confirm': '清理',
   'dialog.cleanupInactive.confirming': '清理中…',
   'dialog.error.default': '操作失败，请重试。',

@@ -22,6 +22,7 @@ type DbSessionRow = {
     todos_updated_at: number | null
     team_state: string | null
     team_state_updated_at: number | null
+    starred: number
     active: number
     active_at: number | null
     seq: number
@@ -45,6 +46,7 @@ function toStoredSession(row: DbSessionRow): StoredSession {
         todosUpdatedAt: row.todos_updated_at,
         teamState: safeJsonParse(row.team_state),
         teamStateUpdatedAt: row.team_state_updated_at,
+        starred: row.starred === 1,
         active: row.active === 1,
         activeAt: row.active_at,
         seq: row.seq
@@ -82,6 +84,7 @@ export function getOrCreateSession(
             model,
             effort,
             todos, todos_updated_at,
+            starred,
             active, active_at, seq
         ) VALUES (
             @id, @tag, @namespace, NULL, @created_at, @updated_at,
@@ -90,6 +93,7 @@ export function getOrCreateSession(
             @model,
             @effort,
             NULL, NULL,
+            0,
             0, NULL, 0
         )
     `).run({
@@ -295,6 +299,32 @@ export function setSessionEffort(
             effort,
             updated_at: now,
             touch_updated_at: touchUpdatedAt ? 1 : 0
+        })
+
+        return result.changes === 1
+    } catch {
+        return false
+    }
+}
+
+export function setSessionStarred(
+    db: Database,
+    id: string,
+    starred: boolean,
+    namespace: string
+): boolean {
+    try {
+        const result = db.prepare(`
+            UPDATE sessions
+            SET starred = @starred,
+                seq = seq + 1
+            WHERE id = @id
+              AND namespace = @namespace
+              AND starred IS NOT @starred
+        `).run({
+            id,
+            namespace,
+            starred: starred ? 1 : 0
         })
 
         return result.changes === 1

@@ -28,6 +28,7 @@ function createSession(overrides?: Partial<Session>): Session {
         agentStateVersion: 1,
         thinking: false,
         thinkingAt: 1,
+        starred: false,
         model: 'gpt-5.4',
         effort: null,
         permissionMode: 'default',
@@ -51,12 +52,22 @@ function createSession(overrides?: Partial<Session>): Session {
 
 function createApp(session: Session) {
     const applySessionConfigCalls: Array<[string, Record<string, unknown>]> = []
+    const renameSessionCalls: Array<[string, string]> = []
+    const setSessionStarredCalls: Array<[string, boolean]> = []
     const applySessionConfig = async (sessionId: string, config: Record<string, unknown>) => {
         applySessionConfigCalls.push([sessionId, config])
     }
+    const renameSession = async (sessionId: string, name: string) => {
+        renameSessionCalls.push([sessionId, name])
+    }
+    const setSessionStarred = async (sessionId: string, starred: boolean) => {
+        setSessionStarredCalls.push([sessionId, starred])
+    }
     const engine = {
         resolveSessionAccess: () => ({ ok: true, sessionId: session.id, session }),
-        applySessionConfig
+        applySessionConfig,
+        renameSession,
+        setSessionStarred
     } as Partial<SyncEngine>
 
     const app = new Hono<WebAppEnv>()
@@ -66,7 +77,7 @@ function createApp(session: Session) {
     })
     app.route('/api', createSessionsRoutes(() => engine as SyncEngine))
 
-    return { app, applySessionConfigCalls }
+    return { app, applySessionConfigCalls, renameSessionCalls, setSessionStarredCalls }
 }
 
 describe('sessions routes', () => {
@@ -170,4 +181,35 @@ describe('sessions routes', () => {
             ['session-1', { effort: 'max' }]
         ])
     })
+
+    it('updates session starred state via patch', async () => {
+        const { app, renameSessionCalls, setSessionStarredCalls } = createApp(createSession())
+
+        const response = await app.request('/api/sessions/session-1', {
+            method: 'PATCH',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ starred: true })
+        })
+
+        expect(response.status).toBe(200)
+        expect(await response.json()).toEqual({ ok: true })
+        expect(renameSessionCalls).toEqual([])
+        expect(setSessionStarredCalls).toEqual([['session-1', true]])
+    })
+
+    it('updates session name and starred state together via patch', async () => {
+        const { app, renameSessionCalls, setSessionStarredCalls } = createApp(createSession())
+
+        const response = await app.request('/api/sessions/session-1', {
+            method: 'PATCH',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ name: 'Pinned chat', starred: true })
+        })
+
+        expect(response.status).toBe(200)
+        expect(await response.json()).toEqual({ ok: true })
+        expect(renameSessionCalls).toEqual([['session-1', 'Pinned chat']])
+        expect(setSessionStarredCalls).toEqual([['session-1', true]])
+    })
+
 })

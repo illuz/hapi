@@ -22,8 +22,11 @@ const effortSchema = z.object({
     effort: z.string().trim().min(1).nullable()
 })
 
-const renameSessionSchema = z.object({
-    name: z.string().min(1).max(255)
+const updateSessionSchema = z.object({
+    name: z.string().min(1).max(255).optional(),
+    starred: z.boolean().optional()
+}).refine((value) => value.name !== undefined || value.starred !== undefined, {
+    message: 'At least one field is required'
 })
 
 const uploadSchema = z.object({
@@ -372,13 +375,18 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
         }
 
         const body = await c.req.json().catch(() => null)
-        const parsed = renameSessionSchema.safeParse(body)
+        const parsed = updateSessionSchema.safeParse(body)
         if (!parsed.success) {
-            return c.json({ error: 'Invalid body: name is required' }, 400)
+            return c.json({ error: 'Invalid body: name or starred is required' }, 400)
         }
 
         try {
-            await engine.renameSession(sessionResult.sessionId, parsed.data.name)
+            if (parsed.data.name !== undefined) {
+                await engine.renameSession(sessionResult.sessionId, parsed.data.name)
+            }
+            if (parsed.data.starred !== undefined) {
+                await engine.setSessionStarred(sessionResult.sessionId, parsed.data.starred)
+            }
             return c.json({ ok: true })
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Failed to rename session'

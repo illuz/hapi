@@ -20,6 +20,7 @@ export function useSessionActions(
     setModel: (model: string | null) => Promise<void>
     setEffort: (effort: string | null) => Promise<void>
     renameSession: (name: string) => Promise<void>
+    setSessionStarred: (starred: boolean) => Promise<void>
     deleteSession: () => Promise<void>
     isPending: boolean
 } {
@@ -120,6 +121,16 @@ export function useSessionActions(
         onSuccess: () => void invalidateSession(),
     })
 
+    const starredMutation = useMutation({
+        mutationFn: async (starred: boolean) => {
+            if (!api || !sessionId) {
+                throw new Error('Session unavailable')
+            }
+            await api.setSessionStarred(sessionId, starred)
+        },
+        onSuccess: () => void invalidateSession(),
+    })
+
     const deleteMutation = useMutation({
         mutationFn: async () => {
             if (!api || !sessionId) {
@@ -144,6 +155,7 @@ export function useSessionActions(
         setModel: modelMutation.mutateAsync,
         setEffort: effortMutation.mutateAsync,
         renameSession: renameMutation.mutateAsync,
+        setSessionStarred: starredMutation.mutateAsync,
         deleteSession: deleteMutation.mutateAsync,
         isPending: abortMutation.isPending
             || archiveMutation.isPending
@@ -153,6 +165,7 @@ export function useSessionActions(
             || modelMutation.isPending
             || effortMutation.isPending
             || renameMutation.isPending
+            || starredMutation.isPending
             || deleteMutation.isPending,
     }
 }

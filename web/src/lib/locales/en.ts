@@ -81,6 +81,8 @@ export default {
   'session.autoContinueErrorRemaining': 'Remaining runs must be between 0 and max runs.',
 
   // Session actions
+  'session.action.star': 'Star',
+  'session.action.unstar': 'Remove star',
   'session.action.rename': 'Rename',
   'session.action.archive': 'Archive',
   'session.action.delete': 'Delete',
@@ -101,7 +103,7 @@ export default {
   'dialog.delete.confirm': 'Delete',
   'dialog.delete.confirming': 'Deleting…',
   'dialog.cleanupInactive.title': 'Clear Inactive Sessions',
-  'dialog.cleanupInactive.description': 'Delete {count} inactive sessions? This action cannot be undone.',
+  'dialog.cleanupInactive.description': 'Delete {count} inactive unstarred sessions? This action cannot be undone.',
   'dialog.cleanupInactive.confirm': 'Clear',
   'dialog.cleanupInactive.confirming': 'Clearing…',
   'dialog.error.default': 'Operation failed. Please try again.',

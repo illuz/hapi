@@ -23,6 +23,18 @@ function getSessionTitle(session: Session): string {
     return session.id.slice(0, 8)
 }
 
+function StarIcon(props: { className?: string; filled?: boolean }) {
+    return props.filled ? (
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" className={props.className}>
+            <path d="m12 17.27 6.18 3.73-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
+        </svg>
+    ) : (
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={props.className}>
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+        </svg>
+    )
+}
+
 function FilesIcon(props: { className?: string }) {
     return (
         <svg
@@ -82,7 +94,7 @@ export function SessionHeader(props: {
     const [archiveOpen, setArchiveOpen] = useState(false)
     const [deleteOpen, setDeleteOpen] = useState(false)
 
-    const { archiveSession, renameSession, deleteSession, isPending } = useSessionActions(
+    const { archiveSession, renameSession, setSessionStarred, deleteSession, isPending } = useSessionActions(
         api,
         session.id,
         session.metadata?.flavor ?? null
@@ -154,6 +166,15 @@ export function SessionHeader(props: {
 
                     {props.autoContinueButton ?? null}
 
+                    <button
+                        type="button"
+                        onClick={() => void setSessionStarred(!session.starred)}
+                        className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${session.starred ? 'text-amber-500 hover:bg-amber-500/10' : 'text-[var(--app-hint)] hover:bg-[var(--app-secondary-bg)] hover:text-[var(--app-fg)]'}`}
+                        title={session.starred ? t('session.action.unstar') : t('session.action.star')}
+                    >
+                        <StarIcon filled={session.starred} />
+                    </button>
+
                     {props.onViewFiles ? (
                         <button
                             type="button"
@@ -185,6 +206,8 @@ export function SessionHeader(props: {
                 isOpen={menuOpen}
                 onClose={() => setMenuOpen(false)}
                 sessionActive={session.active}
+                starred={session.starred}
+                onToggleStar={() => { void setSessionStarred(!session.starred) }}
                 onRename={() => setRenameOpen(true)}
                 onArchive={() => setArchiveOpen(true)}
                 onDelete={() => setDeleteOpen(true)}

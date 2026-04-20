@@ -133,6 +133,7 @@ export class SessionCache {
             thinkingAt: existing?.thinkingAt ?? 0,
             todos,
             teamState,
+            starred: stored.starred,
             model: stored.model,
             effort: stored.effort,
             permissionMode: existing?.permissionMode,
@@ -305,6 +306,22 @@ export class SessionCache {
         this.publisher.emit({ type: 'session-updated', sessionId, data: session })
     }
 
+    async setSessionStarred(sessionId: string, starred: boolean): Promise<void> {
+        const session = this.sessions.get(sessionId)
+        if (!session) {
+            throw new Error('Session not found')
+        }
+
+        const updated = this.store.sessions.setSessionStarred(sessionId, starred, session.namespace)
+        if (!updated && session.starred !== starred) {
+            throw new Error('Failed to update session star state')
+        }
+
+        session.starred = starred
+        session.seq += 1
+        this.publisher.emit({ type: 'session-updated', sessionId, data: session })
+    }
+
     async renameSession(sessionId: string, name: string): Promise<void> {
         const session = this.sessions.get(sessionId)
         if (!session) {
@@ -386,6 +403,13 @@ export class SessionCache {
                 if (result.result === 'error') {
                     break
                 }
+            }
+        }
+
+        if (!newStored.starred && oldStored.starred) {
+            const updated = this.store.sessions.setSessionStarred(newSessionId, true, namespace)
+            if (!updated) {
+                throw new Error('Failed to preserve session star state during merge')
             }
         }
 

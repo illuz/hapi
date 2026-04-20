@@ -15,6 +15,7 @@ export type StoredSession = {
     todosUpdatedAt: number | null
     teamState: unknown | null
     teamStateUpdatedAt: number | null
+    starred: boolean
     active: boolean
     activeAt: number | null
     seq: number

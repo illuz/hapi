@@ -282,6 +282,10 @@ export class SyncEngine {
         await this.sessionCache.renameSession(sessionId, name)
     }
 
+    async setSessionStarred(sessionId: string, starred: boolean): Promise<void> {
+        await this.sessionCache.setSessionStarred(sessionId, starred)
+    }
+
     async deleteSession(sessionId: string): Promise<void> {
         await this.sessionCache.deleteSession(sessionId)
     }

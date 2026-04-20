@@ -62,6 +62,7 @@ function createSession(overrides: Partial<Session> = {}): Session {
         agentStateVersion: 0,
         thinking: false,
         thinkingAt: 0,
+        starred: false,
         model: null,
         effort: null,
         ...overrides

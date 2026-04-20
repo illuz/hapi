@@ -73,6 +73,7 @@ export class ApiClient {
             thinking: raw.thinking,
             thinkingAt: raw.thinkingAt,
             todos: raw.todos,
+            starred: raw.starred,
             model: raw.model,
             effort: raw.effort,
             permissionMode: raw.permissionMode,

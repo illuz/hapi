@@ -313,4 +313,32 @@ describe('session model', () => {
             engine.stop()
         }
     })
+
+    it('includes starred state in session summaries and preserves it on merge', async () => {
+        const store = new Store(':memory:')
+        const events: SyncEvent[] = []
+        const cache = new SessionCache(store, createPublisher(events))
+
+        const oldSession = cache.getOrCreateSession(
+            'session-star-old',
+            { path: '/tmp/project', host: 'localhost', flavor: 'claude' },
+            null,
+            'default'
+        )
+        await cache.setSessionStarred(oldSession.id, true)
+
+        expect(cache.getSession(oldSession.id)?.starred).toBe(true)
+        expect(toSessionSummary(cache.getSession(oldSession.id)!).starred).toBe(true)
+
+        const newSession = cache.getOrCreateSession(
+            'session-star-new',
+            { path: '/tmp/project', host: 'localhost', flavor: 'claude' },
+            null,
+            'default'
+        )
+
+        await cache.mergeSessions(oldSession.id, newSession.id, 'default')
+        expect(cache.getSession(newSession.id)?.starred).toBe(true)
+    })
+
 })

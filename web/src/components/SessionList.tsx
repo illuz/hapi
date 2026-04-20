@@ -51,10 +51,10 @@ function groupSessionsByDirectory(sessions: SessionSummary[]): SessionGroup[] {
     return Array.from(groups.entries())
         .map(([key, group]) => {
             const sortedSessions = [...group.sessions].sort((a, b) => {
-                if (a.starred !== b.starred) return a.starred ? -1 : 1
                 const rankA = a.active ? (a.pendingRequestsCount > 0 ? 0 : 1) : 2
                 const rankB = b.active ? (b.pendingRequestsCount > 0 ? 0 : 1) : 2
                 if (rankA !== rankB) return rankA - rankB
+                if (a.starred !== b.starred) return a.starred ? -1 : 1
                 return b.updatedAt - a.updatedAt
             })
             const latestUpdatedAt = group.sessions.reduce(
@@ -77,11 +77,11 @@ function groupSessionsByDirectory(sessions: SessionSummary[]): SessionGroup[] {
             }
         })
         .sort((a, b) => {
-            if (a.hasStarredSession !== b.hasStarredSession) {
-                return a.hasStarredSession ? -1 : 1
-            }
             if (a.hasActiveSession !== b.hasActiveSession) {
                 return a.hasActiveSession ? -1 : 1
+            }
+            if (a.hasStarredSession !== b.hasStarredSession) {
+                return a.hasStarredSession ? -1 : 1
             }
             return b.latestUpdatedAt - a.latestUpdatedAt
         })
@@ -287,10 +287,12 @@ function SessionItem(props: {
                                 className={`h-2 w-2 rounded-full ${statusDotClass}`}
                             />
                         </span>
+                        <span className="flex h-4 w-4 items-center justify-center" aria-hidden="true">
+                            {s.starred ? <StarIcon className="h-4 w-4 shrink-0 text-amber-500" filled /> : null}
+                        </span>
                         <div className="truncate text-base font-medium">
                             {sessionName}
                         </div>
-                        {s.starred ? <StarIcon className="h-4 w-4 shrink-0 text-amber-500" filled /> : null}
                     </div>
                     <div className="flex items-center gap-2 shrink-0 text-xs">
                         {s.thinking ? (

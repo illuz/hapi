@@ -18,7 +18,6 @@ type SessionGroup = {
     sessions: SessionSummary[]
     latestUpdatedAt: number
     hasActiveSession: boolean
-    hasStarredSession: boolean
 }
 
 function getGroupDisplayName(directory: string): string {
@@ -62,7 +61,6 @@ function groupSessionsByDirectory(sessions: SessionSummary[]): SessionGroup[] {
                 -Infinity
             )
             const hasActiveSession = group.sessions.some(s => s.active)
-            const hasStarredSession = group.sessions.some(s => s.starred)
             const displayName = getGroupDisplayName(group.directory)
 
             return {
@@ -72,16 +70,12 @@ function groupSessionsByDirectory(sessions: SessionSummary[]): SessionGroup[] {
                 machineId: group.machineId,
                 sessions: sortedSessions,
                 latestUpdatedAt,
-                hasActiveSession,
-                hasStarredSession
+                hasActiveSession
             }
         })
         .sort((a, b) => {
             if (a.hasActiveSession !== b.hasActiveSession) {
                 return a.hasActiveSession ? -1 : 1
-            }
-            if (a.hasStarredSession !== b.hasStarredSession) {
-                return a.hasStarredSession ? -1 : 1
             }
             return b.latestUpdatedAt - a.latestUpdatedAt
         })

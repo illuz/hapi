@@ -335,6 +335,8 @@ export default {
   'settings.about.website': '官方网站',
   'settings.about.appVersion': '应用版本',
   'settings.about.protocolVersion': '协议版本',
+  'settings.about.refresh': '检查更新并刷新',
+  'settings.about.refreshing': '刷新中…',
 
   // Misc
   'misc.noMachines': '无可用机器',

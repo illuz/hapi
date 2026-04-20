@@ -52,19 +52,30 @@ async function bootstrap() {
 
     const updateSW = registerSW({
         onNeedRefresh() {
-            if (confirm('New version available! Reload to update?')) {
-                updateSW(true)
-            }
+            void updateSW(true)
         },
         onOfflineReady() {
             console.log('App ready for offline use')
         },
         onRegistered(registration) {
-            if (registration) {
-                setInterval(() => {
-                    registration.update()
-                }, 60 * 60 * 1000)
+            if (!registration) {
+                return
             }
+
+            const checkForUpdate = () => {
+                void registration.update()
+            }
+
+            checkForUpdate()
+
+            window.addEventListener('pageshow', checkForUpdate)
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible') {
+                    checkForUpdate()
+                }
+            })
+
+            setInterval(checkForUpdate, 5 * 60 * 1000)
         },
         onRegisterError(error) {
             console.error('SW registration error:', error)

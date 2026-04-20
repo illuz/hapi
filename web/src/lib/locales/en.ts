@@ -333,6 +333,8 @@ export default {
   'settings.about.website': 'Website',
   'settings.about.appVersion': 'App Version',
   'settings.about.protocolVersion': 'Protocol Version',
+  'settings.about.refresh': 'Check update and reload',
+  'settings.about.refreshing': 'Reloading…',
 
   // Misc
   'misc.noMachines': 'No machines available',

@@ -96,6 +96,7 @@ export default function SettingsPage() {
     const [isMessageSoundOpen, setIsMessageSoundOpen] = useState(false)
     const [isFailureSoundOpen, setIsFailureSoundOpen] = useState(false)
     const [isGeneralSoundOpen, setIsGeneralSoundOpen] = useState(false)
+    const [isRefreshingApp, setIsRefreshingApp] = useState(false)
     const containerRef = useRef<HTMLDivElement>(null)
     const appearanceContainerRef = useRef<HTMLDivElement>(null)
     const fontContainerRef = useRef<HTMLDivElement>(null)
@@ -210,6 +211,22 @@ export default function SettingsPage() {
             return
         }
         await playNotificationSound(value)
+    }
+
+    const handleRefreshApp = async () => {
+        if (isRefreshingApp) return
+
+        setIsRefreshingApp(true)
+        try {
+            const registration = await navigator.serviceWorker.getRegistration()
+            if (registration) {
+                await registration.update()
+            }
+        } catch (error) {
+            console.error('[PWA] Failed to check for updates:', error)
+        } finally {
+            window.location.reload()
+        }
     }
 
     const closeAllSoundMenus = () => {
@@ -939,6 +956,16 @@ export default function SettingsPage() {
                         <div className="flex w-full items-center justify-between px-3 py-3">
                             <span className="text-[var(--app-fg)]">{t('settings.about.protocolVersion')}</span>
                             <span className="text-[var(--app-hint)]">{PROTOCOL_VERSION}</span>
+                        </div>
+                        <div className="px-3 pb-3">
+                            <button
+                                type="button"
+                                onClick={() => void handleRefreshApp()}
+                                disabled={isRefreshingApp}
+                                className="rounded-lg border border-[var(--app-border)] px-3 py-2 text-sm text-[var(--app-fg)] transition-colors hover:bg-[var(--app-subtle-bg)] disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                {isRefreshingApp ? t('settings.about.refreshing') : t('settings.about.refresh')}
+                            </button>
                         </div>
                     </div>
                 </div>

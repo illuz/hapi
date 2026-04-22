@@ -9,6 +9,7 @@ import { SessionMarkerMenu } from '@/components/SessionMarkerMenu'
 import { RenameSessionDialog } from '@/components/RenameSessionDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { getSessionModelLabel } from '@/lib/sessionModelLabel'
+import { getSessionMarkerColorHex } from '@/lib/sessionMarkers'
 import { useTranslation } from '@/lib/use-translation'
 
 function getSessionTitle(session: Session): string {
@@ -75,6 +76,7 @@ export function SessionHeader(props: {
     const title = useMemo(() => getSessionTitle(session), [session])
     const worktreeBranch = session.metadata?.worktree?.branch
     const modelLabel = getSessionModelLabel(session)
+    const markerTextColor = getSessionMarkerColorHex(session.markerColor)
 
     const [menuOpen, setMenuOpen] = useState(false)
     const [menuAnchorPoint, setMenuAnchorPoint] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
@@ -146,7 +148,10 @@ export function SessionHeader(props: {
                     </button>
 
                     <div className="min-w-0 flex-1">
-                        <div className="truncate font-semibold">
+                        <div
+                            className="truncate font-semibold"
+                            style={markerTextColor ? { color: markerTextColor } : undefined}
+                        >
                             {title}
                         </div>
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-[var(--app-hint)]">

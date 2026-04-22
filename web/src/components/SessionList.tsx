@@ -5,10 +5,10 @@ import { useLongPress } from '@/hooks/useLongPress'
 import { usePlatform } from '@/hooks/usePlatform'
 import { useSessionActions } from '@/hooks/mutations/useSessionActions'
 import { SessionActionMenu } from '@/components/SessionActionMenu'
-import { SessionMarkerDot } from '@/components/SessionMarkerDot'
 import { RenameSessionDialog } from '@/components/RenameSessionDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { getSessionModelLabel } from '@/lib/sessionModelLabel'
+import { getSessionMarkerColorHex } from '@/lib/sessionMarkers'
 import { useTranslation } from '@/lib/use-translation'
 
 type SessionGroup = {
@@ -244,6 +244,7 @@ function SessionItem(props: {
         ? (s.thinking ? 'bg-[#007AFF]' : 'bg-[var(--app-badge-success-text)]')
         : 'bg-[var(--app-hint)]'
     const todoProgress = getTodoProgress(s)
+    const markerTextColor = getSessionMarkerColorHex(s.markerColor)
     return (
         <>
             <button
@@ -267,10 +268,10 @@ function SessionItem(props: {
                                 className={`h-2 w-2 rounded-full ${statusDotClass}`}
                             />
                         </span>
-                        <span className="flex h-4 w-4 items-center justify-center" aria-hidden="true">
-                            <SessionMarkerDot markerColor={s.markerColor} size={8} />
-                        </span>
-                        <div className="truncate text-base font-medium">
+                        <div
+                            className="truncate text-base font-medium"
+                            style={markerTextColor ? { color: markerTextColor } : undefined}
+                        >
                             {sessionName}
                         </div>
                     </div>

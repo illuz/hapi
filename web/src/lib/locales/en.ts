@@ -71,6 +71,7 @@ export default {
   'session.autoContinueSettingsDesc': 'Automatically send continue when the last assistant reply contains a keyword in its latest 10 lines.',
   'session.autoContinueMaxRuns': 'Max runs',
   'session.autoContinueRemaining': 'Remaining runs',
+  'session.autoContinuePresets': 'Quick presets',
   'session.autoContinueKeywords': 'Keywords',
   'session.autoContinueKeywordsPlaceholder': 'One keyword per line, for example:\nnext round\ncontinue',
   'session.autoContinuePrompt': 'Continue message',

@@ -8,6 +8,8 @@ import {
     normalizeAutoContinuePrompt
 } from '@/lib/autoContinue'
 
+const AUTO_CONTINUE_PRESETS = [5, 10, 15, 20, 40, 80] as const
+
 export function AutoContinueDialog(props: {
     isOpen: boolean
     onClose: () => void
@@ -56,6 +58,12 @@ export function AutoContinueDialog(props: {
         props.onClose()
     }
 
+    const handleApplyPreset = (value: number) => {
+        setMaxRunsText(String(value))
+        setRemainingText(String(value))
+        setError(null)
+    }
+
     const handleResetRemaining = () => {
         const maxRuns = Number.parseInt(maxRunsText, 10)
         setRemainingText(String(Number.isFinite(maxRuns) && maxRuns >= 1 ? maxRuns : AUTO_CONTINUE_DEFAULT_REMAINING))
@@ -84,6 +92,23 @@ export function AutoContinueDialog(props: {
                             className="w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2.5 text-[var(--app-fg)] focus:outline-none focus:ring-2 focus:ring-[var(--app-button)]"
                         />
                     </label>
+
+                    <div className="flex flex-col gap-2 text-sm">
+                        <span className="text-[var(--app-fg)]">{t('session.autoContinuePresets')}</span>
+                        <div className="flex flex-wrap gap-2">
+                            {AUTO_CONTINUE_PRESETS.map((value) => (
+                                <Button
+                                    key={value}
+                                    type="button"
+                                    variant="secondary"
+                                    className="min-w-12"
+                                    onClick={() => handleApplyPreset(value)}
+                                >
+                                    {value}
+                                </Button>
+                            ))}
+                        </div>
+                    </div>
 
                     <label className="flex flex-col gap-1 text-sm">
                         <span className="text-[var(--app-fg)]">{t('session.autoContinueRemaining')}</span>

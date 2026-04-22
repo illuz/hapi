@@ -71,6 +71,7 @@ export default {
   'session.autoContinueSettingsDesc': '当助手最后一段回复的最近 10 行包含关键词时，自动发送 continue。',
   'session.autoContinueMaxRuns': '触发次数',
   'session.autoContinueRemaining': '剩余次数',
+  'session.autoContinuePresets': '快捷设置',
   'session.autoContinueKeywords': '触发关键词',
   'session.autoContinueKeywordsPlaceholder': '每行一个关键词，例如：\n下一轮\n继续\ncontinue',
   'session.autoContinuePrompt': 'Continue 发送内容',

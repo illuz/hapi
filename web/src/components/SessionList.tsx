@@ -265,7 +265,9 @@ function SessionItem(props: {
             <button
                 type="button"
                 {...longPressHandlers}
-                className={`session-list-item flex w-full flex-col gap-1.5 px-3 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] select-none ${selected ? 'bg-[var(--app-secondary-bg)]' : ''}`}
+                className={`session-list-item flex w-full flex-col gap-1.5 border-l-[3px] px-3 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] select-none ${selected
+                    ? 'border-l-[#4DA3FF] bg-[rgba(77,163,255,0.14)] ring-1 ring-inset ring-[rgba(77,163,255,0.4)]'
+                    : 'border-l-transparent hover:bg-[var(--app-subtle-bg)]'}`}
                 style={{ WebkitTouchCallout: 'none' }}
                 aria-current={selected ? 'page' : undefined}
                 onContextMenu={(event) => {

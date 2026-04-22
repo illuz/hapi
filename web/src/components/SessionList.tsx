@@ -5,6 +5,7 @@ import { useLongPress } from '@/hooks/useLongPress'
 import { usePlatform } from '@/hooks/usePlatform'
 import { useSessionActions } from '@/hooks/mutations/useSessionActions'
 import { SessionActionMenu } from '@/components/SessionActionMenu'
+import { SessionMarkerDot } from '@/components/SessionMarkerDot'
 import { RenameSessionDialog } from '@/components/RenameSessionDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { getSessionModelLabel } from '@/lib/sessionModelLabel'
@@ -53,7 +54,6 @@ function groupSessionsByDirectory(sessions: SessionSummary[]): SessionGroup[] {
                 const rankA = a.active ? (a.pendingRequestsCount > 0 ? 0 : 1) : 2
                 const rankB = b.active ? (b.pendingRequestsCount > 0 ? 0 : 1) : 2
                 if (rankA !== rankB) return rankA - rankB
-                if (a.starred !== b.starred) return a.starred ? -1 : 1
                 return b.updatedAt - a.updatedAt
             })
             const latestUpdatedAt = group.sessions.reduce(
@@ -118,18 +118,6 @@ function BulbIcon(props: { className?: string }) {
             <path d="M9 18h6" />
             <path d="M10 22h4" />
             <path d="M12 2a7 7 0 0 0-4 12c.6.6 1 1.2 1 2h6c0-.8.4-1.4 1-2a7 7 0 0 0-4-12Z" />
-        </svg>
-    )
-}
-
-function StarIcon(props: { className?: string; filled?: boolean }) {
-    return props.filled ? (
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className={props.className}>
-            <path d="m12 17.27 6.18 3.73-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
-        </svg>
-    ) : (
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={props.className}>
-            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
         </svg>
     )
 }
@@ -230,15 +218,11 @@ function SessionItem(props: {
     const [archiveOpen, setArchiveOpen] = useState(false)
     const [deleteOpen, setDeleteOpen] = useState(false)
 
-    const { archiveSession, renameSession, setSessionStarred, deleteSession, isPending } = useSessionActions(
+    const { archiveSession, renameSession, setSessionMarkerColor, deleteSession, isPending } = useSessionActions(
         api,
         s.id,
         s.metadata?.flavor ?? null
     )
-
-    const handleToggleStar = async () => {
-        await setSessionStarred(!s.starred)
-    }
 
     const longPressHandlers = useLongPress({
         onLongPress: (point) => {
@@ -284,7 +268,7 @@ function SessionItem(props: {
                             />
                         </span>
                         <span className="flex h-4 w-4 items-center justify-center" aria-hidden="true">
-                            {s.starred ? <StarIcon className="h-4 w-4 shrink-0 text-amber-500" filled /> : null}
+                            <SessionMarkerDot markerColor={s.markerColor} size={8} />
                         </span>
                         <div className="truncate text-base font-medium">
                             {sessionName}
@@ -337,8 +321,8 @@ function SessionItem(props: {
                 isOpen={menuOpen}
                 onClose={() => setMenuOpen(false)}
                 sessionActive={s.active}
-                starred={s.starred}
-                onToggleStar={() => { void handleToggleStar() }}
+                markerColor={s.markerColor}
+                onSelectMarkerColor={(markerColor) => { void setSessionMarkerColor(markerColor) }}
                 onRename={() => setRenameOpen(true)}
                 onArchive={() => setArchiveOpen(true)}
                 onDelete={() => setDeleteOpen(true)}

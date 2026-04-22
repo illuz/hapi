@@ -3,6 +3,7 @@ import {
     AttachmentMetadataSchema,
     CodexCollaborationModeSchema,
     MetadataSchema,
+    SessionMarkerColorSchema,
     PermissionModeSchema,
     TodosSchema
 } from '@hapi/protocol/schemas'
@@ -99,7 +100,7 @@ export const CreateSessionResponseSchema = z.object({
         thinking: z.boolean(),
         thinkingAt: z.number(),
         todos: TodosSchema.optional(),
-        starred: z.boolean(),
+        markerColor: SessionMarkerColorSchema.nullable(),
         model: z.string().nullable(),
         effort: z.string().nullable(),
         permissionMode: PermissionModeSchema.optional(),

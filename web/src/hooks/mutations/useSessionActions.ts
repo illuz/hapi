@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { isPermissionModeAllowedForFlavor } from '@hapi/protocol'
 import type { ApiClient } from '@/api/client'
-import type { CodexCollaborationMode, PermissionMode } from '@/types/api'
+import type { CodexCollaborationMode, PermissionMode, SessionMarkerColor } from '@/types/api'
 import { queryKeys } from '@/lib/query-keys'
 import { clearMessageWindow } from '@/lib/message-window-store'
 import { isKnownFlavor } from '@/lib/agentFlavorUtils'
@@ -20,7 +20,7 @@ export function useSessionActions(
     setModel: (model: string | null) => Promise<void>
     setEffort: (effort: string | null) => Promise<void>
     renameSession: (name: string) => Promise<void>
-    setSessionStarred: (starred: boolean) => Promise<void>
+    setSessionMarkerColor: (markerColor: SessionMarkerColor | null) => Promise<void>
     deleteSession: () => Promise<void>
     isPending: boolean
 } {
@@ -121,12 +121,12 @@ export function useSessionActions(
         onSuccess: () => void invalidateSession(),
     })
 
-    const starredMutation = useMutation({
-        mutationFn: async (starred: boolean) => {
+    const markerColorMutation = useMutation({
+        mutationFn: async (markerColor: SessionMarkerColor | null) => {
             if (!api || !sessionId) {
                 throw new Error('Session unavailable')
             }
-            await api.setSessionStarred(sessionId, starred)
+            await api.setSessionMarkerColor(sessionId, markerColor)
         },
         onSuccess: () => void invalidateSession(),
     })
@@ -155,7 +155,7 @@ export function useSessionActions(
         setModel: modelMutation.mutateAsync,
         setEffort: effortMutation.mutateAsync,
         renameSession: renameMutation.mutateAsync,
-        setSessionStarred: starredMutation.mutateAsync,
+        setSessionMarkerColor: markerColorMutation.mutateAsync,
         deleteSession: deleteMutation.mutateAsync,
         isPending: abortMutation.isPending
             || archiveMutation.isPending
@@ -165,7 +165,7 @@ export function useSessionActions(
             || modelMutation.isPending
             || effortMutation.isPending
             || renameMutation.isPending
-            || starredMutation.isPending
+            || markerColorMutation.isPending
             || deleteMutation.isPending,
     }
 }

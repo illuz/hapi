@@ -4,6 +4,8 @@ import type { ApiClient } from '@/api/client'
 import { isTelegramApp } from '@/hooks/useTelegram'
 import { useSessionActions } from '@/hooks/mutations/useSessionActions'
 import { SessionActionMenu } from '@/components/SessionActionMenu'
+import { SessionMarkerDot } from '@/components/SessionMarkerDot'
+import { SessionMarkerMenu } from '@/components/SessionMarkerMenu'
 import { RenameSessionDialog } from '@/components/RenameSessionDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { getSessionModelLabel } from '@/lib/sessionModelLabel'
@@ -21,18 +23,6 @@ function getSessionTitle(session: Session): string {
         return parts.length > 0 ? parts[parts.length - 1] : session.id.slice(0, 8)
     }
     return session.id.slice(0, 8)
-}
-
-function StarIcon(props: { className?: string; filled?: boolean }) {
-    return props.filled ? (
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" className={props.className}>
-            <path d="m12 17.27 6.18 3.73-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
-        </svg>
-    ) : (
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={props.className}>
-            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-        </svg>
-    )
 }
 
 function FilesIcon(props: { className?: string }) {
@@ -88,13 +78,17 @@ export function SessionHeader(props: {
 
     const [menuOpen, setMenuOpen] = useState(false)
     const [menuAnchorPoint, setMenuAnchorPoint] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
+    const [markerMenuOpen, setMarkerMenuOpen] = useState(false)
+    const [markerMenuAnchorPoint, setMarkerMenuAnchorPoint] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
     const menuId = useId()
+    const markerMenuId = useId()
     const menuAnchorRef = useRef<HTMLButtonElement | null>(null)
+    const markerAnchorRef = useRef<HTMLButtonElement | null>(null)
     const [renameOpen, setRenameOpen] = useState(false)
     const [archiveOpen, setArchiveOpen] = useState(false)
     const [deleteOpen, setDeleteOpen] = useState(false)
 
-    const { archiveSession, renameSession, setSessionStarred, deleteSession, isPending } = useSessionActions(
+    const { archiveSession, renameSession, setSessionMarkerColor, deleteSession, isPending } = useSessionActions(
         api,
         session.id,
         session.metadata?.flavor ?? null
@@ -111,9 +105,18 @@ export function SessionHeader(props: {
             setMenuAnchorPoint({ x: rect.right, y: rect.bottom })
         }
         setMenuOpen((open) => !open)
+        setMarkerMenuOpen(false)
     }
 
-    // In Telegram, don't render header (Telegram provides its own)
+    const handleMarkerMenuToggle = () => {
+        if (!markerMenuOpen && markerAnchorRef.current) {
+            const rect = markerAnchorRef.current.getBoundingClientRect()
+            setMarkerMenuAnchorPoint({ x: rect.left + (rect.width / 2), y: rect.bottom })
+        }
+        setMarkerMenuOpen((open) => !open)
+        setMenuOpen(false)
+    }
+
     if (isTelegramApp()) {
         return null
     }
@@ -121,8 +124,7 @@ export function SessionHeader(props: {
     return (
         <>
             <div className="bg-[var(--app-bg)] pt-[env(safe-area-inset-top)]">
-                <div className="mx-auto w-full max-w-content flex items-center gap-2 p-3">
-                    {/* Back button */}
+                <div className="mx-auto flex w-full max-w-content items-center gap-2 p-3">
                     <button
                         type="button"
                         onClick={props.onBack}
@@ -143,7 +145,6 @@ export function SessionHeader(props: {
                         </svg>
                     </button>
 
-                    {/* Session info - two lines: title and path */}
                     <div className="min-w-0 flex-1">
                         <div className="truncate font-semibold">
                             {title}
@@ -168,11 +169,19 @@ export function SessionHeader(props: {
 
                     <button
                         type="button"
-                        onClick={() => void setSessionStarred(!session.starred)}
-                        className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${session.starred ? 'text-amber-500 hover:bg-amber-500/10' : 'text-[var(--app-hint)] hover:bg-[var(--app-secondary-bg)] hover:text-[var(--app-fg)]'}`}
-                        title={session.starred ? t('session.action.unstar') : t('session.action.star')}
+                        ref={markerAnchorRef}
+                        onClick={handleMarkerMenuToggle}
+                        aria-haspopup="menu"
+                        aria-expanded={markerMenuOpen}
+                        aria-controls={markerMenuOpen ? markerMenuId : undefined}
+                        className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${session.markerColor ? 'bg-[var(--app-secondary-bg)] text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)]' : 'text-[var(--app-hint)] hover:bg-[var(--app-secondary-bg)] hover:text-[var(--app-fg)]'}`}
+                        title={session.markerColor ? t('session.action.marker') : t('session.action.setMarker')}
                     >
-                        <StarIcon filled={session.starred} />
+                        {session.markerColor ? (
+                            <SessionMarkerDot markerColor={session.markerColor} size={10} />
+                        ) : (
+                            <span className="inline-block h-[10px] w-[10px] rounded-full border border-[var(--app-divider)]" aria-hidden="true" />
+                        )}
                     </button>
 
                     {props.onViewFiles ? (
@@ -202,12 +211,21 @@ export function SessionHeader(props: {
                 </div>
             </div>
 
+            <SessionMarkerMenu
+                isOpen={markerMenuOpen}
+                onClose={() => setMarkerMenuOpen(false)}
+                anchorPoint={markerMenuAnchorPoint}
+                markerColor={session.markerColor}
+                onSelectMarkerColor={(markerColor) => { void setSessionMarkerColor(markerColor) }}
+                menuId={markerMenuId}
+            />
+
             <SessionActionMenu
                 isOpen={menuOpen}
                 onClose={() => setMenuOpen(false)}
                 sessionActive={session.active}
-                starred={session.starred}
-                onToggleStar={() => { void setSessionStarred(!session.starred) }}
+                markerColor={session.markerColor}
+                onSelectMarkerColor={(markerColor) => { void setSessionMarkerColor(markerColor) }}
                 onRename={() => setRenameOpen(true)}
                 onArchive={() => setArchiveOpen(true)}
                 onDelete={() => setDeleteOpen(true)}

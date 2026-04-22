@@ -1,3 +1,5 @@
+import type { SessionMarkerColor } from '@hapi/protocol/types'
+
 export type StoredSession = {
     id: string
     tag: string | null
@@ -15,7 +17,7 @@ export type StoredSession = {
     todosUpdatedAt: number | null
     teamState: unknown | null
     teamStateUpdatedAt: number | null
-    starred: boolean
+    markerColor: SessionMarkerColor | null
     active: boolean
     activeAt: number | null
     seq: number

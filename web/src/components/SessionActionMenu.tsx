@@ -7,14 +7,17 @@ import {
     useState,
     type CSSProperties
 } from 'react'
+import { SessionMarkerDot } from '@/components/SessionMarkerDot'
+import { SESSION_MARKER_COLORS } from '@/lib/sessionMarkers'
 import { useTranslation } from '@/lib/use-translation'
+import type { SessionMarkerColor } from '@/types/api'
 
 type SessionActionMenuProps = {
     isOpen: boolean
     onClose: () => void
     sessionActive: boolean
-    starred: boolean
-    onToggleStar: () => void
+    markerColor: SessionMarkerColor | null
+    onSelectMarkerColor: (markerColor: SessionMarkerColor | null) => void
     onRename: () => void
     onArchive: () => void
     onDelete: () => void
@@ -38,18 +41,6 @@ function EditIcon(props: { className?: string }) {
         >
             <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
             <path d="m15 5 4 4" />
-        </svg>
-    )
-}
-
-function StarIcon(props: { className?: string; filled?: boolean }) {
-    return props.filled ? (
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" className={props.className}>
-            <path d="m12 17.27 6.18 3.73-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
-        </svg>
-    ) : (
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={props.className}>
-            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
         </svg>
     )
 }
@@ -110,8 +101,8 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
         isOpen,
         onClose,
         sessionActive,
-        starred,
-        onToggleStar,
+        markerColor,
+        onSelectMarkerColor,
         onRename,
         onArchive,
         onDelete,
@@ -123,11 +114,6 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
     const internalId = useId()
     const resolvedMenuId = menuId ?? `session-action-menu-${internalId}`
     const headingId = `${resolvedMenuId}-heading`
-
-    const handleToggleStar = () => {
-        onClose()
-        onToggleStar()
-    }
 
     const handleRename = () => {
         onClose()
@@ -212,7 +198,7 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
         if (!isOpen) return
 
         const frame = window.requestAnimationFrame(() => {
-            const firstItem = menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')
+            const firstItem = menuRef.current?.querySelector<HTMLElement>('[role="menuitem"], [role="menuitemradio"]')
             firstItem?.focus()
         })
 
@@ -235,7 +221,7 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
     return (
         <div
             ref={menuRef}
-            className="fixed z-50 min-w-[200px] rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] p-1 shadow-lg animate-menu-pop"
+            className="fixed z-50 min-w-[220px] rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] p-1 shadow-lg animate-menu-pop"
             style={menuStyle}
         >
             <div
@@ -250,14 +236,39 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                 aria-labelledby={headingId}
                 className="flex flex-col gap-1"
             >
+                <div className="px-3 pt-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--app-hint)]">
+                    {t('session.action.marker')}
+                </div>
+                <div className="grid grid-cols-3 gap-1 px-1 pb-1">
+                    {SESSION_MARKER_COLORS.map((color) => (
+                        <button
+                            key={color}
+                            type="button"
+                            role="menuitemradio"
+                            aria-checked={markerColor === color}
+                            className={`flex items-center justify-center gap-2 rounded-md px-2 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] ${markerColor === color ? 'bg-[var(--app-subtle-bg)] text-[var(--app-fg)]' : 'text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]'}`}
+                            onClick={() => {
+                                onClose()
+                                onSelectMarkerColor(color)
+                            }}
+                            title={t(`session.marker.${color}`)}
+                        >
+                            <SessionMarkerDot markerColor={color} size={10} />
+                            <span>{t(`session.marker.${color}`)}</span>
+                        </button>
+                    ))}
+                </div>
                 <button
                     type="button"
                     role="menuitem"
                     className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
-                    onClick={handleToggleStar}
+                    onClick={() => {
+                        onClose()
+                        onSelectMarkerColor(null)
+                    }}
                 >
-                    <StarIcon className="text-amber-500" filled={starred} />
-                    {starred ? t('session.action.unstar') : t('session.action.star')}
+                    <span className="inline-block h-[10px] w-[10px] rounded-full border border-[var(--app-divider)]" aria-hidden="true" />
+                    {t('session.action.clearMarker')}
                 </button>
 
                 <button

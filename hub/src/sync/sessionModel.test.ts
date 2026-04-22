@@ -314,7 +314,7 @@ describe('session model', () => {
         }
     })
 
-    it('includes starred state in session summaries and preserves it on merge', async () => {
+    it('includes marker color in session summaries and preserves it on merge', async () => {
         const store = new Store(':memory:')
         const events: SyncEvent[] = []
         const cache = new SessionCache(store, createPublisher(events))
@@ -325,10 +325,10 @@ describe('session model', () => {
             null,
             'default'
         )
-        await cache.setSessionStarred(oldSession.id, true)
+        await cache.setSessionMarkerColor(oldSession.id, 'purple')
 
-        expect(cache.getSession(oldSession.id)?.starred).toBe(true)
-        expect(toSessionSummary(cache.getSession(oldSession.id)!).starred).toBe(true)
+        expect(cache.getSession(oldSession.id)?.markerColor).toBe('purple')
+        expect(toSessionSummary(cache.getSession(oldSession.id)!).markerColor).toBe('purple')
 
         const newSession = cache.getOrCreateSession(
             'session-star-new',
@@ -338,7 +338,7 @@ describe('session model', () => {
         )
 
         await cache.mergeSessions(oldSession.id, newSession.id, 'default')
-        expect(cache.getSession(newSession.id)?.starred).toBe(true)
+        expect(cache.getSession(newSession.id)?.markerColor).toBe('purple')
     })
 
 })

@@ -1,4 +1,5 @@
 import type {
+    SessionMarkerColor,
     AttachmentMetadata,
     AuthResponse,
     CodexCollaborationMode,
@@ -414,7 +415,7 @@ export class ApiClient {
         )
     }
 
-    async updateSession(sessionId: string, updates: { name?: string; starred?: boolean }): Promise<void> {
+    async updateSession(sessionId: string, updates: { name?: string; markerColor?: SessionMarkerColor | null }): Promise<void> {
         await this.request(`/api/sessions/${encodeURIComponent(sessionId)}`, {
             method: 'PATCH',
             body: JSON.stringify(updates)
@@ -425,8 +426,8 @@ export class ApiClient {
         await this.updateSession(sessionId, { name })
     }
 
-    async setSessionStarred(sessionId: string, starred: boolean): Promise<void> {
-        await this.updateSession(sessionId, { starred })
+    async setSessionMarkerColor(sessionId: string, markerColor: SessionMarkerColor | null): Promise<void> {
+        await this.updateSession(sessionId, { markerColor })
     }
 
     async deleteSession(sessionId: string): Promise<void> {

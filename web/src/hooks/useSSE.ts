@@ -30,12 +30,9 @@ const RECONNECT_MAX_DELAY_MS = 30_000
 const RECONNECT_JITTER_MS = 500
 const INVALIDATION_BATCH_MS = 16
 
-type SessionPatch = Partial<Pick<Session, 'active' | 'thinking' | 'activeAt' | 'updatedAt' | 'starred' | 'model' | 'effort' | 'permissionMode' | 'collaborationMode'>>
+type SessionPatch = Partial<Pick<Session, 'active' | 'thinking' | 'activeAt' | 'updatedAt' | 'markerColor' | 'model' | 'effort' | 'permissionMode' | 'collaborationMode'>>
 
 function sortSessionSummaries(left: SessionSummary, right: SessionSummary): number {
-    if (left.starred !== right.starred) {
-        return left.starred ? -1 : 1
-    }
     if (left.active !== right.active) {
         return left.active ? -1 : 1
     }
@@ -84,8 +81,8 @@ function getSessionPatch(value: unknown): SessionPatch | null {
         patch.updatedAt = value.updatedAt
         hasKnownPatch = true
     }
-    if (typeof value.starred === 'boolean') {
-        patch.starred = value.starred
+    if (value.markerColor === null || typeof value.markerColor === 'string') {
+        patch.markerColor = value.markerColor as Session['markerColor']
         hasKnownPatch = true
     }
     if (value.model === null || typeof value.model === 'string') {
@@ -112,7 +109,7 @@ function hasUnknownSessionPatchKeys(value: unknown): boolean {
     if (!hasRecordShape(value)) {
         return false
     }
-    const knownKeys = new Set(['active', 'thinking', 'activeAt', 'updatedAt', 'starred', 'model', 'effort', 'permissionMode', 'collaborationMode'])
+    const knownKeys = new Set(['active', 'thinking', 'activeAt', 'updatedAt', 'markerColor', 'model', 'effort', 'permissionMode', 'collaborationMode'])
     return Object.keys(value).some((key) => !knownKeys.has(key))
 }
 

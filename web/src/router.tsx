@@ -194,7 +194,7 @@ function SessionsPage() {
         return labels
     }, [machines])
     const inactiveSessions = useMemo(
-        () => sessions.filter((session) => !session.active && !session.starred),
+        () => sessions.filter((session) => !session.active && !session.markerColor),
         [sessions]
     )
     const sessionMatch = matchRoute({ to: '/sessions/$sessionId', fuzzy: true })

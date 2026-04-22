@@ -18,7 +18,7 @@ export type SessionSummary = {
     metadata: SessionSummaryMetadata | null
     todoProgress: { completed: number; total: number } | null
     pendingRequestsCount: number
-    starred: boolean
+    markerColor: Session['markerColor']
     model: string | null
     effort: string | null
 }
@@ -49,7 +49,7 @@ export function toSessionSummary(session: Session): SessionSummary {
         metadata,
         todoProgress,
         pendingRequestsCount,
-        starred: session.starred,
+        markerColor: session.markerColor,
         model: session.model,
         effort: session.effort
     }

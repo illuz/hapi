@@ -38,7 +38,8 @@ import {
     getLastAssistantLines,
     loadAutoContinueState,
     saveAutoContinueState,
-    shouldAutoContinue
+    shouldAutoContinue,
+    shouldStopAutoContinue
 } from '@/lib/autoContinue'
 
 export function SessionChat(props: {
@@ -75,6 +76,7 @@ export function SessionChat(props: {
     const [autoContinueRemaining, setAutoContinueRemaining] = useState(AUTO_CONTINUE_DEFAULT_REMAINING)
     const [autoContinueMaxRuns, setAutoContinueMaxRuns] = useState(AUTO_CONTINUE_DEFAULT_REMAINING)
     const [autoContinueKeywords, setAutoContinueKeywords] = useState<string[]>(AUTO_CONTINUE_DEFAULT_KEYWORDS)
+    const [autoContinueStopKeywords, setAutoContinueStopKeywords] = useState<string[]>([])
     const [autoContinuePrompt, setAutoContinuePrompt] = useState(AUTO_CONTINUE_DEFAULT_PROMPT)
     const [autoContinueDialogOpen, setAutoContinueDialogOpen] = useState(false)
     const agentFlavor = props.session.metadata?.flavor ?? null
@@ -195,6 +197,7 @@ export function SessionChat(props: {
         setAutoContinueRemaining(state.remaining)
         setAutoContinueMaxRuns(state.maxRuns)
         setAutoContinueKeywords(state.keywords)
+        setAutoContinueStopKeywords(state.stopKeywords)
         setAutoContinuePrompt(state.prompt)
         lastAutoContinueKeyRef.current = null
     }, [props.session.id])
@@ -209,9 +212,10 @@ export function SessionChat(props: {
             remaining: autoContinueRemaining,
             maxRuns: autoContinueMaxRuns,
             keywords: autoContinueKeywords,
+            stopKeywords: autoContinueStopKeywords,
             prompt: autoContinuePrompt
         })
-    }, [props.session.id, autoContinueEnabled, autoContinueRemaining, autoContinueMaxRuns, autoContinueKeywords, autoContinuePrompt])
+    }, [props.session.id, autoContinueEnabled, autoContinueRemaining, autoContinueMaxRuns, autoContinueKeywords, autoContinueStopKeywords, autoContinuePrompt])
 
     useEffect(() => {
         if (autoContinueEnabled && autoContinueRemaining <= 0) {
@@ -382,11 +386,13 @@ export function SessionChat(props: {
         maxRuns: number
         remaining: number
         keywords: string[]
+        stopKeywords: string[]
         prompt: string
     }) => {
         setAutoContinueMaxRuns(settings.maxRuns)
         setAutoContinueRemaining(settings.remaining)
         setAutoContinueKeywords(settings.keywords)
+        setAutoContinueStopKeywords(settings.stopKeywords)
         setAutoContinuePrompt(settings.prompt)
     }, [])
 
@@ -431,6 +437,7 @@ export function SessionChat(props: {
         if (lastAutoContinueKeyRef.current === completionKey) return
 
         const recentLines = getLastAssistantLines(reconciled.blocks)
+        if (shouldStopAutoContinue(recentLines, autoContinueStopKeywords)) return
         if (!shouldAutoContinue(recentLines, autoContinueKeywords)) return
 
         lastAutoContinueKeyRef.current = completionKey
@@ -453,6 +460,7 @@ export function SessionChat(props: {
         autoContinueEnabled,
         autoContinueRemaining,
         autoContinueKeywords,
+        autoContinueStopKeywords,
         reconciled.blocks,
         controlledByUser,
         handleSendContinue,
@@ -594,6 +602,7 @@ export function SessionChat(props: {
                 initialMaxRuns={autoContinueMaxRuns}
                 initialRemaining={autoContinueRemaining}
                 initialKeywords={autoContinueKeywords}
+                initialStopKeywords={autoContinueStopKeywords}
                 initialPrompt={autoContinuePrompt}
                 onSave={handleAutoContinueSettingsSave}
             />

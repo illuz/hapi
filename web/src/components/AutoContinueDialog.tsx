@@ -16,13 +16,15 @@ export function AutoContinueDialog(props: {
     initialMaxRuns: number
     initialRemaining: number
     initialKeywords: string[]
+    initialStopKeywords: string[]
     initialPrompt: string
-    onSave: (settings: { maxRuns: number; remaining: number; keywords: string[]; prompt: string }) => void
+    onSave: (settings: { maxRuns: number; remaining: number; keywords: string[]; stopKeywords: string[]; prompt: string }) => void
 }) {
     const { t } = useTranslation()
     const [maxRunsText, setMaxRunsText] = useState(String(props.initialMaxRuns))
     const [remainingText, setRemainingText] = useState(String(props.initialRemaining))
     const [keywordsText, setKeywordsText] = useState(props.initialKeywords.join('\n'))
+    const [stopKeywordsText, setStopKeywordsText] = useState(props.initialStopKeywords.join('\n'))
     const [promptText, setPromptText] = useState(props.initialPrompt)
     const [error, setError] = useState<string | null>(null)
     const countInputRef = useRef<HTMLInputElement>(null)
@@ -32,15 +34,17 @@ export function AutoContinueDialog(props: {
         setMaxRunsText(String(props.initialMaxRuns))
         setRemainingText(String(props.initialRemaining))
         setKeywordsText(props.initialKeywords.join('\n'))
+        setStopKeywordsText(props.initialStopKeywords.join('\n'))
         setPromptText(props.initialPrompt)
         setError(null)
         setTimeout(() => countInputRef.current?.focus(), 100)
-    }, [props.isOpen, props.initialMaxRuns, props.initialRemaining, props.initialKeywords, props.initialPrompt])
+    }, [props.isOpen, props.initialMaxRuns, props.initialRemaining, props.initialKeywords, props.initialStopKeywords, props.initialPrompt])
 
     const handleSave = () => {
         const maxRuns = Number.parseInt(maxRunsText, 10)
         const remaining = Number.parseInt(remainingText, 10)
         const keywords = normalizeAutoContinueKeywords(keywordsText.split(/\r?\n|,/g))
+        const stopKeywords = normalizeAutoContinueKeywords(stopKeywordsText.split(/\r?\n|,/g), [])
         const prompt = normalizeAutoContinuePrompt(promptText)
 
         if (!Number.isFinite(maxRuns) || maxRuns < 1) {
@@ -54,7 +58,7 @@ export function AutoContinueDialog(props: {
         }
 
         setError(null)
-        props.onSave({ maxRuns, remaining, keywords, prompt })
+        props.onSave({ maxRuns, remaining, keywords, stopKeywords, prompt })
         props.onClose()
     }
 
@@ -81,18 +85,6 @@ export function AutoContinueDialog(props: {
                 </DialogHeader>
 
                 <div className="mt-4 flex flex-col gap-4">
-                    <label className="flex flex-col gap-1 text-sm">
-                        <span className="text-[var(--app-fg)]">{t('session.autoContinueMaxRuns')}</span>
-                        <input
-                            ref={countInputRef}
-                            type="number"
-                            min={1}
-                            value={maxRunsText}
-                            onChange={(e) => setMaxRunsText(e.target.value)}
-                            className="w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2.5 text-[var(--app-fg)] focus:outline-none focus:ring-2 focus:ring-[var(--app-button)]"
-                        />
-                    </label>
-
                     <div className="flex flex-col gap-2 text-sm">
                         <span className="text-[var(--app-fg)]">{t('session.autoContinuePresets')}</span>
                         <div className="flex flex-wrap gap-2">
@@ -109,6 +101,18 @@ export function AutoContinueDialog(props: {
                             ))}
                         </div>
                     </div>
+
+                    <label className="flex flex-col gap-1 text-sm">
+                        <span className="text-[var(--app-fg)]">{t('session.autoContinueMaxRuns')}</span>
+                        <input
+                            ref={countInputRef}
+                            type="number"
+                            min={1}
+                            value={maxRunsText}
+                            onChange={(e) => setMaxRunsText(e.target.value)}
+                            className="w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2.5 text-[var(--app-fg)] focus:outline-none focus:ring-2 focus:ring-[var(--app-button)]"
+                        />
+                    </label>
 
                     <label className="flex flex-col gap-1 text-sm">
                         <span className="text-[var(--app-fg)]">{t('session.autoContinueRemaining')}</span>
@@ -133,6 +137,17 @@ export function AutoContinueDialog(props: {
                             value={keywordsText}
                             onChange={(e) => setKeywordsText(e.target.value)}
                             placeholder={t('session.autoContinueKeywordsPlaceholder')}
+                            className="w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2.5 text-[var(--app-fg)] placeholder:text-[var(--app-hint)] focus:outline-none focus:ring-2 focus:ring-[var(--app-button)]"
+                        />
+                    </label>
+
+                    <label className="flex flex-col gap-1 text-sm">
+                        <span className="text-[var(--app-fg)]">{t('session.autoContinueStopKeywords')}</span>
+                        <textarea
+                            rows={3}
+                            value={stopKeywordsText}
+                            onChange={(e) => setStopKeywordsText(e.target.value)}
+                            placeholder={t('session.autoContinueStopKeywordsPlaceholder')}
                             className="w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2.5 text-[var(--app-fg)] placeholder:text-[var(--app-hint)] focus:outline-none focus:ring-2 focus:ring-[var(--app-button)]"
                         />
                     </label>

@@ -4,12 +4,14 @@ import {
     AUTO_CONTINUE_DEFAULT_KEYWORDS,
     AUTO_CONTINUE_DEFAULT_PROMPT,
     AUTO_CONTINUE_DEFAULT_REMAINING,
+    AUTO_CONTINUE_DEFAULT_STOP_KEYWORDS,
     getLastAssistantLines,
     loadAutoContinueState,
     normalizeAutoContinueKeywords,
     normalizeAutoContinuePrompt,
     saveAutoContinueState,
-    shouldAutoContinue
+    shouldAutoContinue,
+    shouldStopAutoContinue
 } from './autoContinue'
 
 describe('autoContinue', () => {
@@ -23,6 +25,7 @@ describe('autoContinue', () => {
             remaining: AUTO_CONTINUE_DEFAULT_REMAINING,
             maxRuns: AUTO_CONTINUE_DEFAULT_REMAINING,
             keywords: AUTO_CONTINUE_DEFAULT_KEYWORDS,
+            stopKeywords: AUTO_CONTINUE_DEFAULT_STOP_KEYWORDS,
             prompt: AUTO_CONTINUE_DEFAULT_PROMPT
         })
     })
@@ -33,6 +36,7 @@ describe('autoContinue', () => {
             remaining: 17,
             maxRuns: 30,
             keywords: ['下一步', '继续'],
+            stopKeywords: ['已完成'],
             prompt: 'go on'
         })
 
@@ -41,6 +45,7 @@ describe('autoContinue', () => {
             remaining: 17,
             maxRuns: 30,
             keywords: ['下一步', '继续'],
+            stopKeywords: ['已完成'],
             prompt: 'go on'
         })
     })
@@ -58,6 +63,7 @@ describe('autoContinue', () => {
             remaining: 5,
             maxRuns: 9,
             keywords: ['shared keyword'],
+            stopKeywords: ['shared stop'],
             prompt: 'shared prompt'
         })
 
@@ -66,6 +72,7 @@ describe('autoContinue', () => {
             remaining: AUTO_CONTINUE_DEFAULT_REMAINING,
             maxRuns: AUTO_CONTINUE_DEFAULT_REMAINING,
             keywords: ['shared keyword'],
+            stopKeywords: ['shared stop'],
             prompt: 'shared prompt'
         })
     })
@@ -152,5 +159,10 @@ describe('autoContinue', () => {
 
     it('supports slash-delimited regex keywords', () => {
         expect(shouldAutoContinue(['Need a Next follow-up Step now'], ['/next.+step/'])).toBe(true)
+    })
+
+    it('prevents auto-continue when stop keywords are present', () => {
+        expect(shouldStopAutoContinue(['请不要继续，已经完成'], ['不要继续', '已完成'])).toBe(true)
+        expect(shouldStopAutoContinue(['继续处理剩余内容'], ['停止'])).toBe(false)
     })
 })

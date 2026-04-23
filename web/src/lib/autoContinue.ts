@@ -4,16 +4,18 @@ export const AUTO_CONTINUE_DEFAULT_REMAINING = 80
 export const AUTO_CONTINUE_LINE_LIMIT = 10
 export const AUTO_CONTINUE_DEFAULT_KEYWORDS = ['下一步', '下一个步骤', '下一轮', '继续', 'continue', 'next step', 'next\\s+\\w+\\s+step', 'what next']
 export const AUTO_CONTINUE_DEFAULT_PROMPT = 'continue'
+export const AUTO_CONTINUE_DEFAULT_STOP_KEYWORDS: string[] = []
 
 export type AutoContinueState = {
     enabled: boolean
     remaining: number
     maxRuns: number
     keywords: string[]
+    stopKeywords: string[]
     prompt: string
 }
 
-type AutoContinueSharedSettings = Pick<AutoContinueState, 'keywords' | 'prompt'>
+type AutoContinueSharedSettings = Pick<AutoContinueState, 'keywords' | 'stopKeywords' | 'prompt'>
 
 function getSessionStorageKey(sessionId: string): string {
     return `hapi:auto-continue:${sessionId}`
@@ -46,9 +48,9 @@ export function normalizeAutoContinuePrompt(value: unknown): string {
     return normalized.length > 0 ? normalized : AUTO_CONTINUE_DEFAULT_PROMPT
 }
 
-export function normalizeAutoContinueKeywords(value: unknown): string[] {
+export function normalizeAutoContinueKeywords(value: unknown, fallback = AUTO_CONTINUE_DEFAULT_KEYWORDS): string[] {
     if (!Array.isArray(value)) {
-        return [...AUTO_CONTINUE_DEFAULT_KEYWORDS]
+        return [...fallback]
     }
 
     const normalized = value
@@ -56,7 +58,7 @@ export function normalizeAutoContinueKeywords(value: unknown): string[] {
         .map((item) => item.trim())
         .filter((item, index, array) => item.length > 0 && array.indexOf(item) === index)
 
-    return normalized.length > 0 ? normalized : [...AUTO_CONTINUE_DEFAULT_KEYWORDS]
+    return normalized.length > 0 ? normalized : [...fallback]
 }
 
 function getDefaultAutoContinueState(): AutoContinueState {
@@ -65,6 +67,7 @@ function getDefaultAutoContinueState(): AutoContinueState {
         remaining: AUTO_CONTINUE_DEFAULT_REMAINING,
         maxRuns: AUTO_CONTINUE_DEFAULT_REMAINING,
         keywords: [...AUTO_CONTINUE_DEFAULT_KEYWORDS],
+        stopKeywords: [...AUTO_CONTINUE_DEFAULT_STOP_KEYWORDS],
         prompt: AUTO_CONTINUE_DEFAULT_PROMPT
     }
 }
@@ -73,6 +76,7 @@ function loadAutoContinueSharedSettings(): AutoContinueSharedSettings {
     if (typeof window === 'undefined') {
         return {
             keywords: [...AUTO_CONTINUE_DEFAULT_KEYWORDS],
+            stopKeywords: [...AUTO_CONTINUE_DEFAULT_STOP_KEYWORDS],
             prompt: AUTO_CONTINUE_DEFAULT_PROMPT
         }
     }
@@ -82,6 +86,7 @@ function loadAutoContinueSharedSettings(): AutoContinueSharedSettings {
         if (!raw) {
             return {
                 keywords: [...AUTO_CONTINUE_DEFAULT_KEYWORDS],
+                stopKeywords: [...AUTO_CONTINUE_DEFAULT_STOP_KEYWORDS],
                 prompt: AUTO_CONTINUE_DEFAULT_PROMPT
             }
         }
@@ -89,11 +94,13 @@ function loadAutoContinueSharedSettings(): AutoContinueSharedSettings {
         const parsed = JSON.parse(raw) as Partial<AutoContinueSharedSettings>
         return {
             keywords: normalizeAutoContinueKeywords(parsed.keywords),
+            stopKeywords: normalizeAutoContinueKeywords(parsed.stopKeywords, AUTO_CONTINUE_DEFAULT_STOP_KEYWORDS),
             prompt: normalizeAutoContinuePrompt(parsed.prompt)
         }
     } catch {
         return {
             keywords: [...AUTO_CONTINUE_DEFAULT_KEYWORDS],
+            stopKeywords: [...AUTO_CONTINUE_DEFAULT_STOP_KEYWORDS],
             prompt: AUTO_CONTINUE_DEFAULT_PROMPT
         }
     }
@@ -120,6 +127,7 @@ export function loadAutoContinueState(sessionId: string): AutoContinueState {
             remaining: clampRemaining(parsed.remaining, maxRuns),
             maxRuns,
             keywords: sharedSettings.keywords,
+            stopKeywords: sharedSettings.stopKeywords,
             prompt: sharedSettings.prompt
         }
     } catch {
@@ -140,6 +148,7 @@ export function saveAutoContinueState(sessionId: string, state: AutoContinueStat
         }))
         window.localStorage.setItem(getSharedStorageKey(), JSON.stringify({
             keywords: normalizeAutoContinueKeywords(state.keywords),
+            stopKeywords: normalizeAutoContinueKeywords(state.stopKeywords, AUTO_CONTINUE_DEFAULT_STOP_KEYWORDS),
             prompt: normalizeAutoContinuePrompt(state.prompt)
         }))
     } catch {
@@ -218,6 +227,17 @@ export function shouldAutoContinue(lines: string[], keywords = AUTO_CONTINUE_DEF
         if (pattern) {
             return lines.some((line) => pattern.test(line))
         }
+        const loweredKeyword = keyword.toLowerCase()
+        return loweredLines.some((line) => line.includes(loweredKeyword))
+    })
+}
+
+export function shouldStopAutoContinue(lines: string[], stopKeywords = AUTO_CONTINUE_DEFAULT_STOP_KEYWORDS): boolean {
+    if (lines.length === 0) return false
+    const normalizedKeywords = normalizeAutoContinueKeywords(stopKeywords, AUTO_CONTINUE_DEFAULT_STOP_KEYWORDS)
+    if (normalizedKeywords.length === 0) return false
+    const loweredLines = lines.map((line) => line.toLowerCase())
+    return normalizedKeywords.some((keyword) => {
         const loweredKeyword = keyword.toLowerCase()
         return loweredLines.some((line) => line.includes(loweredKeyword))
     })

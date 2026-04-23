@@ -73,6 +73,8 @@ export default {
   'session.autoContinueRemaining': 'Remaining runs',
   'session.autoContinuePresets': 'Quick presets',
   'session.autoContinueKeywords': 'Keywords',
+  'session.autoContinueStopKeywords': 'Stop keywords',
+  'session.autoContinueStopKeywordsPlaceholder': 'One keyword per line. If any appears, auto-continue stops.',
   'session.autoContinueKeywordsPlaceholder': 'One keyword per line, for example:\nnext round\ncontinue',
   'session.autoContinuePrompt': 'Continue message',
   'session.autoContinuePromptPlaceholder': 'Message to send when continuing automatically or manually',

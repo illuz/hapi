@@ -73,6 +73,8 @@ export default {
   'session.autoContinueRemaining': '剩余次数',
   'session.autoContinuePresets': '快捷设置',
   'session.autoContinueKeywords': '触发关键词',
+  'session.autoContinueStopKeywords': '停止词',
+  'session.autoContinueStopKeywordsPlaceholder': '每行一个停止词，命中任意一个就不再自动继续。',
   'session.autoContinueKeywordsPlaceholder': '每行一个关键词，例如：\n下一轮\n继续\ncontinue',
   'session.autoContinuePrompt': 'Continue 发送内容',
   'session.autoContinuePromptPlaceholder': '自动继续或手动点继续时发送的内容',

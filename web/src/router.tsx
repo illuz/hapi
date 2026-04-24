@@ -144,15 +144,12 @@ function TrashIcon(props: { className?: string }) {
 
 function HapiLogo(props: { className?: string }) {
     return (
-        <div className={`flex items-center gap-2 ${props.className ?? ''}`}>
+        <div className={`flex items-center ${props.className ?? ''}`}>
             <img
                 src="/icon.svg"
                 alt="HAPI"
                 className="h-7 w-7 rounded-md shadow-sm"
             />
-            <span className="text-sm font-semibold tracking-[0.18em] text-[var(--app-fg)]">
-                HAPI
-            </span>
         </div>
     )
 }

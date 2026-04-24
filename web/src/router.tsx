@@ -174,6 +174,8 @@ function SessionsPage() {
     const { machines } = useMachines(api, true)
     const [cleanupDialogOpen, setCleanupDialogOpen] = useState(false)
     const [isCleaningInactive, setIsCleaningInactive] = useState(false)
+    const [filterOpen, setFilterOpen] = useState(false)
+    const [filterText, setFilterText] = useState('')
     const [lastViewedSessionId, setLastViewedSessionId] = useState<string | null>(() => {
         if (typeof window === 'undefined') return null
         return window.sessionStorage.getItem('hapi-last-viewed-session-id')
@@ -193,6 +195,44 @@ function SessionsPage() {
         }
         return labels
     }, [machines])
+    const filteredSessions = useMemo(() => {
+        const query = filterText.trim().toLowerCase()
+        if (!query) {
+            return sessions
+        }
+
+        return sessions.filter((session) => {
+            const haystack = [
+                session.metadata?.name,
+                session.metadata?.summary?.text,
+                session.metadata?.path,
+                session.metadata?.worktree?.basePath,
+                session.metadata?.worktree?.branch,
+                session.metadata?.machineId,
+                session.id
+            ]
+                .filter((value): value is string => typeof value === 'string' && value.length > 0)
+                .join('\n')
+                .toLowerCase()
+
+            return haystack.includes(query)
+        })
+    }, [filterText, sessions])
+    const filteredProjectCount = useMemo(() => new Set(filteredSessions.map(s =>
+        s.metadata?.worktree?.basePath ?? s.metadata?.path ?? 'Other'
+    )).size, [filteredSessions])
+    const showFilterInput = filterOpen || filterText.trim().length > 0
+
+    const handleToggleFilter = useCallback(() => {
+        if (showFilterInput) {
+            setFilterOpen(false)
+            setFilterText('')
+            return
+        }
+
+        setFilterOpen(true)
+    }, [showFilterInput])
+
     const inactiveSessions = useMemo(
         () => sessions.filter((session) => !session.active && !session.markerColor),
         [sessions]
@@ -248,10 +288,30 @@ function SessionsPage() {
                         <div className="flex min-w-0 items-center gap-3">
                             <HapiLogo className="shrink-0" />
                             <div className="text-xs text-[var(--app-hint)]">
-                                {t('sessions.count', { n: sessions.length, m: projectCount })}
+                                {t('sessions.count', { n: filteredSessions.length, m: filteredProjectCount })}
                             </div>
                         </div>
                         <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={handleToggleFilter}
+                                className={`p-1.5 rounded-full transition-colors ${showFilterInput ? 'text-[var(--app-link)] bg-[var(--app-subtle-bg)]' : 'text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)]'}`}
+                                title={showFilterInput ? t('sessions.clearFilter') : t('sessions.filter')}
+                            >
+                                <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    width="20"
+                                    height="20"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                >
+                                    <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+                                </svg>
+                            </button>
                             <button
                                 type="button"
                                 onClick={handleRefresh}
@@ -288,6 +348,18 @@ function SessionsPage() {
                             </button>
                         </div>
                     </div>
+                    {showFilterInput ? (
+                        <div className="px-3 pb-2">
+                            <input
+                                type="text"
+                                value={filterText}
+                                autoFocus
+                                onChange={(event) => setFilterText(event.target.value)}
+                                placeholder={t('sessions.filterPlaceholder')}
+                                className="w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2 text-sm text-[var(--app-fg)] placeholder:text-[var(--app-hint)] focus:outline-none focus:ring-2 focus:ring-[var(--app-link)]"
+                            />
+                        </div>
+                    ) : null}
                 </div>
 
                 <div className="app-scroll-y flex-1 min-h-0 desktop-scrollbar-left">
@@ -297,7 +369,7 @@ function SessionsPage() {
                         </div>
                     ) : null}
                     <SessionList
-                        sessions={sessions}
+                        sessions={filteredSessions}
                         selectedSessionId={selectedSessionId}
                         onSelect={(sessionId) => navigate({
                             to: '/sessions/$sessionId',

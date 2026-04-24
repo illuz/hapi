@@ -48,6 +48,9 @@ export default {
   'sessions.new': '新建会话',
   'sessions.refresh': '刷新列表',
   'sessions.cleanupInactive': '清理非活跃会话',
+  'sessions.filter': '过滤会话',
+  'sessions.clearFilter': '清除过滤',
+  'sessions.filterPlaceholder': '按标题、路径、分支、机器等过滤…',
 
   // Session list
   'session.item.path': '路径',

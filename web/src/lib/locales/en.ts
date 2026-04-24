@@ -48,6 +48,9 @@ export default {
   'sessions.new': 'New Session',
   'sessions.refresh': 'Refresh list',
   'sessions.cleanupInactive': 'Clear inactive sessions',
+  'sessions.filter': 'Filter sessions',
+  'sessions.clearFilter': 'Clear filter',
+  'sessions.filterPlaceholder': 'Filter by title, path, branch, machine…',
 
   // Session list
   'session.item.path': 'path',

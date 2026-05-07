@@ -10,6 +10,7 @@ import { AsyncLock } from '@/utils/lock'
 import type { RawJSONLines } from '@/claude/types'
 import { configuration } from '@/configuration'
 import { AGENT_MESSAGE_PAYLOAD_TYPE } from "@hapi/protocol"
+import type { SessionEndReason } from '@hapi/protocol'
 import type { ClientToServerEvents, ServerToClientEvents, Update } from '@hapi/protocol'
 import {
     TerminalClosePayloadSchema,
@@ -34,6 +35,7 @@ import { registerCommonHandlers } from '../modules/common/registerCommonHandlers
 import { cleanupUploadDir } from '../modules/common/handlers/uploads'
 import { TerminalManager } from '@/terminal/TerminalManager'
 import { applyVersionedAck } from './versionedUpdate'
+import { buildHubRequestHeaders, buildSocketIoExtraHeaderOptions } from './hubExtraHeaders'
 
 /**
  * XML tags that Claude Code injects as `type:'user'` messages.
@@ -77,8 +79,9 @@ export class ApiSessionClient extends EventEmitter {
     private agentState: AgentState | null
     private agentStateVersion: number
     private readonly socket: Socket<ServerToClientEvents, ClientToServerEvents>
-    private pendingMessages: UserMessage[] = []
-    private pendingMessageCallback: ((message: UserMessage) => void) | null = null
+    private pendingMessages: { message: UserMessage; localId?: string }[] = []
+    private pendingMessageCallback: ((message: UserMessage, localId?: string) => void) | null = null
+    private cancelQueuedMessageCallback: ((localId: string) => boolean) | null = null
     private lastSeenMessageSeq: number | null = null
     private backfillInFlight: Promise<void> | null = null
     private needsBackfill = false
@@ -118,7 +121,8 @@ export class ApiSessionClient extends EventEmitter {
             reconnectionDelay: 1000,
             reconnectionDelayMax: 5000,
             transports: ['polling', 'websocket'],
-            autoConnect: false
+            autoConnect: false,
+            ...buildSocketIoExtraHeaderOptions()
         })
 
         this.terminalManager = new TerminalManager({
@@ -197,12 +201,20 @@ export class ApiSessionClient extends EventEmitter {
             this.terminalManager.close(payload.terminalId)
         }))
 
-        this.socket.on('update', (data: Update) => {
+        this.socket.on('update', (data: Update, ack?: (response: { removed: boolean }) => void) => {
             try {
                 if (!data.body) return
 
                 if (data.body.t === 'new-message') {
                     this.handleIncomingMessage(data.body.message)
+                    return
+                }
+
+                if (data.body.t === 'cancel-queued-message') {
+                    const removed = (data.body.localId && this.cancelQueuedMessageCallback)
+                        ? this.cancelQueuedMessageCallback(data.body.localId)
+                        : false
+                    ack?.({ removed })
                     return
                 }
 
@@ -242,22 +254,27 @@ export class ApiSessionClient extends EventEmitter {
         this.socket.connect()
     }
 
-    onUserMessage(callback: (data: UserMessage) => void): void {
+    onUserMessage(callback: (data: UserMessage, localId?: string) => void): void {
         this.pendingMessageCallback = callback
         while (this.pendingMessages.length > 0) {
-            callback(this.pendingMessages.shift()!)
+            const pending = this.pendingMessages.shift()!
+            callback(pending.message, pending.localId)
         }
     }
 
-    private enqueueUserMessage(message: UserMessage): void {
+    onCancelQueuedMessage(callback: (localId: string) => boolean): void {
+        this.cancelQueuedMessageCallback = callback
+    }
+
+    private enqueueUserMessage(message: UserMessage, localId?: string): void {
         if (this.pendingMessageCallback) {
-            this.pendingMessageCallback(message)
+            this.pendingMessageCallback(message, localId)
         } else {
-            this.pendingMessages.push(message)
+            this.pendingMessages.push({ message, localId })
         }
     }
 
-    private handleIncomingMessage(message: { seq?: number; content: unknown }): void {
+    private handleIncomingMessage(message: { seq?: number; localId?: string | null; content: unknown }): void {
         const seq = typeof message.seq === 'number' ? message.seq : null
         if (seq !== null) {
             if (this.lastSeenMessageSeq !== null && seq <= this.lastSeenMessageSeq) {
@@ -268,7 +285,7 @@ export class ApiSessionClient extends EventEmitter {
 
         const userResult = UserMessageSchema.safeParse(message.content)
         if (userResult.success) {
-            this.enqueueUserMessage(userResult.data)
+            this.enqueueUserMessage(userResult.data, message.localId ?? undefined)
             return
         }
 
@@ -308,10 +325,10 @@ export class ApiSessionClient extends EventEmitter {
                     `${configuration.apiUrl}/cli/sessions/${encodeURIComponent(this.sessionId)}/messages`,
                     {
                         params: { afterSeq: cursor, limit },
-                        headers: {
+                        headers: buildHubRequestHeaders({
                             Authorization: `Bearer ${this.token}`,
                             'Content-Type': 'application/json'
-                        },
+                        }),
                         timeout: 15_000
                     }
                 )
@@ -477,6 +494,7 @@ export class ApiSessionClient extends EventEmitter {
         runtime?: {
             permissionMode?: SessionPermissionMode
             model?: SessionModel
+            modelReasoningEffort?: string | null
             effort?: string | null
             collaborationMode?: SessionCollaborationMode
         }
@@ -490,9 +508,14 @@ export class ApiSessionClient extends EventEmitter {
         })
     }
 
-    sendSessionDeath(): void {
+    emitMessagesConsumed(localIds: string[]): void {
+        if (localIds.length === 0) return
+        this.socket.emit('messages-consumed', { sid: this.sessionId, localIds })
+    }
+
+    sendSessionDeath(reason?: SessionEndReason): void {
         void cleanupUploadDir(this.sessionId)
-        this.socket.emit('session-end', { sid: this.sessionId, time: Date.now() })
+        this.socket.emit('session-end', { sid: this.sessionId, time: Date.now(), reason })
     }
 
     updateMetadata(handler: (metadata: Metadata) => Metadata): void {

@@ -8,6 +8,7 @@ import { useSession } from '@/hooks/queries/useSession'
 import { useTerminalSocket } from '@/hooks/useTerminalSocket'
 import { useLongPress } from '@/hooks/useLongPress'
 import { useTranslation } from '@/lib/use-translation'
+import { randomId } from '@/lib/randomId'
 import { TerminalView } from '@/components/Terminal/TerminalView'
 import { LoadingState } from '@/components/LoadingState'
 import { SessionUnavailableState } from '@/components/SessionUnavailableState'
@@ -193,12 +194,7 @@ export default function TerminalPage() {
         refetch: refetchSession,
     } = useSession(api, sessionId)
     const terminalSupported = isRemoteTerminalSupported(session?.metadata)
-    const terminalId = useMemo(() => {
-        if (typeof crypto?.randomUUID === 'function') {
-            return crypto.randomUUID()
-        }
-        return `${Date.now()}-${Math.random().toString(16).slice(2)}`
-    }, [sessionId])
+    const terminalId = useMemo(() => randomId(), [sessionId])
     const terminalRef = useRef<Terminal | null>(null)
     const inputDisposableRef = useRef<{ dispose: () => void } | null>(null)
     const connectOnceRef = useRef(false)

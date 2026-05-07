@@ -16,6 +16,7 @@ export type {
     StoredUser,
     VersionedUpdateResult
 } from './types'
+export type { CancelQueuedMessageResult, LookupQueuedMessageResult } from './messages'
 export { MachineStore } from './machineStore'
 export { MessageStore } from './messageStore'
 export { PushStore } from './pushStore'
@@ -85,9 +86,35 @@ export class Store {
 
     private initSchema(): void {
         const currentVersion = this.getUserVersion()
+        // V1/V2/V3 entries cover legacy DBs that pre-date our migration ladder.
+        // Each step is idempotent (column-existence guards inside) so we can
+        // safely run the full V1→V8 chain in the legacy branch where the DB
+        // shape is unknown.
+        const buildStepMigrations = (legacy: boolean): Record<number, () => void> => ({
+            1: () => this.migrateFromV1ToV2(legacy),
+            2: () => this.migrateFromV2ToV3(),
+            3: () => this.migrateFromV3ToV4(),
+            4: () => this.migrateFromV4ToV5(),
+            5: () => this.migrateFromV5ToV6(),
+            6: () => this.migrateFromV6ToV7(),
+            7: () => this.migrateFromV7ToV8(),
+        })
+
         if (currentVersion === 0) {
             if (this.hasAnyUserTables()) {
                 this.migrateLegacySchemaIfNeeded()
+                // Run the full step ladder BEFORE createSchema so legacy tables
+                // pick up every later-version column (e.g. invoked_at) via ALTER
+                // TABLE.  Without this, createSchema below would try to build
+                // idx_messages_session_position over a column that does not
+                // exist yet, and CREATE TABLE IF NOT EXISTS would not add the
+                // missing column to the existing table.
+                const legacySteps = buildStepMigrations(true)
+                for (let v = 1; v < SCHEMA_VERSION; v++) {
+                    legacySteps[v]?.()
+                }
+                // Backfill any *missing* tables (sessions, machines, ...) that
+                // a partially-built legacy DB may not have yet.
                 this.createSchema()
                 this.setUserVersion(SCHEMA_VERSION)
                 return
@@ -98,39 +125,13 @@ export class Store {
             return
         }
 
-        if (currentVersion === 1 && SCHEMA_VERSION === 2) {
-            this.migrateFromV1ToV2()
-            this.setUserVersion(SCHEMA_VERSION)
-            return
-        }
-
-        if (currentVersion === 2 && SCHEMA_VERSION === 3) {
-            this.migrateFromV2ToV3()
-            this.setUserVersion(SCHEMA_VERSION)
-            return
-        }
-
-        if (currentVersion === 3 && SCHEMA_VERSION === 4) {
-            this.migrateFromV3ToV4()
-            this.setUserVersion(SCHEMA_VERSION)
-            return
-        }
-
-        if (currentVersion === 4 && SCHEMA_VERSION === 5) {
-            this.migrateFromV4ToV5()
-            this.setUserVersion(SCHEMA_VERSION)
-            return
-        }
-
-        if (currentVersion === 5 && SCHEMA_VERSION === 6) {
-            this.migrateFromV5ToV6()
-            this.setUserVersion(SCHEMA_VERSION)
-            return
-        }
-
-        if (currentVersion === 4 && SCHEMA_VERSION === 6) {
-            this.migrateFromV4ToV5()
-            this.migrateFromV5ToV6()
+        const stepMigrations = buildStepMigrations(false)
+        if (currentVersion < SCHEMA_VERSION && stepMigrations[currentVersion]) {
+            for (let v = currentVersion; v < SCHEMA_VERSION; v++) {
+                const step = stepMigrations[v]
+                if (!step) throw this.buildSchemaMismatchError(currentVersion)
+                step()
+            }
             this.setUserVersion(SCHEMA_VERSION)
             return
         }
@@ -187,6 +188,7 @@ export class Store {
                 agent_state TEXT,
                 agent_state_version INTEGER DEFAULT 1,
                 model TEXT,
+                model_reasoning_effort TEXT,
                 effort TEXT,
                 todos TEXT,
                 todos_updated_at INTEGER,
@@ -222,10 +224,13 @@ export class Store {
                 created_at INTEGER NOT NULL,
                 seq INTEGER NOT NULL,
                 local_id TEXT,
+                invoked_at INTEGER,
                 FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
             );
             CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, seq);
             CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_local_id ON messages(session_id, local_id) WHERE local_id IS NOT NULL;
+            CREATE INDEX IF NOT EXISTS idx_messages_session_position
+                ON messages(session_id, COALESCE(invoked_at, created_at) DESC, seq DESC);
 
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -269,9 +274,14 @@ export class Store {
         }
     }
 
-    private migrateFromV1ToV2(): void {
+    private migrateFromV1ToV2(legacy: boolean = false): void {
         const columns = this.getMachineColumnNames()
         if (columns.size === 0) {
+            // In the legacy branch the table may not exist yet — createSchema
+            // will build the up-to-date one.  When invoked from the regular
+            // upgrade path (user_version >= 1), missing the machines table is
+            // still an error.
+            if (legacy) return
             throw new Error('SQLite schema missing machines table for v1 to v2 migration.')
         }
 
@@ -283,6 +293,7 @@ export class Store {
         }
 
         if (!hasDaemon) {
+            if (legacy) return
             throw new Error('SQLite schema missing daemon_state columns for v1 to v2 migration.')
         }
 
@@ -343,6 +354,11 @@ export class Store {
 
     private migrateFromV3ToV4(): void {
         const columns = this.getSessionColumnNames()
+        // When the legacy branch invokes the full step ladder, an upstream-only
+        // DB may not have the sessions table yet — createSchema runs after the
+        // ladder.  Skip ALTERs in that case; createSchema will build the table
+        // with the up-to-date columns.
+        if (columns.size === 0) return
         if (!columns.has('team_state')) {
             this.db.exec('ALTER TABLE sessions ADD COLUMN team_state TEXT')
         }
@@ -353,6 +369,7 @@ export class Store {
 
     private migrateFromV4ToV5(): void {
         const columns = this.getSessionColumnNames()
+        if (columns.size === 0) return
         if (!columns.has('model')) {
             this.db.exec('ALTER TABLE sessions ADD COLUMN model TEXT')
         }
@@ -360,6 +377,7 @@ export class Store {
 
     private migrateFromV5ToV6(): void {
         const columns = this.getSessionColumnNames()
+        if (columns.size === 0) return
         if (!columns.has('effort')) {
             this.db.exec('ALTER TABLE sessions ADD COLUMN effort TEXT')
         }
@@ -381,26 +399,50 @@ export class Store {
             throw new Error('SQLite schema missing sessions table for v6 to v7 migration.')
         }
 
-        if (columns.has('starred')) {
-            return
+        if (!columns.has('starred')) {
+            this.db.exec('ALTER TABLE sessions ADD COLUMN starred INTEGER NOT NULL DEFAULT 0')
         }
 
-        this.db.exec('ALTER TABLE sessions ADD COLUMN starred INTEGER NOT NULL DEFAULT 0')
+        if (!columns.has('model_reasoning_effort')) {
+            this.db.exec('ALTER TABLE sessions ADD COLUMN model_reasoning_effort TEXT')
+        }
     }
 
     private migrateFromV7ToV8(): void {
-        const columns = this.getSessionColumnNames()
-        if (columns.size === 0) {
+        const sessionColumns = this.getSessionColumnNames()
+        if (sessionColumns.size === 0) {
             throw new Error('SQLite schema missing sessions table for v7 to v8 migration.')
         }
 
-        if (!columns.has('marker_color')) {
+        if (!sessionColumns.has('marker_color')) {
             this.db.exec('ALTER TABLE sessions ADD COLUMN marker_color TEXT')
         }
 
-        if (columns.has('starred')) {
+        if (sessionColumns.has('starred')) {
             this.db.exec("UPDATE sessions SET marker_color = 'yellow' WHERE starred = 1 AND marker_color IS NULL")
         }
+
+        const messageColumns = this.getMessageColumnNames()
+        if (messageColumns.size === 0) {
+            // No messages table yet — createSchema will build the up-to-date one.
+            return
+        }
+        if (!messageColumns.has('invoked_at')) {
+            this.db.exec('ALTER TABLE messages ADD COLUMN invoked_at INTEGER')
+        }
+        // Idempotent (WHERE invoked_at IS NULL); safe to re-run if a previous attempt
+        // crashed between ALTER and UPDATE before user_version was bumped.
+        this.db.exec('UPDATE messages SET invoked_at = created_at WHERE invoked_at IS NULL')
+        // Position index for byPosition pagination — idempotent via IF NOT EXISTS.
+        this.db.exec(`
+            CREATE INDEX IF NOT EXISTS idx_messages_session_position
+                ON messages(session_id, COALESCE(invoked_at, created_at) DESC, seq DESC)
+        `)
+    }
+
+    private getMessageColumnNames(): Set<string> {
+        const rows = this.db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>
+        return new Set(rows.map((row) => row.name))
     }
 
     private getUserVersion(): number {

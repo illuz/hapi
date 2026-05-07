@@ -6,6 +6,7 @@ import { getAuthToken } from '@/api/auth'
 import { apiValidationError } from '@/utils/errorUtils'
 import { ApiMachineClient } from './apiMachine'
 import { ApiSessionClient } from './apiSession'
+import { buildHubRequestHeaders } from './hubExtraHeaders'
 
 export class ApiClient {
     static async create(): Promise<ApiClient> {
@@ -19,6 +20,7 @@ export class ApiClient {
         metadata: Metadata
         state: AgentState | null
         model?: string
+        modelReasoningEffort?: string
         effort?: string
     }): Promise<Session> {
         const response = await axios.post<CreateSessionResponse>(
@@ -28,13 +30,14 @@ export class ApiClient {
                 metadata: opts.metadata,
                 agentState: opts.state,
                 model: opts.model,
+                modelReasoningEffort: opts.modelReasoningEffort,
                 effort: opts.effort
             },
             {
-                headers: {
+                headers: buildHubRequestHeaders({
                     Authorization: `Bearer ${this.token}`,
                     'Content-Type': 'application/json'
-                },
+                }),
                 timeout: 60_000
             }
         )
@@ -75,6 +78,7 @@ export class ApiClient {
             todos: raw.todos,
             markerColor: raw.markerColor,
             model: raw.model,
+            modelReasoningEffort: raw.modelReasoningEffort,
             effort: raw.effort,
             permissionMode: raw.permissionMode,
             collaborationMode: raw.collaborationMode
@@ -94,10 +98,10 @@ export class ApiClient {
                 runnerState: opts.runnerState ?? null
             },
             {
-                headers: {
+                headers: buildHubRequestHeaders({
                     Authorization: `Bearer ${this.token}`,
                     'Content-Type': 'application/json'
-                },
+                }),
                 timeout: 60_000
             }
         )
@@ -139,7 +143,7 @@ export class ApiClient {
         return new ApiSessionClient(this.token, session)
     }
 
-    machineSyncClient(machine: Machine): ApiMachineClient {
-        return new ApiMachineClient(this.token, machine)
+    machineSyncClient(machine: Machine, options?: { workspaceRoots?: string[] }): ApiMachineClient {
+        return new ApiMachineClient(this.token, machine, options?.workspaceRoots)
     }
 }

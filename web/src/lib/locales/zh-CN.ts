@@ -51,6 +51,16 @@ export default {
   'sessions.filter': '过滤会话',
   'sessions.clearFilter': '清除过滤',
   'sessions.filterPlaceholder': '按标题、路径、分支、机器等过滤…',
+  'sessions.empty.title': '还没有会话',
+  'sessions.empty.hint': '在 workspace 下任意目录启动一个会话，或先浏览目录树看看。',
+  'sessions.empty.startSession': '启动会话',
+  'sessions.empty.browse': '浏览 workspace',
+  'sessions.search.placeholder': '搜索会话…',
+  'sessions.search.clear': '清除搜索',
+  'sessions.search.count': '{n} / {total} 个会话',
+  'sessions.search.noResults': '没有匹配的会话。',
+  'sessions.group.showMore': '再显示 {n} 个',
+  'sessions.group.showLess': '收起',
 
   // Session list
   'session.item.path': '路径',
@@ -85,6 +95,12 @@ export default {
   'session.continueBadgeAuto': '自动 Continue · 第 {n} 轮',
   'session.autoContinueErrorCount': '触发次数必须大于等于 1。',
   'session.autoContinueErrorRemaining': '剩余次数必须在 0 到触发次数之间。',
+  'session.outline.open': '会话大纲',
+  'session.outline.close': '关闭大纲',
+  'session.outline.title': '大纲',
+  'session.outline.loadOlder': '加载更早',
+  'session.outline.empty': '已加载消息中暂无大纲项',
+  'session.outline.kind.user': '用户',
 
   // Session actions
   'session.action.marker': '标记颜色',
@@ -138,6 +154,7 @@ export default {
   'newSession.machine': '机器',
   'newSession.directory': '目录',
   'newSession.placeholder': '/path/to/project',
+  'newSession.browse': '浏览',
   'newSession.recent': '最近路径',
   'newSession.type': '会话类型',
   'newSession.type.simple': '简单',
@@ -149,6 +166,12 @@ export default {
   'newSession.model': '模型',
   'newSession.effort': '思考强度',
   'newSession.model.optional': '可选',
+  'newSession.model.loadFailed': '加载 Codex 模型失败',
+  'newSession.opencodeModel.loading': '正在发现 OpenCode 模型…',
+  'newSession.opencodeModel.loadFailed': '加载 OpenCode 模型失败',
+  'newSession.opencodeModel.retry': '重试',
+  'newSession.opencodeModel.empty': '未在此目录发现 OpenCode 模型',
+  'newSession.opencodeModel.default': '默认',
   'newSession.reasoningEffort': '推理强度',
   'newSession.yolo': 'YOLO 模式',
   'newSession.yolo.title': '跳过审批和沙箱',
@@ -168,6 +191,7 @@ export default {
   'session.directoryMissingSimple': '目录不存在，创建会话时将自动创建。',
   'session.directoryMissingSimpleConfirm': '目录不存在。再次点击按钮将自动新建该目录。',
   'session.directoryMissingWorktree': 'worktree 需要已存在的仓库目录。',
+  'session.codexModelsLoadFailed': '加载 Codex 模型失败',
   'session.createAndCreateDirectory': '创建并新建目录',
 
   // Machine
@@ -194,6 +218,7 @@ export default {
 
   // Code block
   'code.copy': '复制',
+  'code.truncated': '预览已截断 — 打开详情查看完整输出',
 
   // Diff view
   'diff.title': '差异',
@@ -217,7 +242,14 @@ export default {
   'tool.exitPlan': '退出计划模式',
   'tool.patch': '补丁',
   'tool.input': '输入',
+  'tool.trace': '追踪',
+  'tool.trace.callsSuffix': '次调用',
   'tool.result': '结果',
+  'tool.semanticTitle.readFile': '读取文件',
+  'tool.semanticTitle.runShell': '运行命令',
+  'tool.semanticTitle.search': '搜索',
+  'tool.semanticTitle.openUrl': '打开链接',
+  'tool.semanticTitle.query': '查询',
   'tool.questionsAnswers': '问答',
   'tool.submit': '提交',
   'tool.submitting': '提交中…',
@@ -287,10 +319,17 @@ export default {
   'reconnecting.reason.error': '流连接错误',
   'reconnecting.reason.closed': '流连接已关闭',
   'reconnecting.reason.heartbeatTimeout': '心跳超时',
+  'reconnecting.reason.visibilityRecovery': '后台恢复中',
 
   // Send blocked
   'send.blocked.title': '无法发送消息',
   'send.blocked.noConnection': '未连接到服务器',
+  'resume.failed.title': '恢复会话失败',
+  'toast.ready.title': '等待输入',
+  'toast.ready.body': '{agent} 正在 {session} 等待你的输入',
+  'toast.permission.title': '权限请求',
+  'toast.task.completed': '任务完成',
+  'toast.task.failed': '任务失败',
 
   // Install prompt
   'install.title': '安装 HAPI',
@@ -313,6 +352,10 @@ export default {
   'settings.display.appearance.light': '浅色',
   'settings.display.fontSize': '字体大小',
   'settings.display.terminalFontSize': '终端字体大小',
+  'settings.chat.title': '聊天',
+  'settings.chat.enterBehavior': '回车键行为',
+  'settings.chat.enterBehavior.send': '发送消息',
+  'settings.chat.enterBehavior.newline': '插入换行',
   'settings.voice.title': '语音助手',
   'settings.voice.language': '语音语言',
   'settings.voice.autoDetect': '自动检测',
@@ -351,12 +394,25 @@ export default {
   'settings.about.refresh': '检查更新并刷新',
   'settings.about.refreshing': '刷新中…',
 
+  // Browse / Workspace
+  'browse.title': '浏览',
+  'browse.goUp': '返回上层',
+  'browse.empty': '未找到子目录',
+  'browse.refresh': '刷新',
+  'browse.startSession': '启动会话',
+  'browse.nav': '浏览',
+  'browse.noRootTitle': '未启用 workspace 浏览',
+  'browse.noRootHint': '浏览功能是可选的。带一个或多个 --workspace-root 参数重启 runner，即可启用文件树浏览和受限的会话启动。',
+  'browse.noRootFooter': '你仍然可以在「新建会话」页面直接创建会话。',
+  'browse.noMachinesConnected': '没有已连接的 CLI。在某台机器上运行 `hapi runner start --workspace-root /path/a --workspace-root /path/b` 来开始。',
+
   // Misc
   'misc.noMachines': '无可用机器',
   'misc.machine': '机器',
   'misc.collaborationMode': '协作模式',
   'misc.permissionMode': '权限模式',
   'misc.model': '模型',
+  'misc.reasoningEffort': '推理强度',
   'misc.effort': '思考强度',
   'misc.loading': '加载中…',
   'misc.loadOlder': '加载更早的',

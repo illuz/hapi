@@ -10,7 +10,7 @@
 import type { AutoContinueSettings } from '@hapi/protocol/types'
 import type { CodexCollaborationMode, DecryptedMessage, PermissionMode, Session, SyncEvent } from '@hapi/protocol/types'
 import type { Server } from 'socket.io'
-import type { Store } from '../store'
+import type { Store, CancelQueuedMessageResult } from '../store'
 import type { RpcRegistry } from '../socket/rpcRegistry'
 import type { SSEManager } from '../sse/sseManager'
 import { EventPublisher, type SyncEventListener } from './eventPublisher'
@@ -19,9 +19,13 @@ import { MessageService } from './messageService'
 import { AutoContinueService } from './autoContinueService'
 import {
     RpcGateway,
+    type RpcCodexModel,
     type RpcCommandResponse,
     type RpcDeleteUploadResponse,
     type RpcListDirectoryResponse,
+    type RpcListCodexModelsResponse,
+    type RpcListOpencodeModelsResponse,
+    type RpcOpencodeModel,
     type RpcPathExistsResponse,
     type RpcReadFileResponse,
     type RpcUploadFileResponse
@@ -32,9 +36,13 @@ export type { Session, SyncEvent } from '@hapi/protocol/types'
 export type { Machine } from './machineCache'
 export type { SyncEventListener } from './eventPublisher'
 export type {
+    RpcCodexModel,
     RpcCommandResponse,
     RpcDeleteUploadResponse,
     RpcListDirectoryResponse,
+    RpcListCodexModelsResponse,
+    RpcListOpencodeModelsResponse,
+    RpcOpencodeModel,
     RpcPathExistsResponse,
     RpcReadFileResponse,
     RpcUploadFileResponse
@@ -54,7 +62,7 @@ export class SyncEngine {
     private inactivityTimer: NodeJS.Timeout | null = null
 
     constructor(
-        store: Store,
+        private readonly store: Store,
         io: Server,
         rpcRegistry: RpcRegistry,
         sseManager: SSEManager
@@ -62,7 +70,12 @@ export class SyncEngine {
         this.eventPublisher = new EventPublisher(sseManager, (event) => this.resolveNamespace(event))
         this.sessionCache = new SessionCache(store, this.eventPublisher)
         this.machineCache = new MachineCache(store, this.eventPublisher)
-        this.messageService = new MessageService(store, io, this.eventPublisher)
+        this.messageService = new MessageService(
+            store,
+            io,
+            this.eventPublisher,
+            (sessionId, updatedAt) => this.recordSessionActivity(sessionId, updatedAt)
+        )
         this.autoContinueService = new AutoContinueService({
             store,
             getSession: (sessionId) => this.getSession(sessionId),
@@ -167,13 +180,37 @@ export class SyncEngine {
         return this.messageService.getMessagesPage(sessionId, options)
     }
 
+    getMessagesPageByPosition(
+        sessionId: string,
+        options: { limit: number; before?: { at: number; seq: number } | null }
+    ): {
+        messages: DecryptedMessage[]
+        page: {
+            limit: number
+            nextBeforeSeq: number | null
+            nextBeforeAt: number | null
+            hasMore: boolean
+        }
+    } {
+        return this.messageService.getMessagesPageByPosition(sessionId, options)
+    }
+
     getMessagesAfter(sessionId: string, options: { afterSeq: number; limit: number }): DecryptedMessage[] {
         return this.messageService.getMessagesAfter(sessionId, options)
     }
 
     handleRealtimeEvent(event: SyncEvent): void {
         if (event.type === 'session-updated' && event.sessionId) {
+            // Snapshot agent session IDs before refresh — safe because JS is single-threaded
+            // and refreshSession replaces the Map entry with a new object.
+            const before = this.sessionCache.getSession(event.sessionId)
             this.sessionCache.refreshSession(event.sessionId)
+            const after = this.sessionCache.getSession(event.sessionId)
+            if (after?.metadata && !this.hasSameAgentSessionIds(before?.metadata ?? null, after.metadata)) {
+                void this.sessionCache.deduplicateByAgentSessionId(event.sessionId).catch(() => {
+                    // best-effort: dedup failure is harmless, web-side safety net hides remaining duplicates
+                })
+            }
             return
         }
 
@@ -198,6 +235,7 @@ export class SyncEngine {
         mode?: 'local' | 'remote'
         permissionMode?: PermissionMode
         model?: string | null
+        modelReasoningEffort?: string | null
         effort?: string | null
         collaborationMode?: CodexCollaborationMode
     }): void {
@@ -206,10 +244,27 @@ export class SyncEngine {
         if (prevThinking && payload.thinking === false) {
             void this.autoContinueService.maybeHandleCompletion(payload.sid)
         }
+        this.triggerDedupIfNeeded(payload.sid)
     }
 
-    handleSessionEnd(payload: { sid: string; time: number }): void {
+    handleSessionEnd(payload: { sid: string; time: number; reason?: 'completed' | 'terminated' | 'error' }): void {
         this.sessionCache.handleSessionEnd(payload)
+        this.eventPublisher.emit({
+            type: 'session-ended',
+            sessionId: payload.sid,
+            reason: payload.reason
+        })
+        // Retry dedup now that this session is inactive — a prior dedup may have
+        // skipped it because it was still active at the time.
+        this.triggerDedupIfNeeded(payload.sid)
+    }
+
+    handleBackgroundTaskDelta(sessionId: string, delta: { started: number; completed: number }): void {
+        this.sessionCache.applyBackgroundTaskDelta(sessionId, delta)
+    }
+
+    recordSessionActivity(sessionId: string, updatedAt: number): void {
+        this.sessionCache.recordSessionActivity(sessionId, updatedAt)
     }
 
     handleMachineAlive(payload: { machineId: string; time: number }): void {
@@ -217,7 +272,16 @@ export class SyncEngine {
     }
 
     private expireInactive(): void {
-        this.sessionCache.expireInactive()
+        const expired = this.sessionCache.expireInactive()
+        // Sort by most recent first so dedup keeps the newest session when multiple
+        // duplicates for the same agent thread expire in the same sweep.
+        const sorted = expired
+            .map((id) => this.sessionCache.getSession(id))
+            .filter((s): s is NonNullable<typeof s> => s != null)
+            .sort((a, b) => (b.activeAt - a.activeAt) || (b.updatedAt - a.updatedAt))
+        for (const session of sorted) {
+            this.triggerDedupIfNeeded(session.id)
+        }
         this.machineCache.expireInactive()
     }
 
@@ -232,9 +296,10 @@ export class SyncEngine {
         agentState: unknown,
         namespace: string,
         model?: string,
-        effort?: string
+        effort?: string,
+        modelReasoningEffort?: string
     ): Session {
-        return this.sessionCache.getOrCreateSession(tag, metadata, agentState, namespace, model, effort)
+        return this.sessionCache.getOrCreateSession(tag, metadata, agentState, namespace, model, effort, modelReasoningEffort)
     }
 
     getOrCreateMachine(id: string, metadata: unknown, runnerState: unknown, namespace: string): Machine {
@@ -258,6 +323,14 @@ export class SyncEngine {
         }
     ): Promise<void> {
         await this.messageService.sendMessage(sessionId, payload)
+        this.sessionCache.markMessageQueued(sessionId)
+    }
+
+    async cancelQueuedMessage(
+        sessionId: string,
+        messageId: string
+    ): Promise<CancelQueuedMessageResult> {
+        return this.messageService.cancelQueuedMessage(sessionId, messageId)
     }
 
     async approvePermission(
@@ -309,10 +382,20 @@ export class SyncEngine {
         config: {
             permissionMode?: PermissionMode
             model?: string | null
+            modelReasoningEffort?: string | null
             effort?: string | null
             collaborationMode?: CodexCollaborationMode
         }
     ): Promise<void> {
+        const session = this.sessionCache.getSession(sessionId)
+        if (!session?.active) {
+            // For inactive sessions, update the in-memory cache directly without
+            // an RPC call — the CLI is not running yet. The updated value will be
+            // passed to the spawned process when the session is resumed.
+            this.sessionCache.applySessionConfig(sessionId, config)
+            return
+        }
+
         const result = await this.rpcGateway.requestSessionConfig(sessionId, config)
         if (!result || typeof result !== 'object') {
             throw new Error('Invalid response from session config RPC')
@@ -321,6 +404,7 @@ export class SyncEngine {
             applied?: {
                 permissionMode?: Session['permissionMode']
                 model?: Session['model']
+                modelReasoningEffort?: Session['modelReasoningEffort']
                 effort?: Session['effort']
                 collaborationMode?: Session['collaborationMode']
             }
@@ -343,7 +427,8 @@ export class SyncEngine {
         sessionType?: 'simple' | 'worktree',
         worktreeName?: string,
         resumeSessionId?: string,
-        effort?: string
+        effort?: string,
+        permissionMode?: PermissionMode
     ): Promise<{ type: 'success'; sessionId: string } | { type: 'error'; message: string }> {
         return await this.rpcGateway.spawnSession(
             machineId,
@@ -355,11 +440,12 @@ export class SyncEngine {
             sessionType,
             worktreeName,
             resumeSessionId,
-            effort
+            effort,
+            permissionMode
         )
     }
 
-    async resumeSession(sessionId: string, namespace: string): Promise<ResumeSessionResult> {
+    async resumeSession(sessionId: string, namespace: string, opts?: { permissionMode?: PermissionMode }): Promise<ResumeSessionResult> {
         const access = this.sessionCache.resolveSessionAccess(sessionId, namespace)
         if (!access.ok) {
             return {
@@ -390,7 +476,7 @@ export class SyncEngine {
                     ? metadata.opencodeSessionId
                     : flavor === 'cursor'
                         ? metadata.cursorSessionId
-                        : metadata.claudeSessionId
+                        : (metadata.claudeSessionId ?? this.recoverClaudeSessionIdFromMessages(access.sessionId, namespace))
 
         if (!resumeToken) {
             return { type: 'error', message: 'Resume session ID unavailable', code: 'resume_unavailable' }
@@ -417,17 +503,19 @@ export class SyncEngine {
             return { type: 'error', message: 'No machine online', code: 'no_machine_online' }
         }
 
+        const effectivePermissionMode = opts?.permissionMode ?? session.permissionMode ?? undefined
         const spawnResult = await this.rpcGateway.spawnSession(
             targetMachine.id,
             metadata.path,
             flavor,
             session.model ?? undefined,
-            undefined,
+            session.modelReasoningEffort ?? undefined,
             undefined,
             undefined,
             undefined,
             resumeToken,
-            session.effort ?? undefined
+            session.effort ?? undefined,
+            effectivePermissionMode
         )
 
         if (spawnResult.type !== 'success') {
@@ -440,15 +528,113 @@ export class SyncEngine {
         }
 
         if (spawnResult.sessionId !== access.sessionId) {
-            try {
-                await this.sessionCache.mergeSessions(access.sessionId, spawnResult.sessionId, namespace)
-            } catch (error) {
-                const message = error instanceof Error ? error.message : 'Failed to merge resumed session'
-                return { type: 'error', message, code: 'resume_failed' }
+            // The old session may have already been merged by the automatic dedup path
+            // (triggered when the spawned CLI sets its agent session ID in metadata).
+            // Only attempt the explicit merge if the old session still exists.
+            const oldSession = this.sessionCache.getSessionByNamespace(access.sessionId, namespace)
+            if (oldSession) {
+                try {
+                    await this.sessionCache.mergeSessions(access.sessionId, spawnResult.sessionId, namespace)
+                } catch (error) {
+                    const message = error instanceof Error ? error.message : 'Failed to merge resumed session'
+                    return { type: 'error', message, code: 'resume_failed' }
+                }
             }
         }
 
         return { type: 'success', sessionId: spawnResult.sessionId }
+    }
+
+    private recoverClaudeSessionIdFromMessages(sessionId: string, namespace: string): string | null {
+        const messages = this.messageService.getMessages(sessionId, 200)
+        for (let i = messages.length - 1; i >= 0; i -= 1) {
+            const found = this.extractClaudeSessionId(messages[i].content)
+            if (!found) continue
+
+            this.persistRecoveredClaudeSessionId(sessionId, namespace, found)
+            return found
+        }
+        return null
+    }
+
+    private extractClaudeSessionId(value: unknown): string | null {
+        if (!value || typeof value !== 'object') {
+            return null
+        }
+
+        const obj = value as Record<string, unknown>
+        const direct = this.normalizeClaudeSessionId(obj.session_id) ?? this.normalizeClaudeSessionId(obj.sessionId)
+        if (direct) {
+            return direct
+        }
+
+        const content = obj.content
+        if (content && typeof content === 'object') {
+            const found = this.extractClaudeSessionId(content)
+            if (found) return found
+        }
+
+        const data = obj.data
+        if (data && typeof data === 'object') {
+            const found = this.extractClaudeSessionId(data)
+            if (found) return found
+        }
+
+        return null
+    }
+
+    private normalizeClaudeSessionId(value: unknown): string | null {
+        if (typeof value !== 'string') {
+            return null
+        }
+        const trimmed = value.trim()
+        return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)
+            ? trimmed
+            : null
+    }
+
+    private persistRecoveredClaudeSessionId(sessionId: string, namespace: string, claudeSessionId: string): void {
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+            const latest = this.sessionCache.getSessionByNamespace(sessionId, namespace)
+                ?? this.sessionCache.refreshSession(sessionId)
+            if (!latest?.metadata) return
+            if (latest.metadata.claudeSessionId === claudeSessionId) return
+
+            const result = this.store.sessions.updateSessionMetadata(
+                sessionId,
+                { ...latest.metadata, claudeSessionId },
+                latest.metadataVersion,
+                namespace,
+                { touchUpdatedAt: false }
+            )
+            if (result.result === 'success') {
+                this.sessionCache.refreshSession(sessionId)
+                return
+            }
+            if (result.result !== 'version-mismatch') {
+                return
+            }
+        }
+    }
+
+    private hasSameAgentSessionIds(
+        prev: Session['metadata'] | null,
+        next: NonNullable<Session['metadata']>
+    ): boolean {
+        return (prev?.codexSessionId ?? null) === (next.codexSessionId ?? null)
+            && (prev?.claudeSessionId ?? null) === (next.claudeSessionId ?? null)
+            && (prev?.geminiSessionId ?? null) === (next.geminiSessionId ?? null)
+            && (prev?.opencodeSessionId ?? null) === (next.opencodeSessionId ?? null)
+            && (prev?.cursorSessionId ?? null) === (next.cursorSessionId ?? null)
+    }
+
+    private triggerDedupIfNeeded(sessionId: string): void {
+        const session = this.sessionCache.getSession(sessionId)
+        if (session?.metadata) {
+            void this.sessionCache.deduplicateByAgentSessionId(sessionId).catch(() => {
+                // best-effort: web-side safety net hides remaining duplicates
+            })
+        }
     }
 
     async waitForSessionActive(sessionId: string, timeoutMs: number = 15_000): Promise<boolean> {
@@ -465,6 +651,10 @@ export class SyncEngine {
 
     async checkPathsExist(machineId: string, paths: string[]): Promise<Record<string, boolean>> {
         return await this.rpcGateway.checkPathsExist(machineId, paths)
+    }
+
+    async listMachineDirectory(machineId: string, path: string): Promise<RpcListDirectoryResponse> {
+        return await this.rpcGateway.listMachineDirectory(machineId, path)
     }
 
     async getGitStatus(sessionId: string, cwd?: string): Promise<RpcCommandResponse> {
@@ -513,5 +703,21 @@ export class SyncEngine {
         error?: string
     }> {
         return await this.rpcGateway.listSkills(sessionId)
+    }
+
+    async listCodexModelsForSession(sessionId: string): Promise<RpcListCodexModelsResponse> {
+        return await this.rpcGateway.listCodexModelsForSession(sessionId)
+    }
+
+    async listCodexModelsForMachine(machineId: string): Promise<RpcListCodexModelsResponse> {
+        return await this.rpcGateway.listCodexModelsForMachine(machineId)
+    }
+
+    async listOpencodeModelsForSession(sessionId: string): Promise<RpcListOpencodeModelsResponse> {
+        return await this.rpcGateway.listOpencodeModelsForSession(sessionId)
+    }
+
+    async listOpencodeModelsForCwd(machineId: string, cwd: string): Promise<RpcListOpencodeModelsResponse> {
+        return await this.rpcGateway.listOpencodeModelsForCwd(machineId, cwd)
     }
 }

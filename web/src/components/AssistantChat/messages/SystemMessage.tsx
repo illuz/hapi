@@ -1,10 +1,11 @@
-import { useAssistantState } from '@assistant-ui/react'
+import { MessagePrimitive, useAssistantState } from '@assistant-ui/react'
 import { getEventPresentation } from '@/chat/presentation'
 import type { HappyChatMessageMetadata } from '@/lib/assistant-runtime'
-import { MessageTimestamp } from '@/components/AssistantChat/messages/MessageTimestamp'
+import { getConversationMessageAnchorId } from '@/chat/outline'
 
 export function HappySystemMessage() {
     const role = useAssistantState(({ message }) => message.role)
+    const messageId = useAssistantState(({ message }) => message.id)
     const text = useAssistantState(({ message }) => {
         if (message.role !== 'system') return ''
         return message.content[0]?.type === 'text' ? message.content[0].text : ''
@@ -15,19 +16,17 @@ export function HappySystemMessage() {
         const event = custom?.kind === 'event' ? custom.event : undefined
         return event ? getEventPresentation(event).icon : null
     })
-    const createdAt = useAssistantState(({ message }) => message.createdAt ?? null)
 
     if (role !== 'system') return null
 
     return (
-        <div className="py-1">
-            <div className="mx-auto flex w-fit max-w-[92%] flex-col items-center gap-1 px-2 text-center text-xs text-[var(--app-hint)] opacity-80">
+        <MessagePrimitive.Root id={getConversationMessageAnchorId(messageId)} className="scroll-mt-4 py-1">
+            <div className="mx-auto w-fit max-w-[92%] px-2 text-center text-xs text-[var(--app-hint)] opacity-80">
                 <span className="inline-flex items-center gap-1">
                     {icon ? <span aria-hidden="true">{icon}</span> : null}
                     <span>{text}</span>
                 </span>
-                <MessageTimestamp createdAt={createdAt} />
             </div>
-        </div>
+        </MessagePrimitive.Root>
     )
 }

@@ -23,6 +23,7 @@ export type SessionBootstrapOptions = {
     tag?: string
     agentState?: AgentState | null
     model?: string
+    modelReasoningEffort?: string
     effort?: string
     metadataOverrides?: Partial<Metadata>
 }
@@ -37,14 +38,15 @@ export type SessionBootstrapResult = {
     workingDirectory: string
 }
 
-export function buildMachineMetadata(): MachineMetadata {
+export function buildMachineMetadata(options?: { workspaceRoots?: string[] }): MachineMetadata {
     return {
         host: process.env.HAPI_HOSTNAME || os.hostname(),
         platform: os.platform(),
         happyCliVersion: packageJson.version,
         homeDir: os.homedir(),
         happyHomeDir: configuration.happyHomeDir,
-        happyLibDir: runtimePath()
+        happyLibDir: runtimePath(),
+        workspaceRoots: options?.workspaceRoots
     }
 }
 
@@ -62,7 +64,7 @@ export function buildSessionMetadata(options: {
 
     return {
         path: options.workingDirectory,
-        host: os.hostname(),
+        host: process.env.HAPI_HOSTNAME || os.hostname(),
         version: packageJson.version,
         os: os.platform(),
         machineId: options.machineId,
@@ -133,6 +135,7 @@ export async function bootstrapSession(options: SessionBootstrapOptions): Promis
         metadata,
         state: agentState,
         model: options.model,
+        modelReasoningEffort: options.modelReasoningEffort,
         effort: options.effort
     })
 

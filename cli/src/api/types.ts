@@ -25,6 +25,7 @@ export type {
 export type SessionPermissionMode = PermissionMode
 export type SessionCollaborationMode = CodexCollaborationMode
 export type SessionModel = string | null
+export type SessionModelReasoningEffort = string | null
 export type SessionEffort = string | null
 
 export { AgentStateSchema, AttachmentMetadataSchema, MetadataSchema }
@@ -36,7 +37,22 @@ export const MachineMetadataSchema = z.object({
     displayName: z.string().optional(),
     homeDir: z.string(),
     happyHomeDir: z.string(),
-    happyLibDir: z.string()
+    happyLibDir: z.string(),
+    workspaceRoot: z.string().optional(),
+    workspaceRoots: z.array(z.string()).optional()
+}).transform(({ workspaceRoot, workspaceRoots, ...rest }) => {
+    const normalizedWorkspaceRoots = Array.from(new Set(
+        Array.isArray(workspaceRoots)
+            ? workspaceRoots.filter((path): path is string => typeof path === 'string' && path.trim().length > 0)
+            : workspaceRoot
+                ? [workspaceRoot]
+                : []
+    ))
+
+    return {
+        ...rest,
+        workspaceRoots: normalizedWorkspaceRoots.length > 0 ? normalizedWorkspaceRoots : undefined
+    }
 })
 
 export type MachineMetadata = z.infer<typeof MachineMetadataSchema>
@@ -100,9 +116,10 @@ export const CreateSessionResponseSchema = z.object({
         thinking: z.boolean(),
         thinkingAt: z.number(),
         todos: TodosSchema.optional(),
-        markerColor: SessionMarkerColorSchema.nullable(),
-        model: z.string().nullable(),
-        effort: z.string().nullable(),
+        markerColor: SessionMarkerColorSchema.nullable().optional().default(null),
+        model: z.string().nullable().optional().default(null),
+        modelReasoningEffort: z.string().nullable().optional().default(null),
+        effort: z.string().nullable().optional().default(null),
         permissionMode: PermissionModeSchema.optional(),
         collaborationMode: CodexCollaborationModeSchema.optional()
     })

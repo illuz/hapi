@@ -170,7 +170,7 @@ export async function runClaude(options: StartOptions = {}): Promise<void> {
         sessionInstance.setEffort(currentEffort);
         logger.debug(`[loop] Synced session config for keepalive: permissionMode=${currentPermissionMode}, model=${currentModel ?? 'auto'}, effort=${currentEffort ?? 'auto'}`);
     };
-    session.onUserMessage((message) => {
+    session.onUserMessage((message, localId) => {
         const sessionPermissionMode = currentSessionRef.current?.getPermissionMode();
         if (sessionPermissionMode && isPermissionModeAllowedForFlavor(sessionPermissionMode, 'claude')) {
             currentPermissionMode = sessionPermissionMode as PermissionMode;
@@ -258,7 +258,7 @@ export async function runClaude(options: StartOptions = {}): Promise<void> {
             };
             // Use raw text only, ignore attachments for special commands
             const commandText = specialCommand.originalMessage || message.content.text;
-            messageQueue.pushIsolateAndClear(commandText, enhancedMode);
+            messageQueue.pushIsolateAndClear(commandText, enhancedMode, localId);
             logger.debugLargeJson('[start] /compact command pushed to queue:', message);
             return;
         }
@@ -277,8 +277,43 @@ export async function runClaude(options: StartOptions = {}): Promise<void> {
             };
             // Use raw text only, ignore attachments for special commands
             const commandText = specialCommand.originalMessage || message.content.text;
-            messageQueue.pushIsolateAndClear(commandText, enhancedMode);
+            messageQueue.pushIsolateAndClear(commandText, enhancedMode, localId);
             logger.debugLargeJson('[start] /clear command pushed to queue:', message);
+            return;
+        }
+
+        if (specialCommand.type === 'plan') {
+            logger.debug('[start] Detected /plan command');
+            currentPermissionMode = specialCommand.mode ?? 'plan';
+            currentSessionRef.current?.setPermissionMode(currentPermissionMode);
+            currentSessionRef.current?.pushKeepAlive();
+            session.sendSessionEvent({
+                type: 'permission-mode-changed',
+                mode: currentPermissionMode
+            });
+
+            const enhancedMode: EnhancedMode = {
+                permissionMode: currentPermissionMode,
+                model: messageModel,
+                effort: messageEffort,
+                fallbackModel: messageFallbackModel,
+                customSystemPrompt: messageCustomSystemPrompt,
+                appendSystemPrompt: messageAppendSystemPrompt,
+                allowedTools: messageAllowedTools,
+                disallowedTools: messageDisallowedTools
+            };
+
+            if (!specialCommand.prompt) {
+                if (localId) {
+                    session.emitMessagesConsumed([localId]);
+                }
+                logger.debugLargeJson('[start] /plan command applied without prompt:', message);
+                return;
+            }
+
+            const planPrompt = formatMessageWithAttachments(specialCommand.prompt, message.content.attachments);
+            messageQueue.push(planPrompt, enhancedMode, localId);
+            logger.debugLargeJson('[start] /plan command prompt pushed to queue:', message);
             return;
         }
 
@@ -293,8 +328,14 @@ export async function runClaude(options: StartOptions = {}): Promise<void> {
             allowedTools: messageAllowedTools,
             disallowedTools: messageDisallowedTools
         };
-        messageQueue.push(formattedText, enhancedMode);
+        messageQueue.push(formattedText, enhancedMode, localId);
         logger.debugLargeJson('User message pushed to queue:', message)
+    });
+
+    session.onCancelQueuedMessage((localId) => {
+        const removed = messageQueue.cancelByLocalId(localId);
+        logger.debug(`[claude] cancelByLocalId(${localId}): ${removed ? 'removed' : 'not found (best-effort)'}`);
+        return removed;
     });
 
     const resolvePermissionMode = (value: unknown): PermissionMode => {
@@ -390,11 +431,16 @@ export async function runClaude(options: StartOptions = {}): Promise<void> {
     if (localFailure?.exitReason === 'exit') {
         lifecycle.setExitCode(1);
         lifecycle.setArchiveReason(`Local launch failed: ${formatFailureReason(localFailure.message)}`);
+        lifecycle.setSessionEndReason('error');
     }
 
     if (loopFailed) {
         await lifecycle.cleanup();
         throw loopError;
+    }
+
+    if (!localFailure) {
+        lifecycle.setSessionEndReason('completed');
     }
 
     await lifecycle.cleanupAndExit();

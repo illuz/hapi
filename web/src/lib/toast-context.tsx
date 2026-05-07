@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { randomId } from '@/lib/randomId'
 
 export type Toast = {
     id: string
@@ -19,10 +20,7 @@ const ToastContext = createContext<ToastContextValue | null>(null)
 const TOAST_DURATION_MS = 15000
 
 function createToastId(): string {
-    if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-        return crypto.randomUUID()
-    }
-    return `toast_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    return randomId()
 }
 
 export function ToastProvider({ children }: { children: ReactNode }) {

@@ -29,8 +29,9 @@ export type {
     CursorPermissionMode,
     GeminiPermissionMode,
     OpencodePermissionMode,
-    ClaudeModelPreset,
     PermissionMode,
     PermissionModeOption,
     PermissionModeTone
 } from './modes'
+
+export type { ClaudeModelPreset, GeminiModelPreset } from './models'

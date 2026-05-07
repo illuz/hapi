@@ -67,6 +67,8 @@ export const TerminalErrorPayloadSchema = z.object({
 })
 
 export type TerminalErrorPayload = z.infer<typeof TerminalErrorPayloadSchema>
+export const SessionEndReasonSchema = z.enum(['completed', 'terminated', 'error'])
+export type SessionEndReason = z.infer<typeof SessionEndReasonSchema>
 
 export const UpdateNewMessageBodySchema = z.object({
     t: z.literal('new-message'),
@@ -112,17 +114,32 @@ export const UpdateMachineBodySchema = z.object({
 
 export type UpdateMachineBody = z.infer<typeof UpdateMachineBodySchema>
 
+export const UpdateCancelQueuedMessageBodySchema = z.object({
+    t: z.literal('cancel-queued-message'),
+    sid: z.string(),
+    messageId: z.string(),
+    localId: z.string().optional()
+})
+
+export type UpdateCancelQueuedMessageBody = z.infer<typeof UpdateCancelQueuedMessageBodySchema>
+
+export const CancelQueuedMessageAckSchema = z.object({
+    removed: z.boolean()
+})
+
+export type CancelQueuedMessageAck = z.infer<typeof CancelQueuedMessageAckSchema>
+
 export const UpdateSchema = z.object({
     id: z.string(),
     seq: z.number(),
-    body: z.union([UpdateNewMessageBodySchema, UpdateSessionBodySchema, UpdateMachineBodySchema]),
+    body: z.union([UpdateNewMessageBodySchema, UpdateSessionBodySchema, UpdateMachineBodySchema, UpdateCancelQueuedMessageBodySchema]),
     createdAt: z.number()
 })
 
 export type Update = z.infer<typeof UpdateSchema>
 
 export interface ServerToClientEvents {
-    update: (data: Update) => void
+    update: (data: Update, ack?: (response: CancelQueuedMessageAck) => void) => void
     'rpc-request': (data: { method: string; params: string }, callback: (response: string) => void) => void
     'terminal:open': (data: TerminalOpenPayload) => void
     'terminal:write': (data: TerminalWritePayload) => void
@@ -140,10 +157,12 @@ export interface ClientToServerEvents {
         mode?: 'local' | 'remote'
         permissionMode?: PermissionMode
         model?: string | null
+        modelReasoningEffort?: string | null
         effort?: string | null
         collaborationMode?: CodexCollaborationMode
     }) => void
-    'session-end': (data: { sid: string; time: number }) => void
+    'session-end': (data: { sid: string; time: number; reason?: SessionEndReason }) => void
+    'messages-consumed': (data: { sid: string; localIds: string[] }) => void
     'update-metadata': (data: { sid: string; expectedVersion: number; metadata: unknown }, cb: (answer: {
         result: 'error'
         reason?: SocketErrorReason

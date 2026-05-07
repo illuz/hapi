@@ -10,7 +10,8 @@
  */
 
 import { execSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const scriptDir = import.meta.dir;
@@ -25,6 +26,8 @@ const publishNpm = args.includes('--publish-npm');  // 只发布 npm，跳过 gi
 const skipBuild = args.includes('--skip-build');    // 跳过构建（二进制已存在）
 const otpIndex = args.indexOf('--otp');
 const otp = otpIndex !== -1 ? args[otpIndex + 1] : undefined;
+const npmToken = process.env.NPM_TOKEN || process.env.NODE_AUTH_TOKEN;
+const npmRegistry = 'https://registry.npmjs.org';
 
 if (!version) {
     console.error('Usage: bun run scripts/release-all.ts <version> [options]');
@@ -33,29 +36,126 @@ if (!version) {
     console.error('  --publish-npm  Only publish to npm, skip git operations');
     console.error('  --skip-build   Skip building binaries (use existing)');
     console.error('  --otp <code>   One-time password for npm publish');
+    console.error('Env:');
+    console.error('  NPM_TOKEN / NODE_AUTH_TOKEN  Token auth for npm publish');
     console.error('Example: bun run scripts/release-all.ts 0.2.0');
     process.exit(1);
+}
+
+function createTemporaryNpmUserConfig(): string | null {
+    if (!npmToken) {
+        return null;
+    }
+
+    const tempDir = mkdtempSync(join(tmpdir(), 'hapi-npm-auth-'));
+    const userConfigPath = join(tempDir, '.npmrc');
+    writeFileSync(userConfigPath, [
+        `registry=${npmRegistry}`,
+        'always-auth=true',
+        `//registry.npmjs.org/:_authToken=${npmToken}`,
+        ''
+    ].join('\n'));
+    return userConfigPath;
+}
+
+const npmUserConfigPath = createTemporaryNpmUserConfig();
+
+function getCommandEnv(): NodeJS.ProcessEnv {
+    if (!npmUserConfigPath) {
+        return process.env;
+    }
+    return {
+        ...process.env,
+        NPM_CONFIG_USERCONFIG: npmUserConfigPath,
+        npm_config_userconfig: npmUserConfigPath
+    };
 }
 
 function run(cmd: string, cwd = projectRoot): void {
     console.log(`\n$ ${cmd}`);
     if (!dryRun) {
-        execSync(cmd, { cwd, stdio: 'inherit' });
+        execSync(cmd, {
+            cwd,
+            stdio: 'inherit',
+            env: getCommandEnv()
+        });
     }
 }
 
-function packTarball(packageDir: string): string {
-    const output = execSync('npm pack --json', {
-        cwd: packageDir,
+function execText(cmd: string, cwd = projectRoot): string {
+    return execSync(cmd, {
+        cwd,
+        stdio: 'pipe',
         encoding: 'utf-8',
-        stdio: 'pipe'
+        env: getCommandEnv()
     }).trim();
+}
+
+function packTarball(packageDir: string): string {
+    const output = execText('npm pack --json', packageDir);
     const packResult = JSON.parse(output) as Array<{ filename?: string }>
     const filename = packResult[0]?.filename
     if (!filename) {
         throw new Error(`Failed to pack npm package in ${packageDir}`)
     }
     return join(packageDir, filename)
+}
+
+function readPackageName(packageDir: string): string {
+    const packageJson = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf-8')) as {
+        name?: string
+    };
+    if (!packageJson.name) {
+        throw new Error(`Missing package name in ${join(packageDir, 'package.json')}`);
+    }
+    return packageJson.name;
+}
+
+function isVersionAlreadyPublished(packageName: string, packageVersion: string): boolean {
+    const packageSpec = `${packageName}@${packageVersion}`;
+    try {
+        const output = execText(
+            `npm view ${JSON.stringify(packageSpec)} version --json --registry ${npmRegistry}`
+        );
+        if (!output) {
+            return false;
+        }
+
+        const parsed = JSON.parse(output) as string | string[];
+        return Array.isArray(parsed)
+            ? parsed.includes(packageVersion)
+            : parsed === packageVersion;
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (
+            message.includes('E404')
+            || message.includes('404 Not Found')
+            || message.includes('No match found for version')
+        ) {
+            return false;
+        }
+        throw error;
+    }
+}
+
+function publishPreparedPackage(params: {
+    packageDir: string
+    packageVersion: string
+    npmTag: string
+    otpFlag: string
+}): void {
+    const packageName = readPackageName(params.packageDir);
+
+    if (isVersionAlreadyPublished(packageName, params.packageVersion)) {
+        console.log(`   ↷ Skipping ${packageName}@${params.packageVersion} (already published)`);
+        return;
+    }
+
+    const tarball = packTarball(params.packageDir);
+    run(
+        `npm publish ${JSON.stringify(tarball)} --access public --tag ${params.npmTag} --ignore-scripts${params.otpFlag}${dryRun ? ' --dry-run' : ''}`,
+        params.packageDir
+    );
 }
 
 async function runWithTimeoutRetry(cmd: string, cwd = projectRoot): Promise<void> {
@@ -66,7 +166,11 @@ async function runWithTimeoutRetry(cmd: string, cwd = projectRoot): Promise<void
             return;
         }
         try {
-            execSync(timeoutCmd, { cwd, stdio: 'inherit' });
+            execSync(timeoutCmd, {
+                cwd,
+                stdio: 'inherit',
+                env: getCommandEnv()
+            });
             return;
         } catch {
             console.warn(`⚠️ ${cmd} failed or timed out. Retrying in 60s...`);
@@ -91,10 +195,16 @@ async function main(): Promise<void> {
     // Pre-check: Ensure npm is logged in (skip in dry-run mode)
     if (!dryRun) {
         try {
-            const npmUser = execSync('npm whoami', { encoding: 'utf-8' }).trim();
-            console.log(`   ✓ Logged in to npm as: ${npmUser}`);
+            const npmUser = execText(`npm whoami --registry ${npmRegistry}`);
+            if (npmToken) {
+                console.log(`   ✓ Using npm token auth as: ${npmUser}`);
+            } else {
+                console.log(`   ✓ Logged in to npm as: ${npmUser}`);
+            }
         } catch {
-            console.error('❌ Not logged in to npm. Run `npm login` first.');
+            console.error(npmToken
+                ? '❌ npm token invalid or unavailable. Check NPM_TOKEN / NODE_AUTH_TOKEN.'
+                : '❌ Not logged in to npm. Run `npm login` first.');
             process.exit(1);
         }
     } else {
@@ -128,15 +238,23 @@ async function main(): Promise<void> {
     const otpFlag = otp ? ` --otp ${otp}` : '';
     for (const platform of platforms) {
         const npmDir = join(projectRoot, 'npm', platform);
-        const tarball = packTarball(npmDir);
-        run(`npm publish "${tarball}" --access public --tag ${npmTag}${otpFlag}${dryRun ? ' --dry-run' : ''}`, npmDir);
+        publishPreparedPackage({
+            packageDir: npmDir,
+            packageVersion: version,
+            npmTag,
+            otpFlag
+        });
     }
 
     // Step 4: Publish main package
     console.log('\n📤 Step 4: Publishing main package...');
     const mainNpmDir = join(projectRoot, 'npm', 'main');
-    const mainTarball = packTarball(mainNpmDir);
-    run(`npm publish "${mainTarball}" --access public --tag ${npmTag}${otpFlag}${dryRun ? ' --dry-run' : ''}`, mainNpmDir);
+    publishPreparedPackage({
+        packageDir: mainNpmDir,
+        packageVersion: version,
+        npmTag,
+        otpFlag
+    });
 
     // --publish-npm 模式到此结束
     if (publishNpm) {
@@ -161,4 +279,8 @@ async function main(): Promise<void> {
 main().catch(err => {
     console.error('Release failed:', err);
     process.exit(1);
+}).finally(() => {
+    if (npmUserConfigPath) {
+        rmSync(join(npmUserConfigPath, '..'), { recursive: true, force: true });
+    }
 });

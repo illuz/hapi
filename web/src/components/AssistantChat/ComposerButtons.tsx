@@ -262,8 +262,12 @@ function QuickPromptIcon() {
             strokeLinecap="round"
             strokeLinejoin="round"
         >
-            <path d="M12 5v14" />
-            <path d="m19 12-7 7-7-7" />
+            <path d="M8 6h11" />
+            <path d="M8 12h11" />
+            <path d="M8 18h11" />
+            <circle cx="4" cy="6" r="1" fill="currentColor" stroke="none" />
+            <circle cx="4" cy="12" r="1" fill="currentColor" stroke="none" />
+            <circle cx="4" cy="18" r="1" fill="currentColor" stroke="none" />
         </svg>
     )
 }

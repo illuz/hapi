@@ -2,7 +2,7 @@ import type { ChatBlock } from '@/chat/types'
 
 export const AUTO_CONTINUE_DEFAULT_REMAINING = 80
 export const AUTO_CONTINUE_LINE_LIMIT = 10
-export const AUTO_CONTINUE_DEFAULT_KEYWORDS = ['下一步', '下一个步骤', '下一轮', '继续', 'continue', 'next step', 'what next']
+export const AUTO_CONTINUE_DEFAULT_KEYWORDS = ['下一步', '下一个步骤', '下一轮', '继续', 'continue', 'next step', 'next\\s+\\w+\\s+step', 'what next']
 export const AUTO_CONTINUE_DEFAULT_PROMPT = 'continue'
 
 export type AutoContinueState = {
@@ -181,11 +181,43 @@ export function getLastAssistantLines(blocks: ChatBlock[], limit = AUTO_CONTINUE
     return reversedLines.slice(0, limit).reverse()
 }
 
+function compileAutoContinuePattern(keyword: string): RegExp | null {
+    const normalizedKeyword = keyword.trim()
+    if (normalizedKeyword.length === 0) return null
+
+    if (normalizedKeyword.startsWith('/') && normalizedKeyword.lastIndexOf('/') > 0) {
+        const lastSlashIndex = normalizedKeyword.lastIndexOf('/')
+        const pattern = normalizedKeyword.slice(1, lastSlashIndex)
+        const rawFlags = normalizedKeyword.slice(lastSlashIndex + 1)
+        const flags = rawFlags.includes('i') ? rawFlags : `${rawFlags}i`
+
+        try {
+            return new RegExp(pattern, flags)
+        } catch {
+            return null
+        }
+    }
+
+    if (!/[.*+?()[\]{}\\|]/.test(normalizedKeyword)) {
+        return null
+    }
+
+    try {
+        return new RegExp(normalizedKeyword, 'i')
+    } catch {
+        return null
+    }
+}
+
 export function shouldAutoContinue(lines: string[], keywords = AUTO_CONTINUE_DEFAULT_KEYWORDS): boolean {
     if (lines.length === 0) return false
     const normalizedKeywords = normalizeAutoContinueKeywords(keywords)
     const loweredLines = lines.map((line) => line.toLowerCase())
     return normalizedKeywords.some((keyword) => {
+        const pattern = compileAutoContinuePattern(keyword)
+        if (pattern) {
+            return lines.some((line) => pattern.test(line))
+        }
         const loweredKeyword = keyword.toLowerCase()
         return loweredLines.some((line) => line.includes(loweredKeyword))
     })

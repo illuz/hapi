@@ -143,4 +143,14 @@ describe('autoContinue', () => {
         expect(shouldAutoContinue(['建议下一轮继续验证结果'])).toBe(true)
         expect(shouldAutoContinue(['continue with the cleanup'])).toBe(true)
     })
+
+    it('supports case-insensitive regex keywords', () => {
+        expect(shouldAutoContinue(['What should we do NEXT awesome STEP after this?'], ['next\\s+\\w+\\s+step'])).toBe(true)
+        expect(shouldAutoContinue(['What should we do NEXT very awesome STEP after this?'], ['next\\s+\\w+\\s+step'])).toBe(false)
+        expect(shouldAutoContinue(['准备 next final review'], ['next\\s+\\w+\\s+step'])).toBe(false)
+    })
+
+    it('supports slash-delimited regex keywords', () => {
+        expect(shouldAutoContinue(['Need a Next follow-up Step now'], ['/next.+step/'])).toBe(true)
+    })
 })

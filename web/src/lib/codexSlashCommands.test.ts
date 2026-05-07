@@ -21,16 +21,30 @@ describe('getBuiltinSlashCommands', () => {
 })
 
 describe('mergeSlashCommands', () => {
-    it('lets custom commands override same-name built-ins', () => {
+    it('lets non-reserved custom commands override same-name built-ins', () => {
         const commands = mergeSlashCommands([
-            { name: 'clear', source: 'builtin' },
+            { name: 'review', source: 'builtin' },
             { name: 'compact', source: 'builtin' },
-            { name: 'clear', source: 'project', content: 'project clear prompt' }
+            { name: 'review', source: 'project', content: 'project review prompt' }
         ])
 
         expect(commands).toEqual([
             { name: 'compact', source: 'builtin' },
-            { name: 'clear', source: 'project', content: 'project clear prompt' }
+            { name: 'review', source: 'project', content: 'project review prompt' }
+        ])
+    })
+
+    it('keeps reserved /clear and /compact mapped to built-ins', () => {
+        const commands = mergeSlashCommands([
+            { name: 'clear', source: 'builtin' },
+            { name: 'compact', source: 'builtin' },
+            { name: 'clear', source: 'project', content: 'project clear prompt' },
+            { name: 'compact', source: 'project', content: 'project compact prompt' }
+        ])
+
+        expect(commands).toEqual([
+            { name: 'clear', source: 'builtin' },
+            { name: 'compact', source: 'builtin' }
         ])
     })
 
@@ -55,10 +69,17 @@ describe('mergeSlashCommands', () => {
 
 describe('findCodexCustomPromptExpansion', () => {
     it('expands exact custom codex prompt commands', () => {
+        expect(findCodexCustomPromptExpansion('  /review  ', [
+            { name: 'review', source: 'builtin' },
+            { name: 'review', source: 'project', content: 'custom review prompt' }
+        ])).toBe('custom review prompt')
+    })
+
+    it('keeps reserved Codex control commands from expanding custom prompts', () => {
         expect(findCodexCustomPromptExpansion('  /clear  ', [
             { name: 'clear', source: 'builtin' },
             { name: 'clear', source: 'project', content: 'custom clear prompt' }
-        ])).toBe('custom clear prompt')
+        ])).toBeNull()
     })
 
     it('ignores built-ins and commands with arguments', () => {

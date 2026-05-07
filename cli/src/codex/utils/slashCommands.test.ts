@@ -59,6 +59,22 @@ describe('resolveCodexSlashCommand', () => {
         });
     });
 
+    it('keeps /clear and /compact reserved for Codex control handling', () => {
+        expect(resolveCodexSlashCommand('/clear', {
+            ...state,
+            commands: [
+                { name: 'clear', source: 'project', content: 'custom clear prompt' }
+            ]
+        })).toEqual({ kind: 'passthrough' });
+
+        expect(resolveCodexSlashCommand('/compact', {
+            ...state,
+            commands: [
+                { name: 'compact', source: 'project', content: 'custom compact prompt' }
+            ]
+        })).toEqual({ kind: 'passthrough' });
+    });
+
     it('handles unsupported Codex built-in commands instead of sending them to the model', () => {
         for (const command of ['diff', 'undo', 'review', 'compat']) {
             expect(resolveCodexSlashCommand(`/${command}`, state)).toEqual({

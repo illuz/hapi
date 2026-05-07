@@ -41,6 +41,7 @@ const UNSUPPORTED_CODEX_BUILTIN_COMMANDS = new Set([
     'undo',
     'diff',
 ])
+const RESERVED_CODEX_CONTROL_COMMANDS = new Set(['clear', 'compact'])
 
 export function getBuiltinSlashCommands(agentType: string): SlashCommand[] {
     return BUILTIN_COMMANDS[agentType] ?? BUILTIN_COMMANDS.claude ?? []
@@ -50,6 +51,15 @@ export function mergeSlashCommands(commands: readonly SlashCommand[]): SlashComm
     const commandMap = new Map<string, SlashCommand>()
     for (const command of commands) {
         const key = command.name.toLowerCase()
+        const existing = commandMap.get(key)
+        if (
+            existing
+            && RESERVED_CODEX_CONTROL_COMMANDS.has(key)
+            && existing.source === 'builtin'
+            && command.source !== 'builtin'
+        ) {
+            continue
+        }
         if (commandMap.has(key)) {
             commandMap.delete(key)
         }
@@ -69,7 +79,7 @@ export function findCodexCustomPromptExpansion(
     }
 
     const commandName = match[1]?.toLowerCase()
-    if (!commandName) {
+    if (!commandName || RESERVED_CODEX_CONTROL_COMMANDS.has(commandName)) {
         return null
     }
 

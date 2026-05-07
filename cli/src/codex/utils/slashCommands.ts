@@ -5,6 +5,7 @@ import type { EnhancedMode } from '../loop';
 import type { SlashCommand } from '@/modules/common/slashCommands';
 
 const REASONING_EFFORTS = new Set<ReasoningEffort>(['none', 'minimal', 'low', 'medium', 'high', 'xhigh']);
+const RESERVED_CODEX_CONTROL_COMMANDS = new Set(['clear', 'compact']);
 
 const UNSUPPORTED_CODEX_BUILTIN_COMMANDS = new Set([
     'compat',
@@ -61,6 +62,10 @@ export function resolveCodexSlashCommand(
     const command = match[1]?.toLowerCase();
     const rest = match[2]?.trim() ?? '';
     if (!command) return { kind: 'passthrough' };
+
+    if (RESERVED_CODEX_CONTROL_COMMANDS.has(command)) {
+        return { kind: 'passthrough' };
+    }
 
     const custom = state.commands?.find((candidate) =>
         candidate.source !== 'builtin' && candidate.name.toLowerCase() === command
@@ -184,7 +189,7 @@ export function resolveCodexSlashCommand(
                 '/model [name|auto] — show or set model',
                 '/reasoning [low|medium|high|xhigh|default] — show or set reasoning effort',
                 '/permissions [default|read-only|safe-yolo|yolo] — show or set permission mode',
-                'Custom /commands from .codex/prompts are expanded before sending.'
+                'Custom /commands from .codex/prompts are expanded before sending, except /clear and /compact.'
             ].join('\n')
         };
     }

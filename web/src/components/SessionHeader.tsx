@@ -10,21 +10,8 @@ import { RenameSessionDialog } from '@/components/RenameSessionDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { getSessionModelLabel } from '@/lib/sessionModelLabel'
 import { getSessionMarkerColorHex } from '@/lib/sessionMarkers'
+import { getDisplaySessionTitle, getSessionTitle } from '@/lib/sessionTitle'
 import { useTranslation } from '@/lib/use-translation'
-
-function getSessionTitle(session: Session): string {
-    if (session.metadata?.name) {
-        return session.metadata.name
-    }
-    if (session.metadata?.summary?.text) {
-        return session.metadata.summary.text
-    }
-    if (session.metadata?.path) {
-        const parts = session.metadata.path.split('/').filter(Boolean)
-        return parts.length > 0 ? parts[parts.length - 1] : session.id.slice(0, 8)
-    }
-    return session.id.slice(0, 8)
-}
 
 function FilesIcon(props: { className?: string }) {
     return (
@@ -99,6 +86,7 @@ export function SessionHeader(props: {
     const { t } = useTranslation()
     const { session, api, onSessionDeleted } = props
     const title = useMemo(() => getSessionTitle(session), [session])
+    const displayTitle = useMemo(() => getDisplaySessionTitle(session), [session])
     const worktreeBranch = session.metadata?.worktree?.branch
     const modelLabel = getSessionModelLabel(session)
     const markerTextColor = getSessionMarkerColorHex(session.markerColor)
@@ -177,7 +165,7 @@ export function SessionHeader(props: {
                             className="truncate font-semibold"
                             style={markerTextColor ? { color: markerTextColor } : undefined}
                         >
-                            {title}
+                            {displayTitle}
                         </div>
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-[var(--app-hint)]">
                             <span className="inline-flex items-center gap-1">

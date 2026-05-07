@@ -9,6 +9,7 @@ import { RenameSessionDialog } from '@/components/RenameSessionDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useSessionAttentionTokens } from '@/lib/sessionAttention'
 import { getSessionMarkerColorHex } from '@/lib/sessionMarkers'
+import { getDisplaySessionTitle, getSessionTitle as getBaseSessionTitle } from '@/lib/sessionTitle'
 import { CopyIcon, CheckIcon } from '@/components/icons'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/lib/use-translation'
@@ -384,17 +385,7 @@ function ChevronIcon(props: { className?: string; collapsed?: boolean }) {
 }
 
 export function getSessionTitle(session: SessionSummary): string {
-    if (session.metadata?.name) {
-        return session.metadata.name
-    }
-    if (session.metadata?.summary?.text) {
-        return session.metadata.summary.text
-    }
-    if (session.metadata?.path) {
-        const parts = session.metadata.path.split('/').filter(Boolean)
-        return parts.length > 0 ? parts[parts.length - 1] : session.id.slice(0, 8)
-    }
-    return session.id.slice(0, 8)
+    return getBaseSessionTitle(session)
 }
 
 function getTodoProgress(session: SessionSummary): { completed: number; total: number } | null {
@@ -597,6 +588,7 @@ function SessionItem(props: {
     })
 
     const sessionName = getSessionTitle(s)
+    const displaySessionName = getDisplaySessionTitle(s)
     const todoProgress = getTodoProgress(s)
     const markerTextColor = getSessionMarkerColorHex(s.markerColor)
     return (
@@ -628,7 +620,7 @@ function SessionItem(props: {
                                 className={`truncate text-sm font-medium ${s.active ? 'text-[var(--app-fg)]' : 'text-[var(--app-hint)]'}`}
                                 style={markerTextColor ? { color: markerTextColor } : undefined}
                             >
-                                {sessionName}
+                                {displaySessionName}
                             </div>
                             {s.active && s.thinking ? (
                                 <LoaderIcon className="h-3.5 w-3.5 shrink-0 text-[var(--app-hint)] animate-spin-slow" />

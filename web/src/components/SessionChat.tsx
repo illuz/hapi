@@ -32,6 +32,7 @@ import { useCodexModels } from '@/hooks/queries/useCodexModels'
 import { useOpencodeModels } from '@/hooks/queries/useOpencodeModels'
 import { useVoiceOptional } from '@/lib/voice-context'
 import { useToast } from '@/lib/toast-context'
+import { getDisplaySessionTitle } from '@/lib/sessionTitle'
 import { RealtimeVoiceSession, registerSessionStore, registerVoiceHooksStore, voiceHooks } from '@/realtime'
 import { isRemoteTerminalSupported } from '@/utils/terminalSupport'
 import { allocateContinueRoundWithSource } from '@/lib/continueRounds'
@@ -47,18 +48,6 @@ import {
     shouldStopAutoContinue
 } from '@/lib/autoContinue'
 
-function getOutlineTitle(session: Session): string {
-    if (session.metadata?.name) {
-        return session.metadata.name
-    }
-    if (session.metadata?.summary?.text) {
-        return session.metadata.summary.text
-    }
-    if (session.metadata?.path) {
-        return session.metadata.path
-    }
-    return session.id.slice(0, 8)
-}
 
 export function SessionChat(props: {
     api: ApiClient
@@ -343,7 +332,7 @@ export function SessionChat(props: {
     )
 
     const outlineTitle = useMemo(
-        () => getOutlineTitle(props.session),
+        () => getDisplaySessionTitle(props.session, { pathMode: 'full' }),
         [props.session]
     )
 

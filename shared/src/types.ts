@@ -15,6 +15,7 @@ export type {
     TodoItem,
     WorktreeMetadata
 } from './schemas'
+export type { AutoContinueSettings } from './autoContinue'
 
 export type { SessionSummary, SessionSummaryMetadata } from './sessionSummary'
 export { AGENT_MESSAGE_PAYLOAD_TYPE } from './modes'

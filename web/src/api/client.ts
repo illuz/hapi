@@ -337,6 +337,19 @@ export class ApiClient {
         })
     }
 
+    async setAutoContinueSettings(sessionId: string, settings: {
+        enabled: boolean
+        remaining: number
+        maxRuns: number
+        keywords: string[]
+        messageText: string
+    }): Promise<void> {
+        await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/auto-continue`, {
+            method: 'POST',
+            body: JSON.stringify(settings)
+        })
+    }
+
     async approvePermission(
         sessionId: string,
         requestId: string,

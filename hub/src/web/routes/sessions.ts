@@ -1,5 +1,6 @@
 import { getPermissionModesForFlavor, isPermissionModeAllowedForFlavor, toSessionSummary } from '@hapi/protocol'
-import { CodexCollaborationModeSchema, PermissionModeSchema, SessionMarkerColorSchema } from '@hapi/protocol/schemas'
+import { AutoContinueSettingsSchema, normalizeAutoContinueSettings } from '@hapi/protocol/autoContinue'
+import { CodexCollaborationModeSchema, PermissionModeSchema } from '@hapi/protocol/schemas'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import type { SyncEngine, Session } from '../../sync/syncEngine'
@@ -22,12 +23,11 @@ const effortSchema = z.object({
     effort: z.string().trim().min(1).nullable()
 })
 
-const updateSessionSchema = z.object({
-    name: z.string().min(1).max(255).optional(),
-    markerColor: SessionMarkerColorSchema.nullable().optional()
-}).refine((value) => value.name !== undefined || value.markerColor !== undefined, {
-    message: 'At least one field is required'
+const renameSessionSchema = z.object({
+    name: z.string().min(1).max(255)
 })
+
+const autoContinueSchema = AutoContinueSettingsSchema.transform((value) => normalizeAutoContinueSettings(value))
 
 const uploadSchema = z.object({
     filename: z.string().min(1).max(255),
@@ -375,18 +375,13 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
         }
 
         const body = await c.req.json().catch(() => null)
-        const parsed = updateSessionSchema.safeParse(body)
+        const parsed = renameSessionSchema.safeParse(body)
         if (!parsed.success) {
-            return c.json({ error: 'Invalid body: name or markerColor is required' }, 400)
+            return c.json({ error: 'Invalid body: name is required' }, 400)
         }
 
         try {
-            if (parsed.data.name !== undefined) {
-                await engine.renameSession(sessionResult.sessionId, parsed.data.name)
-            }
-            if (parsed.data.markerColor !== undefined) {
-                await engine.setSessionMarkerColor(sessionResult.sessionId, parsed.data.markerColor)
-            }
+            await engine.renameSession(sessionResult.sessionId, parsed.data.name)
             return c.json({ ok: true })
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Failed to rename session'
@@ -395,6 +390,32 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
                 return c.json({ error: message }, 409)
             }
             return c.json({ error: message }, 500)
+        }
+    })
+
+    app.post('/sessions/:id/auto-continue', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) {
+            return engine
+        }
+
+        const sessionResult = requireSessionFromParam(c, engine)
+        if (sessionResult instanceof Response) {
+            return sessionResult
+        }
+
+        const body = await c.req.json().catch(() => null)
+        const parsed = autoContinueSchema.safeParse(body)
+        if (!parsed.success) {
+            return c.json({ error: 'Invalid body' }, 400)
+        }
+
+        try {
+            await engine.updateAutoContinueSettings(sessionResult.sessionId, parsed.data)
+            return c.json({ ok: true })
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Failed to update auto-continue settings'
+            return c.json({ error: message }, 409)
         }
     })
 

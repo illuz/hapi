@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { CODEX_COLLABORATION_MODES, PERMISSION_MODES } from './modes'
+import { AutoContinueSettingsSchema } from './autoContinue'
 import { SESSION_MARKER_COLORS } from './sessionMarkers'
 
 export const PermissionModeSchema = z.enum(PERMISSION_MODES)
@@ -49,7 +50,8 @@ export const MetadataSchema = z.object({
     archivedBy: z.string().optional(),
     archiveReason: z.string().optional(),
     flavor: z.string().nullish(),
-    worktree: WorktreeMetadataSchema.optional()
+    worktree: WorktreeMetadataSchema.optional(),
+    autoContinue: AutoContinueSettingsSchema.optional()
 })
 
 export type Metadata = z.infer<typeof MetadataSchema>

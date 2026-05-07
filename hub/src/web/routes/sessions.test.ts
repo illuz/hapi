@@ -52,22 +52,17 @@ function createSession(overrides?: Partial<Session>): Session {
 
 function createApp(session: Session) {
     const applySessionConfigCalls: Array<[string, Record<string, unknown>]> = []
-    const renameSessionCalls: Array<[string, string]> = []
-    const setSessionMarkerColorCalls: Array<[string, string | null]> = []
+    const updateAutoContinueSettingsCalls: Array<[string, Record<string, unknown>]> = []
     const applySessionConfig = async (sessionId: string, config: Record<string, unknown>) => {
         applySessionConfigCalls.push([sessionId, config])
     }
-    const renameSession = async (sessionId: string, name: string) => {
-        renameSessionCalls.push([sessionId, name])
-    }
-    const setSessionMarkerColor = async (sessionId: string, markerColor: string | null) => {
-        setSessionMarkerColorCalls.push([sessionId, markerColor])
+    const updateAutoContinueSettings = async (sessionId: string, settings: Record<string, unknown>) => {
+        updateAutoContinueSettingsCalls.push([sessionId, settings])
     }
     const engine = {
         resolveSessionAccess: () => ({ ok: true, sessionId: session.id, session }),
         applySessionConfig,
-        renameSession,
-        setSessionMarkerColor
+        updateAutoContinueSettings
     } as Partial<SyncEngine>
 
     const app = new Hono<WebAppEnv>()
@@ -77,7 +72,7 @@ function createApp(session: Session) {
     })
     app.route('/api', createSessionsRoutes(() => engine as SyncEngine))
 
-    return { app, applySessionConfigCalls, renameSessionCalls, setSessionMarkerColorCalls }
+    return { app, applySessionConfigCalls, updateAutoContinueSettingsCalls }
 }
 
 describe('sessions routes', () => {
@@ -182,34 +177,31 @@ describe('sessions routes', () => {
         ])
     })
 
-    it('updates session marker color via patch', async () => {
-        const { app, renameSessionCalls, setSessionMarkerColorCalls } = createApp(createSession())
+    it('updates auto-continue settings', async () => {
+        const { app, updateAutoContinueSettingsCalls } = createApp(createSession())
 
-        const response = await app.request('/api/sessions/session-1', {
-            method: 'PATCH',
+        const response = await app.request('/api/sessions/session-1/auto-continue', {
+            method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ markerColor: 'blue' })
+            body: JSON.stringify({
+                enabled: true,
+                remaining: 5,
+                maxRuns: 10,
+                keywords: ['下一步'],
+                messageText: 'continue'
+            })
         })
 
         expect(response.status).toBe(200)
         expect(await response.json()).toEqual({ ok: true })
-        expect(renameSessionCalls).toEqual([])
-        expect(setSessionMarkerColorCalls).toEqual([['session-1', 'blue']])
+        expect(updateAutoContinueSettingsCalls).toEqual([
+            ['session-1', {
+                enabled: true,
+                remaining: 5,
+                maxRuns: 10,
+                keywords: ['下一步'],
+                messageText: 'continue'
+            }]
+        ])
     })
-
-    it('updates session name and marker color together via patch', async () => {
-        const { app, renameSessionCalls, setSessionMarkerColorCalls } = createApp(createSession())
-
-        const response = await app.request('/api/sessions/session-1', {
-            method: 'PATCH',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ name: 'Pinned chat', markerColor: 'yellow' })
-        })
-
-        expect(response.status).toBe(200)
-        expect(await response.json()).toEqual({ ok: true })
-        expect(renameSessionCalls).toEqual([['session-1', 'Pinned chat']])
-        expect(setSessionMarkerColorCalls).toEqual([['session-1', 'yellow']])
-    })
-
 })

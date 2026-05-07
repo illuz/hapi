@@ -1,5 +1,6 @@
 import { AgentStateSchema, MetadataSchema, TeamStateSchema } from '@hapi/protocol/schemas'
 import type { CodexCollaborationMode, PermissionMode, Session, SessionMarkerColor } from '@hapi/protocol/types'
+import { normalizeAutoContinueSettings, type AutoContinueSettings } from '@hapi/protocol/autoContinue'
 import type { Store } from '../store'
 import { clampAliveTime } from './aliveTime'
 import { EventPublisher } from './eventPublisher'
@@ -348,6 +349,43 @@ export class SessionCache {
         }
 
         this.refreshSession(sessionId)
+    }
+
+    async updateAutoContinueSettings(sessionId: string, settings: AutoContinueSettings): Promise<void> {
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+            const session = this.sessions.get(sessionId) ?? this.refreshSession(sessionId)
+            if (!session) {
+                throw new Error('Session not found')
+            }
+
+            if (!session.metadata) {
+                throw new Error('Session metadata not found')
+            }
+
+            const nextMetadata = {
+                ...session.metadata,
+                autoContinue: normalizeAutoContinueSettings(settings)
+            }
+
+            const result = this.store.sessions.updateSessionMetadata(
+                sessionId,
+                nextMetadata,
+                session.metadataVersion,
+                session.namespace,
+                { touchUpdatedAt: false }
+            )
+
+            if (result.result === 'success') {
+                this.refreshSession(sessionId)
+                return
+            }
+
+            if (result.result === 'error') {
+                throw new Error('Failed to update session metadata')
+            }
+        }
+
+        throw new Error('Session was modified concurrently. Please try again.')
     }
 
     async deleteSession(sessionId: string): Promise<void> {

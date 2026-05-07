@@ -14,6 +14,7 @@ import { useVisibilityReporter } from '@/hooks/useVisibilityReporter'
 import { queryKeys } from '@/lib/query-keys'
 import { AppContextProvider } from '@/lib/app-context'
 import { clearMessageWindow, fetchLatestMessages } from '@/lib/message-window-store'
+import { clearSessionAttention, triggerSessionAttention } from '@/lib/sessionAttention'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
 import { playNotificationSound } from '@/lib/readyChime'
 import { getStoredEventSound, getStoredPlaybackMode, type SoundEvent } from '@/lib/readySound'
@@ -137,6 +138,7 @@ function AppInner() {
         baseUrlRef.current = baseUrl
         isFirstConnectRef.current = true
         syncTokenRef.current = 0
+        clearSessionAttention()
         queryClient.clear()
     }, [baseUrl, queryClient])
 
@@ -286,6 +288,8 @@ function AppInner() {
     }, [t])
 
     const handleToast = useCallback((event: ToastEvent) => {
+        triggerSessionAttention(event.data.sessionId)
+
         const playbackMode = getStoredPlaybackMode()
         const visibilityState = typeof document !== 'undefined' ? document.visibilityState : 'visible'
         const shouldPlaySound = (

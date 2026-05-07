@@ -497,6 +497,10 @@ export function useSSE(options: {
             }
 
             if (event.type === 'toast') {
+                queueSessionListInvalidation()
+                if (event.data.sessionId) {
+                    queueSessionDetailInvalidation(event.data.sessionId)
+                }
                 onToastRef.current?.(event)
                 return
             }

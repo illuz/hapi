@@ -7,6 +7,7 @@ import { useSessionActions } from '@/hooks/mutations/useSessionActions'
 import { SessionActionMenu } from '@/components/SessionActionMenu'
 import { RenameSessionDialog } from '@/components/RenameSessionDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { useSessionAttentionTokens } from '@/lib/sessionAttention'
 import { getSessionMarkerColorHex } from '@/lib/sessionMarkers'
 import { CopyIcon, CheckIcon } from '@/components/icons'
 import { cn } from '@/lib/utils'
@@ -564,9 +565,10 @@ function SessionItem(props: {
     showPath?: boolean
     api: ApiClient | null
     selected?: boolean
+    attentionToken?: number
 }) {
     const { t } = useTranslation()
-    const { session: s, onSelect, showPath = true, api, selected = false } = props
+    const { session: s, onSelect, showPath = true, api, selected = false, attentionToken } = props
     const { haptic } = usePlatform()
     const [menuOpen, setMenuOpen] = useState(false)
     const [menuAnchorPoint, setMenuAnchorPoint] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
@@ -602,7 +604,7 @@ function SessionItem(props: {
             <button
                 type="button"
                 {...longPressHandlers}
-                className={`session-list-item flex w-full flex-col gap-1 px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] select-none rounded-lg ${selected ? 'bg-[var(--app-secondary-bg)]' : ''}`}
+                className={`session-list-item relative flex w-full flex-col gap-1 overflow-hidden rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] select-none ${selected ? 'bg-[var(--app-secondary-bg)]' : ''}`}
                 style={{ WebkitTouchCallout: 'none' }}
                 aria-current={selected ? 'page' : undefined}
                 onContextMenu={(event) => {
@@ -611,41 +613,50 @@ function SessionItem(props: {
                     setMenuOpen(true)
                 }}
             >
-                <div className={`flex items-center justify-between gap-3 ${!s.active ? 'opacity-50' : ''}`}>
-                    <div className="flex items-center gap-2 min-w-0">
-                        <FlavorIcon flavor={s.metadata?.flavor} className="h-4 w-4 shrink-0" />
-                        <div
-                            className={`truncate text-sm font-medium ${s.active ? 'text-[var(--app-fg)]' : 'text-[var(--app-hint)]'}`}
-                            style={markerTextColor ? { color: markerTextColor } : undefined}
-                        >
-                            {sessionName}
-                        </div>
-                        {s.active && s.thinking ? (
-                            <LoaderIcon className="h-3.5 w-3.5 shrink-0 text-[var(--app-hint)] animate-spin-slow" />
-                        ) : null}
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0 text-xs">
-                        {todoProgress ? (
-                            <span className="flex items-center gap-1 text-[var(--app-hint)]">
-                                <BulbIcon className="h-3 w-3" />
-                                {todoProgress.completed}/{todoProgress.total}
-                            </span>
-                        ) : null}
-                        {s.pendingRequestsCount > 0 ? (
-                            <span className="text-[var(--app-badge-warning-text)]">
-                                {t('session.item.pending')} {s.pendingRequestsCount}
-                            </span>
-                        ) : null}
-                        <span className="text-[var(--app-hint)]">
-                            {formatRelativeTime(s.updatedAt, t)}
-                        </span>
-                    </div>
-                </div>
-                {showPath ? (
-                    <div className="truncate text-xs text-[var(--app-hint)]">
-                        {s.metadata?.path ?? s.id}
-                    </div>
+                {attentionToken ? (
+                    <span
+                        key={attentionToken}
+                        aria-hidden="true"
+                        className="session-list-item-attention pointer-events-none absolute inset-0 z-0 rounded-lg"
+                    />
                 ) : null}
+                <div className="relative z-10 flex flex-col gap-1">
+                    <div className={`flex items-center justify-between gap-3 ${!s.active ? 'opacity-50' : ''}`}>
+                        <div className="flex items-center gap-2 min-w-0">
+                            <FlavorIcon flavor={s.metadata?.flavor} className="h-4 w-4 shrink-0" />
+                            <div
+                                className={`truncate text-sm font-medium ${s.active ? 'text-[var(--app-fg)]' : 'text-[var(--app-hint)]'}`}
+                                style={markerTextColor ? { color: markerTextColor } : undefined}
+                            >
+                                {sessionName}
+                            </div>
+                            {s.active && s.thinking ? (
+                                <LoaderIcon className="h-3.5 w-3.5 shrink-0 text-[var(--app-hint)] animate-spin-slow" />
+                            ) : null}
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0 text-xs">
+                            {todoProgress ? (
+                                <span className="flex items-center gap-1 text-[var(--app-hint)]">
+                                    <BulbIcon className="h-3 w-3" />
+                                    {todoProgress.completed}/{todoProgress.total}
+                                </span>
+                            ) : null}
+                            {s.pendingRequestsCount > 0 ? (
+                                <span className="text-[var(--app-badge-warning-text)]">
+                                    {t('session.item.pending')} {s.pendingRequestsCount}
+                                </span>
+                            ) : null}
+                            <span className="text-[var(--app-hint)]">
+                                {formatRelativeTime(s.updatedAt, t)}
+                            </span>
+                        </div>
+                    </div>
+                    {showPath ? (
+                        <div className="truncate text-xs text-[var(--app-hint)]">
+                            {s.metadata?.path ?? s.id}
+                        </div>
+                    ) : null}
+                </div>
             </button>
 
             <SessionActionMenu
@@ -709,6 +720,7 @@ export function SessionList(props: {
 }) {
     const { t } = useTranslation()
     const { renderHeader = true, api, selectedSessionId, machineLabelsById = {} } = props
+    const attentionTokens = useSessionAttentionTokens()
     const [searchQuery, setSearchQuery] = useState('')
     const normalizedQuery = normalizeSearch(searchQuery)
     const isSearching = normalizedQuery.length > 0
@@ -946,6 +958,7 @@ export function SessionList(props: {
                                                                 showPath={false}
                                                                 api={api}
                                                                 selected={s.id === selectedSessionId}
+                                                                attentionToken={attentionTokens[s.id]}
                                                             />
                                                         ))}
                                                         {!isSearching && group.sessions.length > GROUP_SESSION_PREVIEW_LIMIT && (sessionGroupExpanded || hiddenSessionCount > 0) ? (

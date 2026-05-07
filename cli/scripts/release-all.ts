@@ -26,6 +26,8 @@ const publishNpm = args.includes('--publish-npm');  // 只发布 npm，跳过 gi
 const skipBuild = args.includes('--skip-build');    // 跳过构建（二进制已存在）
 const otpIndex = args.indexOf('--otp');
 const otp = otpIndex !== -1 ? args[otpIndex + 1] : undefined;
+const tagIndex = args.indexOf('--tag');
+const npmTag = tagIndex !== -1 ? args[tagIndex + 1] : 'latest';
 const npmToken = process.env.NPM_TOKEN || process.env.NODE_AUTH_TOKEN;
 const npmRegistry = 'https://registry.npmjs.org';
 
@@ -36,6 +38,7 @@ if (!version) {
     console.error('  --publish-npm  Only publish to npm, skip git operations');
     console.error('  --skip-build   Skip building binaries (use existing)');
     console.error('  --otp <code>   One-time password for npm publish');
+    console.error('  --tag <tag>    npm dist-tag to publish under (default: latest)');
     console.error('Env:');
     console.error('  NPM_TOKEN / NODE_AUTH_TOKEN  Token auth for npm publish');
     console.error('Example: bun run scripts/release-all.ts 0.2.0');
@@ -234,7 +237,6 @@ async function main(): Promise<void> {
     console.log('\n📤 Step 3: Publishing platform packages...');
     run('bun run prepare-npm-packages');
     const platforms = ['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64', 'win32-x64'];
-    const npmTag = version.includes('-') ? 'next' : 'latest';
     const otpFlag = otp ? ` --otp ${otp}` : '';
     for (const platform of platforms) {
         const npmDir = join(projectRoot, 'npm', platform);

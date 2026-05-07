@@ -20,6 +20,7 @@ oclif.manifest.json
 /npm/*/bin/hapi.exe
 /npm/*/bin/hapi.cjs
 /npm/*/NOTICE
+/npm/*/*.tgz
 
 
 

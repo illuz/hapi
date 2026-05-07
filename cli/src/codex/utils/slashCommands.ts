@@ -102,6 +102,28 @@ export function resolveCodexSlashCommand(
         };
     }
 
+    if (command === 'fast') {
+        const lowerRest = rest.toLowerCase();
+        if (!rest || lowerRest === 'on' || lowerRest === 'enable' || lowerRest === 'enabled') {
+            return {
+                kind: 'handled',
+                message: 'Codex fast mode enabled',
+                updates: { modelReasoningEffort: 'low' }
+            };
+        }
+        if (lowerRest === 'off' || lowerRest === 'default' || lowerRest === 'exit' || lowerRest === 'disable') {
+            return {
+                kind: 'handled',
+                message: 'Codex fast mode disabled',
+                updates: { modelReasoningEffort: null }
+            };
+        }
+        return {
+            kind: 'handled',
+            message: `Unknown Codex fast mode option: ${rest}`
+        };
+    }
+
     if (command === 'default' || command === 'execute') {
         return {
             kind: 'handled',
@@ -183,6 +205,8 @@ export function resolveCodexSlashCommand(
                 'Supported Codex slash commands:',
                 '/plan [prompt] — enable plan mode, optionally send prompt',
                 '/plan off — return to default mode',
+                '/fast — switch reasoning effort to low',
+                '/fast off — restore default reasoning effort',
                 '/clear — reset current Codex thread context',
                 '/compact — compact current Codex thread context',
                 '/status — show current Codex session config',

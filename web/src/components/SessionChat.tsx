@@ -497,6 +497,8 @@ export function SessionChat(props: {
         return [
             { id: 'codex-status', label: '/status', message: '/status' },
             { id: 'codex-help', label: '/help', message: '/help' },
+            { id: 'codex-fast', label: '/fast', message: '/fast' },
+            { id: 'codex-fast-off', label: '/fast off', message: '/fast off' },
             { id: 'codex-clear', label: '/clear', message: '/clear' },
             { id: 'codex-compact', label: '/compact', message: '/compact' },
             { id: 'codex-plan', label: '/plan', message: '/plan' },

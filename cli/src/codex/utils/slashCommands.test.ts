@@ -34,6 +34,19 @@ describe('resolveCodexSlashCommand', () => {
         });
     });
 
+    it('toggles fast mode via reasoning effort presets', () => {
+        expect(resolveCodexSlashCommand('/fast', state)).toEqual({
+            kind: 'handled',
+            message: 'Codex fast mode enabled',
+            updates: { modelReasoningEffort: 'low' }
+        });
+        expect(resolveCodexSlashCommand('/fast off', { ...state, modelReasoningEffort: 'low' })).toEqual({
+            kind: 'handled',
+            message: 'Codex fast mode disabled',
+            updates: { modelReasoningEffort: null }
+        });
+    });
+
     it('sets model, reasoning effort, and permission mode', () => {
         expect(resolveCodexSlashCommand('/model gpt-5.4', state)).toMatchObject({
             updates: { model: 'gpt-5.4' }

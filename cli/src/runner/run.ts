@@ -22,6 +22,7 @@ import { startRunnerControlServer } from './controlServer';
 import { createWorktree, removeWorktree, type WorktreeInfo } from './worktree';
 import { join } from 'path';
 import { buildMachineMetadata } from '@/agent/sessionFactory';
+import { forkCodexThread } from '@/codex/forkCodexThread';
 import { resolveWorkspaceRoots } from '@/utils/workspaceRoot';
 import { hashRunnerCliApiToken } from './runnerIdentity';
 
@@ -714,6 +715,7 @@ export async function startRunner(options: { workspaceRoots?: string[] } = {}): 
     // Set RPC handlers
     apiMachine.setRPCHandlers({
       spawnSession,
+      forkCodexThread,
       stopSession,
       requestShutdown: () => requestShutdown('hapi-app')
     });

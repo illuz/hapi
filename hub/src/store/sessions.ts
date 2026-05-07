@@ -1,5 +1,5 @@
 import type { Database } from 'bun:sqlite'
-import type { SessionMarkerColor } from '@hapi/protocol/types'
+import type { PermissionMode, SessionMarkerColor } from '@hapi/protocol/types'
 import { randomUUID } from 'node:crypto'
 
 import type { StoredSession, VersionedUpdateResult } from './types'
@@ -20,6 +20,7 @@ type DbSessionRow = {
     model: string | null
     model_reasoning_effort: string | null
     effort: string | null
+    permission_mode: PermissionMode | null
     todos: string | null
     todos_updated_at: number | null
     team_state: string | null
@@ -45,6 +46,7 @@ function toStoredSession(row: DbSessionRow): StoredSession {
         model: row.model,
         modelReasoningEffort: row.model_reasoning_effort,
         effort: row.effort,
+        permissionMode: row.permission_mode,
         todos: safeJsonParse(row.todos),
         todosUpdatedAt: row.todos_updated_at,
         teamState: safeJsonParse(row.team_state),
@@ -88,6 +90,7 @@ export function getOrCreateSession(
             model,
             model_reasoning_effort,
             effort,
+            permission_mode,
             todos, todos_updated_at,
             marker_color,
             active, active_at, seq
@@ -98,6 +101,7 @@ export function getOrCreateSession(
             @model,
             @model_reasoning_effort,
             @effort,
+            @permission_mode,
             NULL, NULL,
             NULL,
             0, NULL, 0
@@ -112,7 +116,8 @@ export function getOrCreateSession(
         agent_state: agentStateJson,
         model: model ?? null,
         model_reasoning_effort: modelReasoningEffort ?? null,
-        effort: effort ?? null
+        effort: effort ?? null,
+        permission_mode: null
     })
 
     const row = getSession(db, id)
@@ -339,6 +344,34 @@ export function setSessionEffort(
             effort,
             updated_at: now,
             touch_updated_at: touchUpdatedAt ? 1 : 0
+        })
+
+        return result.changes === 1
+    } catch {
+        return false
+    }
+}
+
+export function setSessionPermissionMode(
+    db: Database,
+    id: string,
+    permissionMode: string | null,
+    namespace: string
+): boolean {
+    try {
+        const result = db.prepare(`
+            UPDATE sessions
+            SET permission_mode = @permission_mode,
+                updated_at = CASE WHEN updated_at > @updated_at THEN updated_at ELSE @updated_at END,
+                seq = seq + 1
+            WHERE id = @id
+              AND namespace = @namespace
+              AND permission_mode IS NOT @permission_mode
+        `).run({
+            id,
+            namespace,
+            permission_mode: permissionMode,
+            updated_at: Date.now()
         })
 
         return result.changes === 1

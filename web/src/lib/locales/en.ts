@@ -49,7 +49,9 @@ export default {
   'sessions.refresh': 'Refresh list',
   'sessions.cleanupInactive': 'Clear inactive sessions',
   'sessions.filter': 'Filter sessions',
+  'sessions.filterActiveOrMarked': 'Show active and marked only',
   'sessions.clearFilter': 'Clear filter',
+  'sessions.showAll': 'Show all sessions',
   'sessions.filterPlaceholder': 'Filter by title, path, branch, machine…',
   'sessions.empty.title': 'No sessions yet',
   'sessions.empty.hint': 'Start a coding session in any folder under your workspace, or browse the tree first.',
@@ -100,6 +102,7 @@ export default {
   'session.outline.title': 'Outline',
   'session.outline.loadOlder': 'Load earlier',
   'session.outline.empty': 'No outline items in loaded messages',
+  'session.outline.forkFromHere': 'Fork from here',
   'session.outline.kind.user': 'User',
 
   // Session actions
@@ -113,6 +116,8 @@ export default {
   'session.marker.blue': 'Blue',
   'session.marker.purple': 'Purple',
   'session.action.rename': 'Rename',
+  'session.action.fork': 'Fork',
+  'session.action.newSession': 'New session',
   'session.action.archive': 'Archive',
   'session.action.delete': 'Delete',
   'session.action.copy': 'Copy',

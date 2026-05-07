@@ -147,7 +147,7 @@ export class SessionCache {
             model: stored.model,
             modelReasoningEffort: stored.modelReasoningEffort,
             effort: stored.effort,
-            permissionMode: existing?.permissionMode,
+            permissionMode: stored.permissionMode ?? existing?.permissionMode,
             collaborationMode: existing?.collaborationMode
         }
 
@@ -200,6 +200,9 @@ export class SessionCache {
             this.pendingThinkingUntilBySessionId.delete(session.id)
         }
         if (payload.permissionMode !== undefined) {
+            if (payload.permissionMode !== session.permissionMode) {
+                this.store.sessions.setSessionPermissionMode(session.id, payload.permissionMode, session.namespace)
+            }
             session.permissionMode = payload.permissionMode
         }
         if (payload.model !== undefined) {
@@ -390,6 +393,7 @@ export class SessionCache {
         }
 
         if (config.permissionMode !== undefined) {
+            this.store.sessions.setSessionPermissionMode(sessionId, config.permissionMode, session.namespace)
             session.permissionMode = config.permissionMode
         }
         if (config.model !== undefined) {

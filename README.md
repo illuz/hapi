@@ -21,8 +21,8 @@ https://github.com/user-attachments/assets/38230353-94c6-4dbe-9c29-b2a2cc457546
 ## Getting Started
 
 ```bash
-npx @twsxtd/hapi hub --relay     # start hub with E2E encrypted relay
-npx @twsxtd/hapi                 # run claude code
+npx @illuz-modified/hapi hub --relay     # start hub with E2E encrypted relay
+npx @illuz-modified/hapi                 # run claude code
 ```
 
 `hapi server` remains supported as an alias.

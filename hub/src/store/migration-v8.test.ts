@@ -123,6 +123,7 @@ describe('Store V7→V8 migration: invoked_at column', () => {
             const store2 = new Store(dbPath)
             const cols2 = getMessageColumns(store2)
             expect(cols2).toEqual(cols1)
+            expect(getSessionColumns(store2)).toContain('permission_mode')
         } finally {
             rmSync(dir, { recursive: true, force: true })
         }
@@ -147,6 +148,7 @@ describe('Store V7→V8 migration: invoked_at column', () => {
             const cols = getMessageColumns(store)
             expect(cols).toContain('invoked_at')
             expect(store.messages.getMessages('s1')[0]?.invokedAt).toBe(1500)
+            expect(getSessionColumns(store)).toContain('permission_mode')
         } finally {
             rmSync(dir, { recursive: true, force: true })
         }

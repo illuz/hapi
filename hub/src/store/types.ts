@@ -1,4 +1,4 @@
-import type { SessionMarkerColor } from '@hapi/protocol/types'
+import type { PermissionMode, SessionMarkerColor } from '@hapi/protocol/types'
 
 export type StoredSession = {
     id: string
@@ -14,6 +14,7 @@ export type StoredSession = {
     model: string | null
     modelReasoningEffort: string | null
     effort: string | null
+    permissionMode: PermissionMode | null
     todos: unknown | null
     todosUpdatedAt: number | null
     teamState: unknown | null

@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
+import { unwrapRoleWrappedRecordEnvelope } from '@hapi/protocol/messages'
 
 import type { StoredMessage } from './types'
 import { safeJsonParse } from './json'
@@ -162,6 +163,103 @@ export function getMaxSeq(db: Database, sessionId: string): number {
         'SELECT COALESCE(MAX(seq), 0) AS maxSeq FROM messages WHERE session_id = ?'
     ).get(sessionId) as { maxSeq: number } | undefined
     return row?.maxSeq ?? 0
+}
+
+function isHistoricalQueuedRow(row: DbMessageRow): boolean {
+    return row.invoked_at === null && row.local_id !== null
+}
+
+function isUserTurnContent(content: unknown): boolean {
+    const record = unwrapRoleWrappedRecordEnvelope(content)
+    return record?.role === 'user'
+}
+
+export function copySessionMessages(
+    db: Database,
+    fromSessionId: string,
+    toSessionId: string,
+    options?: { keepUserTurns?: number; dropLastUserTurns?: number }
+): { copied: number } {
+    if (fromSessionId === toSessionId) {
+        return { copied: 0 }
+    }
+
+    const sourceRows = db.prepare(
+        'SELECT * FROM messages WHERE session_id = ? ORDER BY seq ASC'
+    ).all(fromSessionId) as DbMessageRow[]
+
+    const historicalRows = sourceRows.filter((row) => !isHistoricalQueuedRow(row))
+    let rowsToCopy = historicalRows
+
+    const keepUserTurns = options?.keepUserTurns !== undefined
+        ? Math.max(0, options.keepUserTurns)
+        : options?.dropLastUserTurns !== undefined
+            ? Math.max(
+                0,
+                historicalRows.reduce((count, row) => count + (isUserTurnContent(safeJsonParse(row.content)) ? 1 : 0), 0)
+                - Math.max(0, options.dropLastUserTurns)
+            )
+            : undefined
+
+    if (keepUserTurns !== undefined) {
+        if (keepUserTurns === 0) {
+            rowsToCopy = []
+        } else {
+            let seenUserTurns = 0
+            let cutoffIndex = historicalRows.length
+
+            for (let i = 0; i < historicalRows.length; i += 1) {
+                const row = historicalRows[i]
+                if (!isUserTurnContent(safeJsonParse(row.content))) {
+                    continue
+                }
+
+                seenUserTurns += 1
+                if (seenUserTurns > keepUserTurns) {
+                    cutoffIndex = i
+                    break
+                }
+            }
+
+            rowsToCopy = historicalRows.slice(0, cutoffIndex)
+        }
+    }
+
+    if (rowsToCopy.length === 0) {
+        return { copied: 0 }
+    }
+
+    const startingSeq = getMaxSeq(db, toSessionId)
+
+    try {
+        db.exec('BEGIN')
+
+        const insert = db.prepare(`
+            INSERT INTO messages (
+                id, session_id, content, created_at, seq, local_id, invoked_at
+            ) VALUES (
+                @id, @session_id, @content, @created_at, @seq, @local_id, @invoked_at
+            )
+        `)
+
+        rowsToCopy.forEach((row, index) => {
+            insert.run({
+                id: randomUUID(),
+                session_id: toSessionId,
+                content: row.content,
+                created_at: row.created_at,
+                seq: startingSeq + index + 1,
+                local_id: null,
+                invoked_at: row.invoked_at ?? row.created_at
+            })
+        })
+
+        db.exec('COMMIT')
+        return { copied: rowsToCopy.length }
+    } catch (error) {
+        db.exec('ROLLBACK')
+        throw error
+    }
 }
 
 export type CancelQueuedMessageResult =

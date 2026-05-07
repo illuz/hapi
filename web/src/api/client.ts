@@ -300,6 +300,28 @@ export class ApiClient {
         return response.sessionId
     }
 
+    async spawnSessionFromConfig(sessionId: string): Promise<{ sessionId: string }> {
+        return await this.request<{ sessionId: string }>(
+            `/api/sessions/${encodeURIComponent(sessionId)}/spawn-from-config`,
+            {
+                method: 'POST',
+                body: JSON.stringify({})
+            }
+        )
+    }
+
+    async forkSession(sessionId: string, rollbackTurns?: number): Promise<{ sessionId: string }> {
+        return await this.request<{ sessionId: string }>(
+            `/api/sessions/${encodeURIComponent(sessionId)}/fork`,
+            {
+                method: 'POST',
+                body: JSON.stringify(
+                    rollbackTurns !== undefined ? { rollbackTurns } : {}
+                )
+            }
+        )
+    }
+
     async sendMessage(sessionId: string, text: string, localId?: string | null, attachments?: AttachmentMetadata[]): Promise<void> {
         await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/messages`, {
             method: 'POST',

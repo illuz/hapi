@@ -23,7 +23,7 @@ export { PushStore } from './pushStore'
 export { SessionStore } from './sessionStore'
 export { UserStore } from './userStore'
 
-const SCHEMA_VERSION: number = 8
+const SCHEMA_VERSION: number = 9
 const REQUIRED_TABLES = [
     'sessions',
     'machines',
@@ -88,7 +88,7 @@ export class Store {
         const currentVersion = this.getUserVersion()
         // V1/V2/V3 entries cover legacy DBs that pre-date our migration ladder.
         // Each step is idempotent (column-existence guards inside) so we can
-        // safely run the full V1→V8 chain in the legacy branch where the DB
+        // safely run the full V1→V9 chain in the legacy branch where the DB
         // shape is unknown.
         const buildStepMigrations = (legacy: boolean): Record<number, () => void> => ({
             1: () => this.migrateFromV1ToV2(legacy),
@@ -98,6 +98,7 @@ export class Store {
             5: () => this.migrateFromV5ToV6(),
             6: () => this.migrateFromV6ToV7(),
             7: () => this.migrateFromV7ToV8(),
+            8: () => this.migrateFromV8ToV9(),
         })
 
         if (currentVersion === 0) {
@@ -126,6 +127,14 @@ export class Store {
         }
 
         const stepMigrations = buildStepMigrations(false)
+
+        if (currentVersion === 8 && SCHEMA_VERSION === 9) {
+            this.migrateFromV7ToV8()
+            this.migrateFromV8ToV9()
+            this.setUserVersion(SCHEMA_VERSION)
+            return
+        }
+
         if (currentVersion < SCHEMA_VERSION && stepMigrations[currentVersion]) {
             for (let v = currentVersion; v < SCHEMA_VERSION; v++) {
                 const step = stepMigrations[v]
@@ -136,33 +145,36 @@ export class Store {
             return
         }
 
-
-        if (currentVersion === 6 && SCHEMA_VERSION === 8) {
+        if (currentVersion === 6 && SCHEMA_VERSION === 9) {
             this.migrateFromV6ToV7()
             this.migrateFromV7ToV8()
+            this.migrateFromV8ToV9()
             this.setUserVersion(SCHEMA_VERSION)
             return
         }
 
-        if (currentVersion === 7 && SCHEMA_VERSION === 8) {
+        if (currentVersion === 7 && SCHEMA_VERSION === 9) {
             this.migrateFromV7ToV8()
+            this.migrateFromV8ToV9()
             this.setUserVersion(SCHEMA_VERSION)
             return
         }
 
-        if (currentVersion === 5 && SCHEMA_VERSION === 8) {
+        if (currentVersion === 5 && SCHEMA_VERSION === 9) {
             this.migrateFromV5ToV6()
             this.migrateFromV6ToV7()
             this.migrateFromV7ToV8()
+            this.migrateFromV8ToV9()
             this.setUserVersion(SCHEMA_VERSION)
             return
         }
 
-        if (currentVersion === 4 && SCHEMA_VERSION === 8) {
+        if (currentVersion === 4 && SCHEMA_VERSION === 9) {
             this.migrateFromV4ToV5()
             this.migrateFromV5ToV6()
             this.migrateFromV6ToV7()
             this.migrateFromV7ToV8()
+            this.migrateFromV8ToV9()
             this.setUserVersion(SCHEMA_VERSION)
             return
         }
@@ -191,6 +203,7 @@ export class Store {
                 model TEXT,
                 model_reasoning_effort TEXT,
                 effort TEXT,
+                permission_mode TEXT,
                 todos TEXT,
                 todos_updated_at INTEGER,
                 team_state TEXT,
@@ -441,6 +454,17 @@ export class Store {
         `)
     }
 
+    private migrateFromV8ToV9(): void {
+        const sessionColumns = this.getSessionColumnNames()
+        if (sessionColumns.size === 0) {
+            throw new Error('SQLite schema missing sessions table for v8 to v9 migration.')
+        }
+
+        if (!sessionColumns.has('permission_mode')) {
+            this.db.exec('ALTER TABLE sessions ADD COLUMN permission_mode TEXT')
+        }
+    }
+
     private getMessageColumnNames(): Set<string> {
         const rows = this.db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>
         return new Set(rows.map((row) => row.name))
@@ -454,6 +478,9 @@ export class Store {
             }
             if (!sessionColumns.has('marker_color')) {
                 this.db.exec('ALTER TABLE sessions ADD COLUMN marker_color TEXT')
+            }
+            if (!sessionColumns.has('permission_mode')) {
+                this.db.exec('ALTER TABLE sessions ADD COLUMN permission_mode TEXT')
             }
         }
 

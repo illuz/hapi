@@ -864,6 +864,247 @@ describe('session model', () => {
         }
     })
 
+    it('spawns a new session from stored config on the original machine', async () => {
+        const store = new Store(':memory:')
+        const engine = new SyncEngine(
+            store,
+            {} as never,
+            new RpcRegistry(),
+            { broadcast() {} } as never
+        )
+
+        try {
+            const session = engine.getOrCreateSession(
+                'session-spawn-from-config',
+                {
+                    path: '/tmp/project',
+                    host: 'localhost',
+                    machineId: 'machine-1',
+                    flavor: 'codex',
+                    codexSessionId: 'codex-thread-1',
+                    summary: {
+                        text: 'Original Title',
+                        updatedAt: 1
+                    }
+                },
+                null,
+                'default',
+                'gpt-5.4',
+                undefined,
+                'xhigh'
+            )
+            engine.getOrCreateMachine(
+                'machine-1',
+                { host: 'localhost', platform: 'linux', happyCliVersion: '0.1.0' },
+                null,
+                'default'
+            )
+            engine.handleMachineAlive({ machineId: 'machine-1', time: Date.now() })
+            engine.handleSessionAlive({
+                sid: session.id,
+                permissionMode: 'safe-yolo',
+                time: Date.now()
+            })
+
+            let captured: {
+                machineId?: string
+                directory?: string
+                agent?: string
+                model?: string
+                modelReasoningEffort?: string
+                resumeSessionId?: string
+                permissionMode?: string
+            } | null = null
+
+            ;(engine as any).rpcGateway.spawnSession = async (
+                machineId: string,
+                directory: string,
+                agent: string,
+                model?: string,
+                modelReasoningEffort?: string,
+                _yolo?: boolean,
+                _sessionType?: string,
+                _worktreeName?: string,
+                resumeSessionId?: string,
+                _effort?: string,
+                permissionMode?: string
+            ) => {
+                captured = {
+                    machineId,
+                    directory,
+                    agent,
+                    model,
+                    modelReasoningEffort,
+                    resumeSessionId,
+                    permissionMode
+                }
+                const cloned = engine.getOrCreateSession(
+                    'session-cloned-tag',
+                    {
+                        path: directory,
+                        host: 'localhost',
+                        machineId,
+                        flavor: agent
+                    },
+                    null,
+                    'default'
+                )
+                return { type: 'success', sessionId: cloned.id }
+            }
+
+            const result = await engine.spawnSessionFromConfig(session.id, 'default')
+
+            expect(result.type).toBe('success')
+            expect(captured!).toEqual({
+                machineId: 'machine-1',
+                directory: '/tmp/project',
+                agent: 'codex',
+                model: 'gpt-5.4',
+                modelReasoningEffort: 'xhigh',
+                resumeSessionId: undefined,
+                permissionMode: 'safe-yolo'
+            })
+            const clonedSession = engine.getSession((result as { sessionId: string }).sessionId)
+            expect(clonedSession?.metadata?.summary?.text).toBe('Original Title')
+            expect(clonedSession?.permissionMode).toBe('safe-yolo')
+        } finally {
+            engine.stop()
+        }
+    })
+
+    it('forks a Codex session and spawns a new session from the forked thread', async () => {
+        const store = new Store(':memory:')
+        const engine = new SyncEngine(
+            store,
+            {} as never,
+            new RpcRegistry(),
+            { broadcast() {} } as never
+        )
+
+        try {
+            const session = engine.getOrCreateSession(
+                'session-fork',
+                {
+                    path: '/tmp/project',
+                    host: 'localhost',
+                    machineId: 'machine-1',
+                    flavor: 'codex',
+                    codexSessionId: 'codex-thread-1',
+                    summary: {
+                        text: 'Original Title',
+                        updatedAt: 1
+                    }
+                },
+                null,
+                'default',
+                'gpt-5.4'
+            )
+            engine.getOrCreateMachine(
+                'machine-1',
+                { host: 'localhost', platform: 'linux', happyCliVersion: '0.1.0' },
+                null,
+                'default'
+            )
+            engine.handleMachineAlive({ machineId: 'machine-1', time: Date.now() })
+            engine.handleSessionAlive({
+                sid: session.id,
+                permissionMode: 'safe-yolo',
+                time: Date.now()
+            })
+            store.messages.addMessage(session.id, {
+                role: 'user',
+                content: {
+                    type: 'text',
+                    text: 'turn 1'
+                }
+            })
+            store.messages.addMessage(session.id, {
+                role: 'agent',
+                content: {
+                    type: 'text',
+                    text: 'reply 1'
+                }
+            })
+            store.messages.addMessage(session.id, {
+                role: 'user',
+                content: {
+                    type: 'text',
+                    text: 'turn 2'
+                }
+            })
+            store.messages.addMessage(session.id, {
+                role: 'agent',
+                content: {
+                    type: 'text',
+                    text: 'reply 2'
+                }
+            })
+
+            let capturedFork: { machineId?: string; threadId?: string; rollbackTurns?: number } | null = null
+            let capturedSpawn: { resumeSessionId?: string; permissionMode?: string } | null = null
+
+            ;(engine as any).rpcGateway.forkCodexThread = async (
+                machineId: string,
+                threadId: string,
+                rollbackTurns?: number
+            ) => {
+                capturedFork = { machineId, threadId, rollbackTurns }
+                return { success: true, threadId: 'codex-thread-forked' }
+            }
+
+            ;(engine as any).rpcGateway.spawnSession = async (
+                _machineId: string,
+                directory: string,
+                agent: string,
+                _model?: string,
+                _modelReasoningEffort?: string,
+                _yolo?: boolean,
+                _sessionType?: string,
+                _worktreeName?: string,
+                resumeSessionId?: string,
+                _effort?: string,
+                permissionMode?: string
+            ) => {
+                capturedSpawn = { resumeSessionId, permissionMode }
+                const forked = engine.getOrCreateSession(
+                    'session-forked-tag',
+                    {
+                        path: directory,
+                        host: 'localhost',
+                        machineId: 'machine-1',
+                        flavor: agent
+                    },
+                    null,
+                    'default'
+                )
+                return { type: 'success', sessionId: forked.id }
+            }
+
+            const result = await engine.forkSession(session.id, 'default', { rollbackTurns: 1 })
+
+            expect(result.type).toBe('success')
+            expect(capturedFork!).toEqual({
+                machineId: 'machine-1',
+                threadId: 'codex-thread-1',
+                rollbackTurns: 1
+            })
+            expect(capturedSpawn!).toEqual({
+                resumeSessionId: 'codex-thread-forked',
+                permissionMode: 'safe-yolo'
+            })
+            const forkedSessionId = (result as { sessionId: string }).sessionId
+            const forkedSession = engine.getSession(forkedSessionId)
+            expect(forkedSession?.metadata?.summary?.text).toBe('Original Title (fork)')
+            expect(forkedSession?.permissionMode).toBe('safe-yolo')
+            expect(store.messages.getMessages(forkedSessionId, 100).map((message) => {
+                const content = message.content as { role?: string; content?: { text?: string } }
+                return content.content?.text ?? null
+            })).toEqual(['turn 1', 'reply 1'])
+        } finally {
+            engine.stop()
+        }
+    })
+
     describe('session dedup by agent session ID', () => {
         it('merges duplicate when codexSessionId collides', async () => {
             const store = new Store(':memory:')

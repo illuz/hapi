@@ -130,8 +130,11 @@ const THREAD_MESSAGE_COMPONENTS = {
 export function ConversationOutlinePanel(props: {
     title: string
     items: readonly ConversationOutlineItem[]
+    canForkFromOutline?: boolean
+    forkingItemIndex?: number | null
     hasMoreMessages: boolean
     isLoadingMoreMessages: boolean
+    onForkFromItem?: (item: ConversationOutlineItem, index: number) => void | Promise<void>
     onLoadMore: () => void
     onSelect: (item: ConversationOutlineItem) => void
     onClose: () => void
@@ -191,24 +194,62 @@ export function ConversationOutlinePanel(props: {
                     </div>
                 ) : (
                     <div className="space-y-1">
-                        {props.items.map((item) => {
+                        {props.items.map((item, index) => {
                             return (
-                                <button
+                                <div
                                     key={item.id}
-                                    type="button"
-                                    onClick={() => props.onSelect(item)}
-                                    className="group flex w-full min-w-0 items-start gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-[var(--app-subtle-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]"
+                                    className="group flex items-start gap-2 rounded-md transition-colors hover:bg-[var(--app-subtle-bg)]"
                                 >
-                                    <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-[var(--app-button)]" aria-hidden="true" />
-                                    <span className="min-w-0 flex-1">
-                                        <span className="block truncate text-[11px] font-medium uppercase text-[var(--app-hint)]">
-                                            {t('session.outline.kind.user')}
+                                    <button
+                                        type="button"
+                                        onClick={() => props.onSelect(item)}
+                                        className="flex min-w-0 flex-1 items-start gap-2 rounded-md px-2 py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]"
+                                    >
+                                        <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-[var(--app-button)]" aria-hidden="true" />
+                                        <span className="min-w-0 flex-1">
+                                            <span className="block truncate text-[11px] font-medium uppercase text-[var(--app-hint)]">
+                                                {t('session.outline.kind.user')}
+                                            </span>
+                                            <span className="line-clamp-2 text-sm leading-snug text-[var(--app-fg)]">
+                                                {item.label}
+                                            </span>
                                         </span>
-                                        <span className="line-clamp-2 text-sm leading-snug text-[var(--app-fg)]">
-                                            {item.label}
-                                        </span>
-                                    </span>
-                                </button>
+                                    </button>
+                                    {props.canForkFromOutline ? (
+                                        <button
+                                            type="button"
+                                            disabled={props.forkingItemIndex !== null}
+                                            onClick={() => props.onForkFromItem?.(item, index)}
+                                            className="mr-2 mt-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[var(--app-hint)] transition-colors hover:bg-[var(--app-secondary-bg)] hover:text-[var(--app-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]"
+                                            title={t('session.outline.forkFromHere')}
+                                            aria-label={t('session.outline.forkFromHere')}
+                                            aria-busy={props.forkingItemIndex === index}
+                                        >
+                                            {props.forkingItemIndex === index ? (
+                                                <Spinner size="sm" label={null} className="text-current" />
+                                            ) : (
+                                                <svg
+                                                    xmlns="http://www.w3.org/2000/svg"
+                                                    width="16"
+                                                    height="16"
+                                                    viewBox="0 0 24 24"
+                                                    fill="none"
+                                                    stroke="currentColor"
+                                                    strokeWidth="2"
+                                                    strokeLinecap="round"
+                                                    strokeLinejoin="round"
+                                                >
+                                                    <path d="M9 3H5a2 2 0 0 0-2 2v4" />
+                                                    <path d="M3 5l7 7" />
+                                                    <path d="M21 12v7a2 2 0 0 1-2 2h-7" />
+                                                    <path d="M14 14l7 7" />
+                                                    <path d="M14 5h7v7" />
+                                                    <path d="M21 5l-7 7" />
+                                                </svg>
+                                            )}
+                                        </button>
+                                    ) : null}
+                                </div>
                             )
                         })}
                     </div>
@@ -240,7 +281,10 @@ export function HappyThread(props: {
     outlineOpen: boolean
     outlineTitle: string
     outlineItems: readonly ConversationOutlineItem[]
+    canForkFromOutline?: boolean
+    outlineForkingItemIndex?: number | null
     onOutlineOpenChange: (open: boolean) => void
+    onOutlineFork?: (item: ConversationOutlineItem, index: number) => void | Promise<void>
     onOutlineItemClick?: (item: ConversationOutlineItem) => void
 }) {
     const { t } = useTranslation()
@@ -669,8 +713,11 @@ export function HappyThread(props: {
                         <ConversationOutlinePanel
                             title={props.outlineTitle}
                             items={props.outlineItems}
+                            canForkFromOutline={props.canForkFromOutline}
+                            forkingItemIndex={props.outlineForkingItemIndex}
                             hasMoreMessages={props.hasMoreMessages}
                             isLoadingMoreMessages={props.isLoadingMoreMessages}
+                            onForkFromItem={props.onOutlineFork}
                             onLoadMore={handleLoadMore}
                             onSelect={handleOutlineSelect}
                             onClose={() => props.onOutlineOpenChange(false)}

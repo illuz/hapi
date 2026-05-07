@@ -7,7 +7,7 @@
 ::: code-group
 
 ```bash [npm]
-npm install -g @twsxtd/hapi --registry=https://registry.npmjs.org
+npm install -g @illuz-modified/hapi --registry=https://registry.npmjs.org
 ```
 
 ```bash [Homebrew]
@@ -15,7 +15,7 @@ brew install tiann/tap/hapi
 ```
 
 ```bash [npx (one-off)]
-npx @twsxtd/hapi
+npx @illuz-modified/hapi
 ```
 
 :::

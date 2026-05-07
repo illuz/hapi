@@ -60,6 +60,10 @@ interface RunnerToServerEvents {
 
 type MachineRpcHandlers = {
     spawnSession: (options: SpawnSessionOptions) => Promise<SpawnSessionResult>
+    forkCodexThread: (options: { threadId: string; rollbackTurns?: number }) => Promise<
+        | { success: true; threadId: string }
+        | { success: false; error: string }
+    >
     stopSession: (sessionId: string) => boolean
     requestShutdown: () => void
 }
@@ -297,7 +301,7 @@ export class ApiMachineClient {
         }
     }
 
-    setRPCHandlers({ spawnSession, stopSession, requestShutdown }: MachineRpcHandlers): void {
+    setRPCHandlers({ spawnSession, forkCodexThread, stopSession, requestShutdown }: MachineRpcHandlers): void {
         this.rpcHandlerManager.registerHandler('spawn-happy-session', async (params: any) => {
             const { directory, sessionId, resumeSessionId, machineId, approvedNewDirectoryCreation, agent, model, effort, modelReasoningEffort, yolo, permissionMode, token, sessionType, worktreeName } = params || {}
 
@@ -335,6 +339,21 @@ export class ApiMachineClient {
                 case 'error':
                     return { type: 'error', errorMessage: result.errorMessage }
             }
+        })
+
+        this.rpcHandlerManager.registerHandler('codex-thread-fork', async (params: any) => {
+            const { threadId, rollbackTurns } = params || {}
+            if (typeof threadId !== 'string' || threadId.length === 0) {
+                throw new Error('Thread ID is required')
+            }
+            if (rollbackTurns !== undefined && (!Number.isInteger(rollbackTurns) || rollbackTurns < 0)) {
+                throw new Error('rollbackTurns must be a non-negative integer')
+            }
+
+            return await forkCodexThread({
+                threadId,
+                rollbackTurns
+            })
         })
 
         this.rpcHandlerManager.registerHandler('stop-session', (params: any) => {

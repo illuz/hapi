@@ -39,7 +39,7 @@ function isSupportedPlatform(platformName = platform, archName = arch) {
 }
 
 function getBinaryPath(platformName = platform, archName = arch) {
-    const pkgName = `@twsxtd/hapi-${platformName}-${archName}`;
+    const pkgName = `@illuz-modified/hapi-${platformName}-${archName}`;
 
     try {
         // Try to find the platform-specific package
@@ -96,14 +96,14 @@ function reportUnsupportedPlatform(platformName = platform, archName = arch, log
 }
 
 function reportMissingPlatformPackage(platformName = platform, archName = arch, log = console.error) {
-    const platformPackage = `@twsxtd/hapi-${platformName}-${archName}`;
+    const platformPackage = `@illuz-modified/hapi-${platformName}-${archName}`;
     log(`Missing platform package: ${platformPackage}`);
     log('');
     log(`Detected platform ${platformName}-${archName} is supported, but the platform binary package was not installed.`);
     log('This may happen when using a registry mirror that has not synced all optionalDependencies.');
     log('');
     log('Try reinstalling with the official npm registry:');
-    log(`  npm install -g @twsxtd/hapi --registry=${OFFICIAL_NPM_REGISTRY}`);
+    log(`  npm install -g @illuz-modified/hapi --registry=${OFFICIAL_NPM_REGISTRY}`);
     log('');
     log('Or download the binary manually from:');
     log(`  ${RELEASE_URL}`);

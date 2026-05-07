@@ -14,7 +14,9 @@ export function useSessionActions(
 ): {
     abortSession: () => Promise<void>
     archiveSession: () => Promise<void>
+    forkSession: (rollbackTurns?: number) => Promise<{ sessionId: string }>
     switchSession: () => Promise<void>
+    spawnSessionFromConfig: () => Promise<{ sessionId: string }>
     setPermissionMode: (mode: PermissionMode) => Promise<void>
     setCollaborationMode: (mode: CodexCollaborationMode) => Promise<void>
     setModel: (model: string | null) => Promise<void>
@@ -53,6 +55,18 @@ export function useSessionActions(
         onSuccess: () => void invalidateSession(),
     })
 
+    const forkSessionMutation = useMutation({
+        mutationFn: async (rollbackTurns?: number) => {
+            if (!api || !sessionId) {
+                throw new Error('Session unavailable')
+            }
+            return await api.forkSession(sessionId, rollbackTurns)
+        },
+        onSuccess: async () => {
+            await queryClient.invalidateQueries({ queryKey: queryKeys.sessions })
+        },
+    })
+
     const switchMutation = useMutation({
         mutationFn: async () => {
             if (!api || !sessionId) {
@@ -61,6 +75,18 @@ export function useSessionActions(
             await api.switchSession(sessionId)
         },
         onSuccess: () => void invalidateSession(),
+    })
+
+    const spawnSessionFromConfigMutation = useMutation({
+        mutationFn: async () => {
+            if (!api || !sessionId) {
+                throw new Error('Session unavailable')
+            }
+            return await api.spawnSessionFromConfig(sessionId)
+        },
+        onSuccess: async () => {
+            await queryClient.invalidateQueries({ queryKey: queryKeys.sessions })
+        },
     })
 
     const permissionMutation = useMutation({
@@ -166,7 +192,9 @@ export function useSessionActions(
     return {
         abortSession: abortMutation.mutateAsync,
         archiveSession: archiveMutation.mutateAsync,
+        forkSession: forkSessionMutation.mutateAsync,
         switchSession: switchMutation.mutateAsync,
+        spawnSessionFromConfig: spawnSessionFromConfigMutation.mutateAsync,
         setPermissionMode: permissionMutation.mutateAsync,
         setCollaborationMode: collaborationMutation.mutateAsync,
         setModel: modelMutation.mutateAsync,
@@ -177,7 +205,9 @@ export function useSessionActions(
         deleteSession: deleteMutation.mutateAsync,
         isPending: abortMutation.isPending
             || archiveMutation.isPending
+            || forkSessionMutation.isPending
             || switchMutation.isPending
+            || spawnSessionFromConfigMutation.isPending
             || permissionMutation.isPending
             || collaborationMutation.isPending
             || modelMutation.isPending

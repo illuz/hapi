@@ -11,6 +11,7 @@ import type {
     SlashCommand
 } from '@/types/api'
 import type { ChatBlock, NormalizedMessage } from '@/chat/types'
+import type { ConversationOutlineItem } from '@/chat/outline'
 import type { Suggestion } from '@/hooks/useActiveSuggestions'
 import { normalizeDecryptedMessage } from '@/chat/normalize'
 import { reduceChatBlocks } from '@/chat/reducer'
@@ -32,6 +33,7 @@ import { useCodexModels } from '@/hooks/queries/useCodexModels'
 import { useOpencodeModels } from '@/hooks/queries/useOpencodeModels'
 import { useVoiceOptional } from '@/lib/voice-context'
 import { useToast } from '@/lib/toast-context'
+import { canForkSession, getRollbackTurnsFromOutlineIndex } from '@/lib/sessionBranching'
 import { getDisplaySessionTitle } from '@/lib/sessionTitle'
 import { RealtimeVoiceSession, registerSessionStore, registerVoiceHooksStore, voiceHooks } from '@/realtime'
 import { isRemoteTerminalSupported } from '@/utils/terminalSupport'
@@ -47,7 +49,6 @@ import {
     shouldAutoContinue,
     shouldStopAutoContinue
 } from '@/lib/autoContinue'
-
 
 export function SessionChat(props: {
     api: ApiClient
@@ -87,6 +88,7 @@ export function SessionChat(props: {
     const [autoContinuePrompt, setAutoContinuePrompt] = useState(AUTO_CONTINUE_DEFAULT_PROMPT)
     const [autoContinueDialogOpen, setAutoContinueDialogOpen] = useState(false)
     const [outlineOpen, setOutlineOpen] = useState(false)
+    const [outlineForkingItemIndex, setOutlineForkingItemIndex] = useState<number | null>(null)
     const agentFlavor = props.session.metadata?.flavor ?? null
     const controlledByUser = props.session.agentState?.controlledByUser === true
     const codexCollaborationModeSupported = agentFlavor === 'codex' && !controlledByUser
@@ -128,6 +130,7 @@ export function SessionChat(props: {
     const lastAutoContinueKeyRef = useRef<string | null>(null)
     const {
         abortSession,
+        forkSession,
         switchSession,
         setPermissionMode,
         setCollaborationMode,
@@ -240,6 +243,7 @@ export function SessionChat(props: {
         normalizedCacheRef.current.clear()
         blocksByIdRef.current.clear()
         setOutlineOpen(false)
+        setOutlineForkingItemIndex(null)
     }, [props.session.id])
 
     useEffect(() => {
@@ -567,6 +571,35 @@ export function SessionChat(props: {
     const displayedAutoContinueRemaining = autoContinueEnabled || autoContinueRemaining > 0
         ? autoContinueRemaining
         : autoContinueMaxRuns
+    const forkFromOutlineSupported = canForkSession(props.session)
+
+    const handleForkFromOutline = useCallback(async (_item: ConversationOutlineItem, index: number) => {
+        if (outlineForkingItemIndex !== null) {
+            return
+        }
+
+        setOutlineForkingItemIndex(index)
+        try {
+            const rollbackTurns = getRollbackTurnsFromOutlineIndex(index, outlineItems.length)
+            const result = await forkSession(rollbackTurns)
+            haptic.notification('success')
+            await navigate({
+                to: '/sessions/$sessionId',
+                params: { sessionId: result.sessionId }
+            })
+        } catch (error) {
+            haptic.notification('error')
+            addToast({
+                title: t('session.outline.forkFromHere'),
+                body: error instanceof Error ? error.message : t('dialog.error.default'),
+                sessionId: props.session.id,
+                url: `/sessions/${props.session.id}`,
+                kind: 'failure'
+            })
+        } finally {
+            setOutlineForkingItemIndex(null)
+        }
+    }, [addToast, forkSession, haptic, navigate, outlineForkingItemIndex, outlineItems.length, props.session.id, t])
 
     const autoContinueButton = (
         <div className="flex items-center gap-1">
@@ -658,7 +691,10 @@ export function SessionChat(props: {
                         outlineOpen={outlineOpen}
                         outlineTitle={outlineTitle}
                         outlineItems={outlineItems}
+                        canForkFromOutline={forkFromOutlineSupported}
+                        outlineForkingItemIndex={outlineForkingItemIndex}
                         onOutlineOpenChange={setOutlineOpen}
+                        onOutlineFork={handleForkFromOutline}
                     />
 
                     {codexCollaborationModeSupported && codexModelsState.error ? (

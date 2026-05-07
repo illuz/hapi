@@ -34,6 +34,7 @@ import { useToast } from '@/lib/toast-context'
 import { useTranslation } from '@/lib/use-translation'
 import { clearMessageWindow, fetchLatestMessages, seedMessageWindowFromSession } from '@/lib/message-window-store'
 import { clearDraftsAfterSend } from '@/lib/clearDraftsAfterSend'
+import { filterSessionsByActivityOrMarker } from '@/lib/sessionFilters'
 import type { Machine } from '@/types/api'
 import FilesPage from '@/routes/sessions/files'
 import FilePage from '@/routes/sessions/file'
@@ -193,8 +194,7 @@ function SessionsPage() {
     const { machines } = useMachines(api, true)
     const [cleanupDialogOpen, setCleanupDialogOpen] = useState(false)
     const [isCleaningInactive, setIsCleaningInactive] = useState(false)
-    const [filterOpen, setFilterOpen] = useState(false)
-    const [filterText, setFilterText] = useState('')
+    const [activityFilterEnabled, setActivityFilterEnabled] = useState(true)
     const [lastViewedSessionId, setLastViewedSessionId] = useState<string | null>(() => {
         if (typeof window === 'undefined') return null
         return window.sessionStorage.getItem('hapi-last-viewed-session-id')
@@ -204,9 +204,6 @@ function SessionsPage() {
         void refetch()
     }, [refetch])
 
-    const projectCount = useMemo(() => new Set(sessions.map(s =>
-        s.metadata?.worktree?.basePath ?? s.metadata?.path ?? 'Other'
-    )).size, [sessions])
     const machineLabelsById = useMemo(() => {
         const labels: Record<string, string> = {}
         for (const machine of machines) {
@@ -214,43 +211,17 @@ function SessionsPage() {
         }
         return labels
     }, [machines])
-    const filteredSessions = useMemo(() => {
-        const query = filterText.trim().toLowerCase()
-        if (!query) {
-            return sessions
-        }
-
-        return sessions.filter((session) => {
-            const haystack = [
-                session.metadata?.name,
-                session.metadata?.summary?.text,
-                session.metadata?.path,
-                session.metadata?.worktree?.basePath,
-                session.metadata?.worktree?.branch,
-                session.metadata?.machineId,
-                session.id
-            ]
-                .filter((value): value is string => typeof value === 'string' && value.length > 0)
-                .join('\n')
-                .toLowerCase()
-
-            return haystack.includes(query)
-        })
-    }, [filterText, sessions])
+    const filteredSessions = useMemo(
+        () => filterSessionsByActivityOrMarker(sessions, activityFilterEnabled),
+        [activityFilterEnabled, sessions]
+    )
     const filteredProjectCount = useMemo(() => new Set(filteredSessions.map(s =>
         s.metadata?.worktree?.basePath ?? s.metadata?.path ?? 'Other'
     )).size, [filteredSessions])
-    const showFilterInput = filterOpen || filterText.trim().length > 0
 
     const handleToggleFilter = useCallback(() => {
-        if (showFilterInput) {
-            setFilterOpen(false)
-            setFilterText('')
-            return
-        }
-
-        setFilterOpen(true)
-    }, [showFilterInput])
+        setActivityFilterEnabled(previous => !previous)
+    }, [])
 
     const inactiveSessions = useMemo(
         () => sessions.filter((session) => !session.active && !session.markerColor),
@@ -316,8 +287,9 @@ function SessionsPage() {
                             <button
                                 type="button"
                                 onClick={handleToggleFilter}
-                                className={`p-1.5 rounded-full transition-colors ${showFilterInput ? 'text-[var(--app-link)] bg-[var(--app-subtle-bg)]' : 'text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)]'}`}
-                                title={showFilterInput ? t('sessions.clearFilter') : t('sessions.filter')}
+                                aria-pressed={activityFilterEnabled}
+                                className={`p-1.5 rounded-full transition-colors ${activityFilterEnabled ? 'text-[var(--app-link)] bg-[var(--app-subtle-bg)]' : 'text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)]'}`}
+                                title={activityFilterEnabled ? t('sessions.showAll') : t('sessions.filterActiveOrMarked')}
                             >
                                 <svg
                                     xmlns="http://www.w3.org/2000/svg"
@@ -377,18 +349,6 @@ function SessionsPage() {
                             </button>
                         </div>
                     </div>
-                    {showFilterInput ? (
-                        <div className="px-3 pb-2">
-                            <input
-                                type="text"
-                                value={filterText}
-                                autoFocus
-                                onChange={(event) => setFilterText(event.target.value)}
-                                placeholder={t('sessions.filterPlaceholder')}
-                                className="w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2 text-sm text-[var(--app-fg)] placeholder:text-[var(--app-hint)] focus:outline-none focus:ring-2 focus:ring-[var(--app-link)]"
-                            />
-                        </div>
-                    ) : null}
                 </div>
 
                 <div className="app-scroll-y flex-1 min-h-0 desktop-scrollbar-left">

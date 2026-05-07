@@ -15,6 +15,10 @@ const resumeBodySchema = z.object({
     permissionMode: PermissionModeSchema.optional()
 })
 
+const forkSessionSchema = z.object({
+    rollbackTurns: z.number().int().min(0).optional()
+})
+
 const collaborationModeSchema = z.object({
     mode: CodexCollaborationModeSchema
 })
@@ -174,6 +178,65 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
                 : result.code === 'access_denied' ? 403
                     : result.code === 'session_not_found' ? 404
                         : 500
+            return c.json({ error: result.message, code: result.code }, status)
+        }
+
+        return c.json({ type: 'success', sessionId: result.sessionId })
+    })
+
+    app.post('/sessions/:id/spawn-from-config', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) {
+            return engine
+        }
+
+        const sessionResult = requireSessionFromParam(c, engine)
+        if (sessionResult instanceof Response) {
+            return sessionResult
+        }
+
+        const namespace = c.get('namespace')
+        const result = await engine.spawnSessionFromConfig(sessionResult.sessionId, namespace)
+        if (result.type === 'error') {
+            const status = result.code === 'no_machine_online' ? 503
+                : result.code === 'access_denied' ? 403
+                    : result.code === 'session_not_found' ? 404
+                        : result.code === 'spawn_unavailable' ? 409
+                            : 500
+            return c.json({ error: result.message, code: result.code }, status)
+        }
+
+        return c.json({ type: 'success', sessionId: result.sessionId })
+    })
+
+    app.post('/sessions/:id/fork', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) {
+            return engine
+        }
+
+        const sessionResult = requireSessionFromParam(c, engine)
+        if (sessionResult instanceof Response) {
+            return sessionResult
+        }
+
+        const body = await c.req.json().catch(() => null)
+        const parsed = body ? forkSessionSchema.safeParse(body) : { success: true as const, data: {} }
+        if (!parsed.success) {
+            return c.json({ error: 'Invalid body' }, 400)
+        }
+
+        const namespace = c.get('namespace')
+        const result = await engine.forkSession(sessionResult.sessionId, namespace, {
+            rollbackTurns: parsed.data.rollbackTurns
+        })
+        if (result.type === 'error') {
+            const status = result.code === 'no_machine_online' ? 503
+                : result.code === 'access_denied' ? 403
+                    : result.code === 'session_not_found' ? 404
+                        : result.code === 'unsupported_session_flavor' ? 400
+                            : result.code === 'fork_unavailable' ? 409
+                                : 500
             return c.json({ error: result.message, code: result.code }, status)
         }
 

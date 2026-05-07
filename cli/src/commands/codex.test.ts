@@ -4,12 +4,14 @@ const {
     initializeTokenMock,
     maybeAutoStartServerMock,
     authAndSetupMachineIfNeededMock,
+    ensureRunnerStartedMock,
     assertCodexLocalSupportedMock,
     runCodexMock
 } = vi.hoisted(() => ({
     initializeTokenMock: vi.fn(async () => {}),
     maybeAutoStartServerMock: vi.fn(async () => {}),
     authAndSetupMachineIfNeededMock: vi.fn(async () => {}),
+    ensureRunnerStartedMock: vi.fn(async () => {}),
     assertCodexLocalSupportedMock: vi.fn(),
     runCodexMock: vi.fn(async () => {})
 }))
@@ -24,6 +26,10 @@ vi.mock('@/utils/autoStartServer', () => ({
 
 vi.mock('@/ui/auth', () => ({
     authAndSetupMachineIfNeeded: authAndSetupMachineIfNeededMock
+}))
+
+vi.mock('@/utils/ensureRunnerStarted', () => ({
+    ensureRunnerStarted: ensureRunnerStartedMock
 }))
 
 vi.mock('@/codex/utils/codexVersion', () => ({
@@ -48,6 +54,7 @@ describe('codexCommand', () => {
         initializeTokenMock.mockClear()
         maybeAutoStartServerMock.mockClear()
         authAndSetupMachineIfNeededMock.mockClear()
+        ensureRunnerStartedMock.mockClear()
         assertCodexLocalSupportedMock.mockClear()
         runCodexMock.mockClear()
     })
@@ -59,6 +66,7 @@ describe('codexCommand', () => {
         expect(initializeTokenMock).toHaveBeenCalledOnce()
         expect(maybeAutoStartServerMock).toHaveBeenCalledOnce()
         expect(authAndSetupMachineIfNeededMock).toHaveBeenCalledOnce()
+        expect(ensureRunnerStartedMock).toHaveBeenCalledOnce()
         expect(runCodexMock).toHaveBeenCalledWith({})
     })
 
@@ -75,6 +83,7 @@ describe('codexCommand', () => {
         await codexCommand.run(createCommandContext(['--started-by', 'runner']))
 
         expect(assertCodexLocalSupportedMock).not.toHaveBeenCalled()
+        expect(ensureRunnerStartedMock).not.toHaveBeenCalled()
         expect(runCodexMock).toHaveBeenCalledWith({
             startedBy: 'runner'
         })

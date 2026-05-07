@@ -10,6 +10,10 @@ import type {
     ThreadStartResponse,
     ThreadResumeParams,
     ThreadResumeResponse,
+    ThreadForkParams,
+    ThreadForkResponse,
+    ThreadRollbackParams,
+    ThreadRollbackResponse,
     TurnStartParams,
     TurnStartResponse,
     TurnInterruptParams,
@@ -159,6 +163,22 @@ export class CodexAppServerClient {
             timeoutMs: CodexAppServerClient.DEFAULT_TIMEOUT_MS
         });
         return response as ThreadResumeResponse;
+    }
+
+    async forkThread(params: ThreadForkParams, options?: { signal?: AbortSignal }): Promise<ThreadForkResponse> {
+        const response = await this.sendRequest('thread/fork', params, {
+            signal: options?.signal,
+            timeoutMs: CodexAppServerClient.DEFAULT_TIMEOUT_MS
+        });
+        return response as ThreadForkResponse;
+    }
+
+    async rollbackThread(params: ThreadRollbackParams, options?: { signal?: AbortSignal }): Promise<ThreadRollbackResponse> {
+        const response = await this.sendRequest('thread/rollback', params, {
+            signal: options?.signal,
+            timeoutMs: CodexAppServerClient.DEFAULT_TIMEOUT_MS
+        });
+        return response as ThreadRollbackResponse;
     }
 
     async startTurn(params: TurnStartParams, options?: { signal?: AbortSignal }): Promise<TurnStartResponse> {

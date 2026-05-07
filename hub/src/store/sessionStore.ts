@@ -1,5 +1,5 @@
 import type { Database } from 'bun:sqlite'
-import type { SessionMarkerColor } from '@hapi/protocol/types'
+import type { PermissionMode, SessionMarkerColor } from '@hapi/protocol/types'
 
 import type { StoredSession, VersionedUpdateResult } from './types'
 import {
@@ -12,6 +12,7 @@ import {
     setSessionEffort,
     setSessionModel,
     setSessionModelReasoningEffort,
+    setSessionPermissionMode,
     setSessionTeamState,
     setSessionTodos,
     setSessionMarkerColor,
@@ -81,6 +82,10 @@ export class SessionStore {
 
     setSessionEffort(id: string, effort: string | null, namespace: string, options?: { touchUpdatedAt?: boolean }): boolean {
         return setSessionEffort(this.db, id, effort, namespace, options)
+    }
+
+    setSessionPermissionMode(id: string, permissionMode: PermissionMode | null, namespace: string): boolean {
+        return setSessionPermissionMode(this.db, id, permissionMode, namespace)
     }
 
     setSessionMarkerColor(id: string, markerColor: SessionMarkerColor | null, namespace: string): boolean {

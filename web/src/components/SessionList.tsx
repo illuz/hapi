@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import type { SessionSummary } from '@/types/api'
 import type { ApiClient } from '@/api/client'
 import { useLongPress } from '@/hooks/useLongPress'
@@ -8,8 +9,10 @@ import { SessionActionMenu } from '@/components/SessionActionMenu'
 import { RenameSessionDialog } from '@/components/RenameSessionDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useSessionAttentionTokens } from '@/lib/sessionAttention'
+import { canForkSession, canSpawnSessionFromConfig } from '@/lib/sessionBranching'
 import { getSessionMarkerColorHex } from '@/lib/sessionMarkers'
 import { getDisplaySessionTitle, getSessionTitle as getBaseSessionTitle } from '@/lib/sessionTitle'
+import { useToast } from '@/lib/toast-context'
 import { CopyIcon, CheckIcon } from '@/components/icons'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/lib/use-translation'
@@ -561,13 +564,23 @@ function SessionItem(props: {
     const { t } = useTranslation()
     const { session: s, onSelect, showPath = true, api, selected = false, attentionToken } = props
     const { haptic } = usePlatform()
+    const navigate = useNavigate()
+    const { addToast } = useToast()
     const [menuOpen, setMenuOpen] = useState(false)
     const [menuAnchorPoint, setMenuAnchorPoint] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
     const [renameOpen, setRenameOpen] = useState(false)
     const [archiveOpen, setArchiveOpen] = useState(false)
     const [deleteOpen, setDeleteOpen] = useState(false)
 
-    const { archiveSession, renameSession, setSessionMarkerColor, deleteSession, isPending } = useSessionActions(
+    const {
+        archiveSession,
+        renameSession,
+        setSessionMarkerColor,
+        deleteSession,
+        forkSession,
+        spawnSessionFromConfig,
+        isPending
+    } = useSessionActions(
         api,
         s.id,
         s.metadata?.flavor ?? null
@@ -591,6 +604,49 @@ function SessionItem(props: {
     const displaySessionName = getDisplaySessionTitle(s)
     const todoProgress = getTodoProgress(s)
     const markerTextColor = getSessionMarkerColorHex(s.markerColor)
+    const forkSupported = canForkSession(s)
+    const spawnFromConfigSupported = canSpawnSessionFromConfig(s)
+
+    const showActionError = (title: string, error: unknown) => {
+        addToast({
+            title,
+            body: error instanceof Error ? error.message : t('dialog.error.default'),
+            sessionId: s.id,
+            url: `/sessions/${s.id}`,
+            kind: 'failure'
+        })
+    }
+
+    const handleForkSession = async () => {
+        try {
+            const result = await forkSession()
+            haptic.notification('success')
+            onSelect(result.sessionId)
+            await navigate({
+                to: '/sessions/$sessionId',
+                params: { sessionId: result.sessionId }
+            })
+        } catch (error) {
+            haptic.notification('error')
+            showActionError(t('session.action.fork'), error)
+        }
+    }
+
+    const handleSpawnSessionFromConfig = async () => {
+        try {
+            const result = await spawnSessionFromConfig()
+            haptic.notification('success')
+            onSelect(result.sessionId)
+            await navigate({
+                to: '/sessions/$sessionId',
+                params: { sessionId: result.sessionId }
+            })
+        } catch (error) {
+            haptic.notification('error')
+            showActionError(t('session.action.newSession'), error)
+        }
+    }
+
     return (
         <>
             <button
@@ -654,12 +710,16 @@ function SessionItem(props: {
             <SessionActionMenu
                 isOpen={menuOpen}
                 onClose={() => setMenuOpen(false)}
+                canForkSession={forkSupported}
+                canSpawnSessionFromConfig={spawnFromConfigSupported}
                 sessionActive={s.active}
                 markerColor={s.markerColor}
                 onSelectMarkerColor={(markerColor) => { void setSessionMarkerColor(markerColor) }}
                 onRename={() => setRenameOpen(true)}
                 onArchive={() => setArchiveOpen(true)}
                 onDelete={() => setDeleteOpen(true)}
+                onForkSession={handleForkSession}
+                onSpawnSessionFromConfig={handleSpawnSessionFromConfig}
                 anchorPoint={menuAnchorPoint}
             />
 

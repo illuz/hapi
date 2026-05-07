@@ -22,6 +22,7 @@ import {
     type RpcCodexModel,
     type RpcCommandResponse,
     type RpcDeleteUploadResponse,
+    type RpcForkCodexThreadResponse,
     type RpcListDirectoryResponse,
     type RpcListCodexModelsResponse,
     type RpcListOpencodeModelsResponse,
@@ -39,6 +40,7 @@ export type {
     RpcCodexModel,
     RpcCommandResponse,
     RpcDeleteUploadResponse,
+    RpcForkCodexThreadResponse,
     RpcListDirectoryResponse,
     RpcListCodexModelsResponse,
     RpcListOpencodeModelsResponse,
@@ -51,6 +53,25 @@ export type {
 export type ResumeSessionResult =
     | { type: 'success'; sessionId: string }
     | { type: 'error'; message: string; code: 'session_not_found' | 'access_denied' | 'no_machine_online' | 'resume_unavailable' | 'resume_failed' }
+
+export type SpawnSessionFromConfigResult =
+    | { type: 'success'; sessionId: string }
+    | { type: 'error'; message: string; code: 'session_not_found' | 'access_denied' | 'no_machine_online' | 'spawn_unavailable' | 'spawn_failed' }
+
+export type ForkSessionResult =
+    | { type: 'success'; sessionId: string }
+    | {
+        type: 'error'
+        message: string
+        code:
+            | 'session_not_found'
+            | 'access_denied'
+            | 'no_machine_online'
+            | 'unsupported_session_flavor'
+            | 'fork_unavailable'
+            | 'fork_failed'
+            | 'spawn_failed'
+    }
 
 export class SyncEngine {
     private readonly eventPublisher: EventPublisher
@@ -449,6 +470,108 @@ export class SyncEngine {
         )
     }
 
+    async spawnSessionFromConfig(sessionId: string, namespace: string): Promise<SpawnSessionFromConfigResult> {
+        const access = this.sessionCache.resolveSessionAccess(sessionId, namespace)
+        if (!access.ok) {
+            return {
+                type: 'error',
+                message: access.reason === 'access-denied' ? 'Session access denied' : 'Session not found',
+                code: access.reason === 'access-denied' ? 'access_denied' : 'session_not_found'
+            }
+        }
+
+        const session = access.session
+        const metadata = session.metadata
+        if (!metadata?.path) {
+            return { type: 'error', message: 'Session metadata missing path', code: 'spawn_unavailable' }
+        }
+
+        const targetMachine = this.resolveOnlineMachineForSession(session, namespace)
+        if (!targetMachine) {
+            return { type: 'error', message: 'No machine online', code: 'no_machine_online' }
+        }
+
+        const spawnResult = await this.spawnSessionWithStoredConfig(
+            session,
+            targetMachine.id,
+            metadata.path
+        )
+
+        if (spawnResult.type !== 'success') {
+            return { type: 'error', message: spawnResult.message, code: 'spawn_failed' }
+        }
+
+        await this.seedSpawnedSessionFromSource(session, spawnResult.sessionId)
+        return { type: 'success', sessionId: spawnResult.sessionId }
+    }
+
+    async forkSession(
+        sessionId: string,
+        namespace: string,
+        options?: { rollbackTurns?: number }
+    ): Promise<ForkSessionResult> {
+        const access = this.sessionCache.resolveSessionAccess(sessionId, namespace)
+        if (!access.ok) {
+            return {
+                type: 'error',
+                message: access.reason === 'access-denied' ? 'Session access denied' : 'Session not found',
+                code: access.reason === 'access-denied' ? 'access_denied' : 'session_not_found'
+            }
+        }
+
+        const session = access.session
+        const metadata = session.metadata
+        const flavor = this.resolveSessionFlavor(metadata?.flavor)
+
+        if (flavor !== 'codex') {
+            return {
+                type: 'error',
+                message: 'Fork is only supported for Codex sessions',
+                code: 'unsupported_session_flavor'
+            }
+        }
+
+        if (!metadata?.path) {
+            return { type: 'error', message: 'Session metadata missing path', code: 'fork_unavailable' }
+        }
+        if (!metadata.codexSessionId) {
+            return { type: 'error', message: 'Codex thread ID unavailable', code: 'fork_unavailable' }
+        }
+
+        const targetMachine = this.resolveOnlineMachineForSession(session, namespace)
+        if (!targetMachine) {
+            return { type: 'error', message: 'No machine online', code: 'no_machine_online' }
+        }
+
+        const forkResult = await this.rpcGateway.forkCodexThread(
+            targetMachine.id,
+            metadata.codexSessionId,
+            options?.rollbackTurns
+        )
+
+        if (!forkResult.success) {
+            return { type: 'error', message: forkResult.error, code: 'fork_failed' }
+        }
+
+        const spawnResult = await this.spawnSessionWithStoredConfig(
+            session,
+            targetMachine.id,
+            metadata.path,
+            forkResult.threadId
+        )
+
+        if (spawnResult.type !== 'success') {
+            return { type: 'error', message: spawnResult.message, code: 'spawn_failed' }
+        }
+
+        await this.seedSpawnedSessionFromSource(session, spawnResult.sessionId, {
+            copyHistory: true,
+            forkLabel: true,
+            rollbackTurns: options?.rollbackTurns
+        })
+        return { type: 'success', sessionId: spawnResult.sessionId }
+    }
+
     async resumeSession(sessionId: string, namespace: string, opts?: { permissionMode?: PermissionMode }): Promise<ResumeSessionResult> {
         const access = this.sessionCache.resolveSessionAccess(sessionId, namespace)
         if (!access.ok) {
@@ -486,22 +609,7 @@ export class SyncEngine {
             return { type: 'error', message: 'Resume session ID unavailable', code: 'resume_unavailable' }
         }
 
-        const onlineMachines = this.machineCache.getOnlineMachinesByNamespace(namespace)
-        if (onlineMachines.length === 0) {
-            return { type: 'error', message: 'No machine online', code: 'no_machine_online' }
-        }
-
-        const targetMachine = (() => {
-            if (metadata.machineId) {
-                const exact = onlineMachines.find((machine) => machine.id === metadata.machineId)
-                if (exact) return exact
-            }
-            if (metadata.host) {
-                const hostMatch = onlineMachines.find((machine) => machine.metadata?.host === metadata.host)
-                if (hostMatch) return hostMatch
-            }
-            return null
-        })()
+        const targetMachine = this.resolveOnlineMachineForSession(session, namespace)
 
         if (!targetMachine) {
             return { type: 'error', message: 'No machine online', code: 'no_machine_online' }
@@ -547,6 +655,201 @@ export class SyncEngine {
         }
 
         return { type: 'success', sessionId: spawnResult.sessionId }
+    }
+
+    private resolveSessionFlavor(flavor?: string | null): 'claude' | 'codex' | 'cursor' | 'gemini' | 'opencode' {
+        if (flavor === 'codex' || flavor === 'cursor' || flavor === 'gemini' || flavor === 'opencode') {
+            return flavor
+        }
+        return 'claude'
+    }
+
+    private resolveOnlineMachineForSession(session: Session, namespace: string): Machine | null {
+        const metadata = session.metadata
+        if (!metadata) {
+            return null
+        }
+
+        const onlineMachines = this.machineCache.getOnlineMachinesByNamespace(namespace)
+        if (onlineMachines.length === 0) {
+            return null
+        }
+
+        if (metadata.machineId) {
+            const exact = onlineMachines.find((machine) => machine.id === metadata.machineId)
+            if (exact) {
+                return exact
+            }
+        }
+
+        if (metadata.host) {
+            const hostMatch = onlineMachines.find((machine) => machine.metadata?.host === metadata.host)
+            if (hostMatch) {
+                return hostMatch
+            }
+        }
+
+        return null
+    }
+
+    private async spawnSessionWithStoredConfig(
+        session: Session,
+        machineId: string,
+        directory: string,
+        resumeSessionId?: string
+    ): Promise<{ type: 'success'; sessionId: string } | { type: 'error'; message: string }> {
+        const flavor = this.resolveSessionFlavor(session.metadata?.flavor)
+        const spawnResult = await this.rpcGateway.spawnSession(
+            machineId,
+            directory,
+            flavor,
+            session.model ?? undefined,
+            session.modelReasoningEffort ?? undefined,
+            undefined,
+            undefined,
+            undefined,
+            resumeSessionId,
+            session.effort ?? undefined,
+            session.permissionMode ?? undefined
+        )
+
+        if (spawnResult.type !== 'success') {
+            return spawnResult
+        }
+
+        await this.syncSpawnedSessionCollaborationMode(session, spawnResult.sessionId)
+        return spawnResult
+    }
+
+    private async seedSpawnedSessionFromSource(
+        sourceSession: Session,
+        spawnedSessionId: string,
+        options?: {
+            copyHistory?: boolean
+            forkLabel?: boolean
+            rollbackTurns?: number
+        }
+    ): Promise<void> {
+        this.sessionCache.applySessionConfig(spawnedSessionId, {
+            permissionMode: sourceSession.permissionMode ?? undefined,
+            collaborationMode: sourceSession.collaborationMode ?? undefined
+        })
+
+        this.seedSpawnedSessionSummary(sourceSession, spawnedSessionId, {
+            forkLabel: options?.forkLabel === true
+        })
+
+        if (options?.copyHistory) {
+            this.copySpawnedSessionHistory(sourceSession, spawnedSessionId, options.rollbackTurns)
+        }
+    }
+
+    private seedSpawnedSessionSummary(
+        sourceSession: Session,
+        spawnedSessionId: string,
+        options?: { forkLabel?: boolean }
+    ): void {
+        const baseTitle = this.getSessionDisplayTitle(sourceSession)
+            ?? (options?.forkLabel ? this.getSessionPathFallbackTitle(sourceSession) : null)
+        if (!baseTitle) {
+            return
+        }
+
+        const seededTitle = options?.forkLabel ? `${baseTitle} (fork)` : baseTitle
+
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+            const current = this.sessionCache.getSession(spawnedSessionId) ?? this.sessionCache.refreshSession(spawnedSessionId)
+            if (!current?.metadata) {
+                return
+            }
+
+            const result = this.store.sessions.updateSessionMetadata(
+                spawnedSessionId,
+                {
+                    ...current.metadata,
+                    summary: {
+                        text: seededTitle,
+                        updatedAt: Date.now()
+                    }
+                },
+                current.metadataVersion,
+                current.namespace,
+                { touchUpdatedAt: false }
+            )
+
+            if (result.result === 'success') {
+                this.sessionCache.refreshSession(spawnedSessionId)
+                return
+            }
+
+            if (result.result === 'error') {
+                return
+            }
+        }
+    }
+
+    private copySpawnedSessionHistory(
+        sourceSession: Session,
+        spawnedSessionId: string,
+        rollbackTurns?: number
+    ): void {
+        const copied = this.store.messages.copySessionMessages(
+            sourceSession.id,
+            spawnedSessionId,
+            rollbackTurns !== undefined ? { dropLastUserTurns: rollbackTurns } : undefined
+        )
+
+        if (copied.copied > 0) {
+            this.eventPublisher.emit({
+                type: 'messages-invalidated',
+                sessionId: spawnedSessionId,
+                namespace: sourceSession.namespace
+            })
+        }
+    }
+
+    private getSessionDisplayTitle(session: Session): string | null {
+        const name = session.metadata?.name?.trim()
+        if (name) {
+            return name
+        }
+
+        const summary = session.metadata?.summary?.text?.trim()
+        if (summary) {
+            return summary
+        }
+
+        return null
+    }
+
+    private getSessionPathFallbackTitle(session: Session): string {
+        const path = session.metadata?.path ?? ''
+        const trimmed = path.replace(/[\\/]+$/, '')
+        const parts = trimmed.split(/[\\/]+/).filter(Boolean)
+        return parts[parts.length - 1] ?? session.id.slice(0, 8)
+    }
+
+    private async syncSpawnedSessionCollaborationMode(session: Session, spawnedSessionId: string): Promise<void> {
+        if (this.resolveSessionFlavor(session.metadata?.flavor) !== 'codex') {
+            return
+        }
+        if (!session.collaborationMode || session.collaborationMode === 'default') {
+            return
+        }
+
+        const becameActive = await this.waitForSessionActive(spawnedSessionId)
+        if (!becameActive) {
+            return
+        }
+
+        try {
+            await this.applySessionConfig(spawnedSessionId, {
+                collaborationMode: session.collaborationMode
+            })
+        } catch {
+            // Best-effort only. Session creation should not fail solely because
+            // collaboration mode sync happened slightly later than expected.
+        }
     }
 
     private recoverClaudeSessionIdFromMessages(sessionId: string, namespace: string): string | null {

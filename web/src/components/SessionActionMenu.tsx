@@ -8,6 +8,7 @@ import {
     type CSSProperties
 } from 'react'
 import { SessionMarkerDot } from '@/components/SessionMarkerDot'
+import { Spinner } from '@/components/Spinner'
 import { SESSION_MARKER_COLORS } from '@/lib/sessionMarkers'
 import { useTranslation } from '@/lib/use-translation'
 import type { SessionMarkerColor } from '@/types/api'
@@ -15,12 +16,16 @@ import type { SessionMarkerColor } from '@/types/api'
 type SessionActionMenuProps = {
     isOpen: boolean
     onClose: () => void
+    canForkSession?: boolean
+    canSpawnSessionFromConfig?: boolean
     sessionActive: boolean
     markerColor: SessionMarkerColor | null
     onSelectMarkerColor: (markerColor: SessionMarkerColor | null) => void
     onRename: () => void
     onArchive: () => void
     onDelete: () => void
+    onForkSession?: () => void | Promise<void>
+    onSpawnSessionFromConfig?: () => void | Promise<void>
     anchorPoint: { x: number; y: number }
     menuId?: string
 }
@@ -66,6 +71,50 @@ function ArchiveIcon(props: { className?: string }) {
     )
 }
 
+function ForkIcon(props: { className?: string }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={props.className}
+        >
+            <path d="M9 3H5a2 2 0 0 0-2 2v4" />
+            <path d="M3 5l7 7" />
+            <path d="M21 12v7a2 2 0 0 1-2 2h-7" />
+            <path d="M14 14l7 7" />
+            <path d="M14 5h7v7" />
+            <path d="M21 5l-7 7" />
+        </svg>
+    )
+}
+
+function PlusIcon(props: { className?: string }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={props.className}
+        >
+            <path d="M12 5v14" />
+            <path d="M5 12h14" />
+        </svg>
+    )
+}
+
 function TrashIcon(props: { className?: string }) {
     return (
         <svg
@@ -100,17 +149,22 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
     const {
         isOpen,
         onClose,
+        canForkSession = false,
+        canSpawnSessionFromConfig = false,
         sessionActive,
         markerColor,
         onSelectMarkerColor,
         onRename,
         onArchive,
         onDelete,
+        onForkSession,
+        onSpawnSessionFromConfig,
         anchorPoint,
         menuId
     } = props
     const menuRef = useRef<HTMLDivElement | null>(null)
     const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null)
+    const [pendingAction, setPendingAction] = useState<'fork' | 'spawn' | null>(null)
     const internalId = useId()
     const resolvedMenuId = menuId ?? `session-action-menu-${internalId}`
     const headingId = `${resolvedMenuId}-heading`
@@ -128,6 +182,32 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
     const handleDelete = () => {
         onClose()
         onDelete()
+    }
+
+    const handleForkSession = async () => {
+        if (!onForkSession || pendingAction) {
+            return
+        }
+        setPendingAction('fork')
+        try {
+            await onForkSession()
+        } finally {
+            setPendingAction(null)
+            onClose()
+        }
+    }
+
+    const handleSpawnSessionFromConfig = async () => {
+        if (!onSpawnSessionFromConfig || pendingAction) {
+            return
+        }
+        setPendingAction('spawn')
+        try {
+            await onSpawnSessionFromConfig()
+        } finally {
+            setPendingAction(null)
+            onClose()
+        }
     }
 
     const updatePosition = useCallback(() => {
@@ -216,7 +296,7 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
         : undefined
 
     const baseItemClassName =
-        'flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-base transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]'
+        'flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-base transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] disabled:cursor-not-allowed disabled:opacity-50'
 
     return (
         <div
@@ -246,6 +326,7 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                             type="button"
                             role="menuitemradio"
                             aria-checked={markerColor === color}
+                            disabled={pendingAction !== null}
                             className={`flex items-center justify-center gap-2 rounded-md px-2 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] ${markerColor === color ? 'bg-[var(--app-subtle-bg)] text-[var(--app-fg)]' : 'text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]'}`}
                             onClick={() => {
                                 onClose()
@@ -261,6 +342,7 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                 <button
                     type="button"
                     role="menuitem"
+                    disabled={pendingAction !== null}
                     className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
                     onClick={() => {
                         onClose()
@@ -274,6 +356,7 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                 <button
                     type="button"
                     role="menuitem"
+                    disabled={pendingAction !== null}
                     className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
                     onClick={handleRename}
                 >
@@ -281,10 +364,45 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                     {t('session.action.rename')}
                 </button>
 
+                {canForkSession ? (
+                    <button
+                        type="button"
+                        role="menuitem"
+                        disabled={pendingAction !== null}
+                        className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
+                        onClick={handleForkSession}
+                    >
+                        {pendingAction === 'fork' ? (
+                            <Spinner size="sm" label={null} className="text-[var(--app-hint)]" />
+                        ) : (
+                            <ForkIcon className="text-[var(--app-hint)]" />
+                        )}
+                        <span>{t('session.action.fork')}</span>
+                    </button>
+                ) : null}
+
+                {canSpawnSessionFromConfig ? (
+                    <button
+                        type="button"
+                        role="menuitem"
+                        disabled={pendingAction !== null}
+                        className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
+                        onClick={handleSpawnSessionFromConfig}
+                    >
+                        {pendingAction === 'spawn' ? (
+                            <Spinner size="sm" label={null} className="text-[var(--app-hint)]" />
+                        ) : (
+                            <PlusIcon className="text-[var(--app-hint)]" />
+                        )}
+                        <span>{t('session.action.newSession')}</span>
+                    </button>
+                ) : null}
+
                 {sessionActive ? (
                     <button
                         type="button"
                         role="menuitem"
+                        disabled={pendingAction !== null}
                         className={`${baseItemClassName} text-red-500 hover:bg-red-500/10`}
                         onClick={handleArchive}
                     >
@@ -295,6 +413,7 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                     <button
                         type="button"
                         role="menuitem"
+                        disabled={pendingAction !== null}
                         className={`${baseItemClassName} text-red-500 hover:bg-red-500/10`}
                         onClick={handleDelete}
                     >

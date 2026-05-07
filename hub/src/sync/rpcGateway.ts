@@ -66,6 +66,10 @@ export type RpcOpencodeModel = {
     name?: string
 }
 
+export type RpcForkCodexThreadResponse =
+    | { success: true; threadId: string }
+    | { success: false; error: string }
+
 export type RpcListOpencodeModelsResponse = {
     success: boolean
     availableModels?: RpcOpencodeModel[]
@@ -184,6 +188,42 @@ export class RpcGateway {
             return { type: 'error', message: `Unexpected spawn result: ${details}` }
         } catch (error) {
             return { type: 'error', message: error instanceof Error ? error.message : String(error) }
+        }
+    }
+
+    async forkCodexThread(
+        machineId: string,
+        threadId: string,
+        rollbackTurns?: number
+    ): Promise<RpcForkCodexThreadResponse> {
+        try {
+            const result = await this.machineRpc(
+                machineId,
+                'codex-thread-fork',
+                rollbackTurns !== undefined ? { threadId, rollbackTurns } : { threadId }
+            )
+
+            if (!result || typeof result !== 'object') {
+                return { success: false, error: 'Unexpected Codex fork result' }
+            }
+
+            const response = result as Record<string, unknown>
+            if (response.success === true && typeof response.threadId === 'string') {
+                return { success: true, threadId: response.threadId }
+            }
+            if (response.success === false && typeof response.error === 'string') {
+                return { success: false, error: response.error }
+            }
+            if (typeof response.error === 'string') {
+                return { success: false, error: response.error }
+            }
+
+            return { success: false, error: 'Unexpected Codex fork result' }
+        } catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : String(error)
+            }
         }
     }
 

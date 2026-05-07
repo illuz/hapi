@@ -2,6 +2,7 @@ import chalk from 'chalk'
 import { authAndSetupMachineIfNeeded } from '@/ui/auth'
 import { initializeToken } from '@/ui/tokenInit'
 import { maybeAutoStartServer } from '@/utils/autoStartServer'
+import { ensureRunnerStarted } from '@/utils/ensureRunnerStarted'
 import type { CommandDefinition } from './types'
 import { OPENCODE_PERMISSION_MODES } from '@hapi/protocol/modes'
 import type { OpencodePermissionMode } from '@hapi/protocol/types'
@@ -59,6 +60,9 @@ export const opencodeCommand: CommandDefinition = {
             await initializeToken()
             await maybeAutoStartServer()
             await authAndSetupMachineIfNeeded()
+            if (options.startedBy !== 'runner') {
+                await ensureRunnerStarted()
+            }
 
             const { runOpencode } = await import('@/opencode/runOpencode')
             await runOpencode(options)

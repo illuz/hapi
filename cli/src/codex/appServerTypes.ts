@@ -91,6 +91,30 @@ export interface ThreadResumeResponse {
     [key: string]: unknown;
 }
 
+export interface ThreadForkParams {
+    threadId: string;
+    ephemeral?: boolean;
+    excludeTurns?: boolean;
+    persistExtendedHistory?: boolean;
+}
+
+export interface ThreadForkResponse {
+    thread: {
+        id: string;
+    };
+    model?: string;
+    [key: string]: unknown;
+}
+
+export interface ThreadRollbackParams {
+    threadId: string;
+    numTurns: number;
+}
+
+export interface ThreadRollbackResponse {
+    [key: string]: unknown;
+}
+
 export type UserInput =
     | {
         type: 'text';

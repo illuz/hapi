@@ -53,6 +53,8 @@ function createSession(overrides?: Partial<Session>): Session {
 
 function createApp(session: Session, opts?: {
     resumeSession?: (sessionId: string, namespace: string, resumeOpts?: { permissionMode?: string }) => Promise<{ type: string; sessionId?: string; message?: string; code?: string }>
+    spawnSessionFromConfig?: (sessionId: string, namespace: string) => Promise<{ type: string; sessionId?: string; message?: string; code?: string }>
+    forkSession?: (sessionId: string, namespace: string, options?: { rollbackTurns?: number }) => Promise<{ type: string; sessionId?: string; message?: string; code?: string }>
     listSlashCommands?: SyncEngine['listSlashCommands']
 }) {
     const applySessionConfigCalls: Array<[string, Record<string, unknown>]> = []
@@ -82,6 +84,8 @@ function createApp(session: Session, opts?: {
         currentModelId: 'ollama/exaone:4.5-33b-q8'
     })
     const resumeSession = opts?.resumeSession ?? (async (sessionId: string) => ({ type: 'success', sessionId }))
+    const spawnSessionFromConfig = opts?.spawnSessionFromConfig ?? (async (sessionId: string) => ({ type: 'success', sessionId }))
+    const forkSession = opts?.forkSession ?? (async (sessionId: string) => ({ type: 'success', sessionId }))
     const engine = {
         resolveSessionAccess: () => ({ ok: true, sessionId: session.id, session }),
         applySessionConfig,
@@ -90,6 +94,8 @@ function createApp(session: Session, opts?: {
         listCodexModelsForSession,
         listOpencodeModelsForSession,
         resumeSession,
+        spawnSessionFromConfig,
+        forkSession,
         listSlashCommands: opts?.listSlashCommands ?? (async () => ({
             success: true,
             commands: []
@@ -107,6 +113,97 @@ function createApp(session: Session, opts?: {
 }
 
 describe('sessions routes', () => {
+    it('spawns a new session from stored config', async () => {
+        let captured: { sessionId: string; namespace: string } | null = null
+        const { app } = createApp(createSession(), {
+            spawnSessionFromConfig: async (sessionId, namespace) => {
+                captured = { sessionId, namespace }
+                return { type: 'success', sessionId: 'session-new' }
+            }
+        })
+
+        const response = await app.request('/api/sessions/session-1/spawn-from-config', {
+            method: 'POST'
+        })
+
+        expect(response.status).toBe(200)
+        expect(captured!).toEqual({ sessionId: 'session-1', namespace: 'default' })
+        expect(await response.json()).toEqual({ type: 'success', sessionId: 'session-new' })
+    })
+
+    it('returns 409 when spawn-from-config is unavailable', async () => {
+        const { app } = createApp(createSession(), {
+            spawnSessionFromConfig: async () => ({
+                type: 'error',
+                message: 'Session metadata missing path',
+                code: 'spawn_unavailable'
+            })
+        })
+
+        const response = await app.request('/api/sessions/session-1/spawn-from-config', {
+            method: 'POST'
+        })
+
+        expect(response.status).toBe(409)
+        expect(await response.json()).toEqual({
+            error: 'Session metadata missing path',
+            code: 'spawn_unavailable'
+        })
+    })
+
+    it('forks a session and forwards rollbackTurns', async () => {
+        let captured: { sessionId: string; namespace: string; rollbackTurns?: number } | null = null
+        const { app } = createApp(createSession(), {
+            forkSession: async (sessionId, namespace, options) => {
+                captured = { sessionId, namespace, rollbackTurns: options?.rollbackTurns }
+                return { type: 'success', sessionId: 'session-forked' }
+            }
+        })
+
+        const response = await app.request('/api/sessions/session-1/fork', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ rollbackTurns: 2 })
+        })
+
+        expect(response.status).toBe(200)
+        expect(captured!).toEqual({ sessionId: 'session-1', namespace: 'default', rollbackTurns: 2 })
+        expect(await response.json()).toEqual({ type: 'success', sessionId: 'session-forked' })
+    })
+
+    it('rejects invalid fork body', async () => {
+        const { app } = createApp(createSession())
+
+        const response = await app.request('/api/sessions/session-1/fork', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ rollbackTurns: -1 })
+        })
+
+        expect(response.status).toBe(400)
+        expect(await response.json()).toEqual({ error: 'Invalid body' })
+    })
+
+    it('returns 400 when fork is unsupported for the session flavor', async () => {
+        const { app } = createApp(createSession(), {
+            forkSession: async () => ({
+                type: 'error',
+                message: 'Fork is only supported for Codex sessions',
+                code: 'unsupported_session_flavor'
+            })
+        })
+
+        const response = await app.request('/api/sessions/session-1/fork', {
+            method: 'POST'
+        })
+
+        expect(response.status).toBe(400)
+        expect(await response.json()).toEqual({
+            error: 'Fork is only supported for Codex sessions',
+            code: 'unsupported_session_flavor'
+        })
+    })
+
     it('rejects collaboration mode changes for local Codex sessions', async () => {
         const session = createSession({
             agentState: {

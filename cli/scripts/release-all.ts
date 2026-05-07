@@ -23,6 +23,8 @@ const version = args.find(arg => !arg.startsWith('--'));
 const dryRun = args.includes('--dry-run');
 const publishNpm = args.includes('--publish-npm');  // 只发布 npm，跳过 git 操作
 const skipBuild = args.includes('--skip-build');    // 跳过构建（二进制已存在）
+const otpIndex = args.indexOf('--otp');
+const otp = otpIndex !== -1 ? args[otpIndex + 1] : undefined;
 
 if (!version) {
     console.error('Usage: bun run scripts/release-all.ts <version> [options]');
@@ -30,6 +32,7 @@ if (!version) {
     console.error('  --dry-run      Preview the release process');
     console.error('  --publish-npm  Only publish to npm, skip git operations');
     console.error('  --skip-build   Skip building binaries (use existing)');
+    console.error('  --otp <code>   One-time password for npm publish');
     console.error('Example: bun run scripts/release-all.ts 0.2.0');
     process.exit(1);
 }
@@ -39,6 +42,20 @@ function run(cmd: string, cwd = projectRoot): void {
     if (!dryRun) {
         execSync(cmd, { cwd, stdio: 'inherit' });
     }
+}
+
+function packTarball(packageDir: string): string {
+    const output = execSync('npm pack --json', {
+        cwd: packageDir,
+        encoding: 'utf-8',
+        stdio: 'pipe'
+    }).trim();
+    const packResult = JSON.parse(output) as Array<{ filename?: string }>
+    const filename = packResult[0]?.filename
+    if (!filename) {
+        throw new Error(`Failed to pack npm package in ${packageDir}`)
+    }
+    return join(packageDir, filename)
 }
 
 async function runWithTimeoutRetry(cmd: string, cwd = projectRoot): Promise<void> {
@@ -107,15 +124,19 @@ async function main(): Promise<void> {
     console.log('\n📤 Step 3: Publishing platform packages...');
     run('bun run prepare-npm-packages');
     const platforms = ['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64', 'win32-x64'];
+    const npmTag = version.includes('-') ? 'next' : 'latest';
+    const otpFlag = otp ? ` --otp ${otp}` : '';
     for (const platform of platforms) {
         const npmDir = join(projectRoot, 'npm', platform);
-        run(`npm publish --access public${dryRun ? ' --dry-run' : ''}`, npmDir);
+        const tarball = packTarball(npmDir);
+        run(`npm publish "${tarball}" --access public --tag ${npmTag}${otpFlag}${dryRun ? ' --dry-run' : ''}`, npmDir);
     }
 
     // Step 4: Publish main package
     console.log('\n📤 Step 4: Publishing main package...');
     const mainNpmDir = join(projectRoot, 'npm', 'main');
-    run(`npm publish --access public${dryRun ? ' --dry-run' : ''}`, mainNpmDir);
+    const mainTarball = packTarball(mainNpmDir);
+    run(`npm publish "${mainTarball}" --access public --tag ${npmTag}${otpFlag}${dryRun ? ' --dry-run' : ''}`, mainNpmDir);
 
     // --publish-npm 模式到此结束
     if (publishNpm) {

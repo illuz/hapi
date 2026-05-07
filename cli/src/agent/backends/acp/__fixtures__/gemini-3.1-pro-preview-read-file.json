@@ -165,14 +165,14 @@
       "sessionUpdate": "agent_message_chunk",
       "content": {
         "type": "text",
-        "text": "px @twsxtd/hapi hub --relay     # start hub with E2E encrypted relay\nnpx"
+        "text": "px @illuz-modified/hapi hub --relay     # start hub with E2E encrypted relay\nnpx"
       }
     },
     {
       "sessionUpdate": "agent_message_chunk",
       "content": {
         "type": "text",
-        "text": " @twsxtd/hapi                 # run claude code\n```\n\n`hapi server` remains supported as an"
+        "text": " @illuz-modified/hapi                 # run claude code\n```\n\n`hapi server` remains supported as an"
       }
     },
     {

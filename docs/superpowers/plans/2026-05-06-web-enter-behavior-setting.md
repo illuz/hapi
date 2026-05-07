@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a persisted Web setting that switches composer Enter behavior between send and newline modes.
+**Goal:** Add a persisted Web setting that switches composer Enter behavior between newline and send modes.
 
 **Architecture:** Store the preference in a dedicated Web hook backed by localStorage, surface it through the existing settings dropdown UI, and branch the composer Enter handling based on the selected mode while preserving IME and autocomplete behavior.
 
@@ -26,9 +26,9 @@
 - Create: `web/src/hooks/useComposerEnterBehavior.ts`
 - Test: `web/src/hooks/useComposerEnterBehavior.test.ts`
 
-- [ ] Define `ComposerEnterBehavior = 'send' | 'newline'`
+- [ ] Define `ComposerEnterBehavior = 'send' | 'newline'` with `newline` default
 - [ ] Add helper `getComposerEnterBehaviorOptions()` returning the two values with translation keys
-- [ ] Add localStorage-backed parser with default fallback to `send`
+- [ ] Add localStorage-backed parser with default fallback to `newline`
 - [ ] Add `useComposerEnterBehavior()` hook consistent with existing hook patterns
 - [ ] Add helper tests for options, default fallback, invalid fallback, valid stored value
 

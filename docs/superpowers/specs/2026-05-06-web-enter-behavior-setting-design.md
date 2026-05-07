@@ -5,7 +5,7 @@
 
 ## Goal
 
-Add a Web setting that controls what Enter does in the chat composer. Default stays **send**. Users can switch to **newline** mode. In newline mode, plain Enter inserts a newline and Ctrl/Cmd+Enter sends.
+Add a Web setting that controls what Enter does in the chat composer. Default stays **newline**. Users can switch to **send** mode. In newline mode, plain Enter inserts a newline and Ctrl/Cmd+Enter sends.
 
 ## Scope
 
@@ -23,12 +23,12 @@ Add a Web setting that controls what Enter does in the chat composer. Default st
 
 ## Behavior
 
-### Mode: `send` (default)
+### Mode: `send`
 - Enter: send
 - Shift+Enter: newline
 - Ctrl/Cmd+Enter: keep current non-send behavior; plain Enter remains the only send shortcut
 
-### Mode: `newline`
+### Mode: `newline` (default)
 - Enter: newline
 - Ctrl/Cmd+Enter: send
 - Shift+Enter: newline
@@ -51,7 +51,7 @@ Allowed values:
 
 Fallback:
 
-- invalid / missing value => `send`
+- invalid / missing value => `newline`
 
 ## UI
 

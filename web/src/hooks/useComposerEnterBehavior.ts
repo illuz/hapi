@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 export type ComposerEnterBehavior = 'send' | 'newline'
 
-export const DEFAULT_COMPOSER_ENTER_BEHAVIOR: ComposerEnterBehavior = 'send'
+export const DEFAULT_COMPOSER_ENTER_BEHAVIOR: ComposerEnterBehavior = 'newline'
 
 export function getComposerEnterBehaviorOptions(): ReadonlyArray<{ value: ComposerEnterBehavior; labelKey: string }> {
     return [

@@ -20,6 +20,7 @@ type SessionAlivePayload = {
     permissionMode?: PermissionMode
     model?: string | null
     modelReasoningEffort?: string | null
+    serviceTier?: string | null
     effort?: string | null
     collaborationMode?: CodexCollaborationMode
 }

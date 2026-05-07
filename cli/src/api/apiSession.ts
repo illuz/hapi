@@ -27,6 +27,7 @@ import type {
     Session,
     SessionModel,
     SessionPermissionMode,
+    SessionServiceTier,
     UserMessage
 } from './types'
 import { AgentStateSchema, CliMessagesResponseSchema, MetadataSchema, UserMessageSchema } from './types'
@@ -495,6 +496,7 @@ export class ApiSessionClient extends EventEmitter {
             permissionMode?: SessionPermissionMode
             model?: SessionModel
             modelReasoningEffort?: string | null
+            serviceTier?: SessionServiceTier
             effort?: string | null
             collaborationMode?: SessionCollaborationMode
         }

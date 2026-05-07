@@ -13,6 +13,7 @@ export type StoredSession = {
     agentStateVersion: number
     model: string | null
     modelReasoningEffort: string | null
+    serviceTier: string | null
     effort: string | null
     permissionMode: PermissionMode | null
     todos: unknown | null

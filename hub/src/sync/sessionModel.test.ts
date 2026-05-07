@@ -72,6 +72,26 @@ describe('session model', () => {
         expect(store.sessions.getSession(session.id)?.modelReasoningEffort).toBe('xhigh')
     })
 
+    it('persists explicit service tier on Codex sessions', () => {
+        const store = new Store(':memory:')
+        const events: SyncEvent[] = []
+        const cache = new SessionCache(store, createPublisher(events))
+
+        const session = cache.getOrCreateSession(
+            'session-service-tier',
+            { path: '/tmp/project', host: 'localhost', flavor: 'codex' },
+            null,
+            'default',
+            'gpt-5.4',
+            undefined,
+            undefined,
+            'priority'
+        )
+
+        expect(session.serviceTier).toBe('priority')
+        expect(store.sessions.getSession(session.id)?.serviceTier).toBe('priority')
+    })
+
     it('preserves model from old session when merging into resumed session', async () => {
         const store = new Store(':memory:')
         const events: SyncEvent[] = []
@@ -190,6 +210,28 @@ describe('session model', () => {
         expect(store.sessions.getSession(session.id)?.modelReasoningEffort).toBeNull()
     })
 
+    it('persists applied session service tier updates, including reset-to-auto', () => {
+        const store = new Store(':memory:')
+        const events: SyncEvent[] = []
+        const cache = new SessionCache(store, createPublisher(events))
+
+        const session = cache.getOrCreateSession(
+            'session-service-tier-config',
+            { path: '/tmp/project', host: 'localhost', flavor: 'codex' },
+            null,
+            'default',
+            'gpt-5.4'
+        )
+
+        cache.applySessionConfig(session.id, { serviceTier: 'priority' })
+        expect(cache.getSession(session.id)?.serviceTier).toBe('priority')
+        expect(store.sessions.getSession(session.id)?.serviceTier).toBe('priority')
+
+        cache.applySessionConfig(session.id, { serviceTier: 'auto' })
+        expect(cache.getSession(session.id)?.serviceTier).toBe('auto')
+        expect(store.sessions.getSession(session.id)?.serviceTier).toBe('auto')
+    })
+
     it('persists keepalive effort changes, including clearing the effort', () => {
         const store = new Store(':memory:')
         const events: SyncEvent[] = []
@@ -239,6 +281,30 @@ describe('session model', () => {
 
         expect(cache.getSession(session.id)?.modelReasoningEffort).toBeNull()
         expect(store.sessions.getSession(session.id)?.modelReasoningEffort).toBeNull()
+    })
+
+    it('persists keepalive service tier changes', () => {
+        const store = new Store(':memory:')
+        const events: SyncEvent[] = []
+        const cache = new SessionCache(store, createPublisher(events))
+
+        const session = cache.getOrCreateSession(
+            'session-service-tier-heartbeat',
+            { path: '/tmp/project', host: 'localhost', flavor: 'codex' },
+            null,
+            'default',
+            'gpt-5.4'
+        )
+
+        cache.handleSessionAlive({
+            sid: session.id,
+            time: Date.now(),
+            thinking: false,
+            serviceTier: 'priority'
+        })
+
+        expect(cache.getSession(session.id)?.serviceTier).toBe('priority')
+        expect(store.sessions.getSession(session.id)?.serviceTier).toBe('priority')
     })
 
     it('tracks collaboration mode updates in memory from config and keepalive', () => {
@@ -543,6 +609,69 @@ describe('session model', () => {
 
             expect(result).toEqual({ type: 'success', sessionId: session.id })
             expect(capturedModelReasoningEffort).toBe('xhigh')
+        } finally {
+            engine.stop()
+        }
+    })
+
+    it('passes the stored service tier when respawning a resumed Codex session', async () => {
+        const store = new Store(':memory:')
+        const engine = new SyncEngine(
+            store,
+            {} as never,
+            new RpcRegistry(),
+            { broadcast() {} } as never
+        )
+
+        try {
+            const session = engine.getOrCreateSession(
+                'session-service-tier-resume',
+                {
+                    path: '/tmp/project',
+                    host: 'localhost',
+                    machineId: 'machine-1',
+                    flavor: 'codex',
+                    codexSessionId: 'codex-thread-1'
+                },
+                null,
+                'default',
+                'gpt-5.4',
+                undefined,
+                undefined,
+                'priority'
+            )
+            engine.getOrCreateMachine(
+                'machine-1',
+                { host: 'localhost', platform: 'linux', happyCliVersion: '0.1.0' },
+                null,
+                'default'
+            )
+            engine.handleMachineAlive({ machineId: 'machine-1', time: Date.now() })
+
+            let capturedServiceTier: string | undefined
+            ;(engine as any).rpcGateway.spawnSession = async (
+                _machineId: string,
+                _directory: string,
+                _agent: string,
+                _model?: string,
+                _modelReasoningEffort?: string,
+                _yolo?: boolean,
+                _sessionType?: string,
+                _worktreeName?: string,
+                _resumeSessionId?: string,
+                _effort?: string,
+                _permissionMode?: string,
+                serviceTier?: string
+            ) => {
+                capturedServiceTier = serviceTier
+                return { type: 'success', sessionId: session.id }
+            }
+            ;(engine as any).waitForSessionActive = async () => true
+
+            const result = await engine.resumeSession(session.id, 'default')
+
+            expect(result).toEqual({ type: 'success', sessionId: session.id })
+            expect(capturedServiceTier).toBe('priority')
         } finally {
             engine.stop()
         }
@@ -912,6 +1041,7 @@ describe('session model', () => {
                 agent?: string
                 model?: string
                 modelReasoningEffort?: string
+                serviceTier?: string
                 resumeSessionId?: string
                 permissionMode?: string
             } | null = null
@@ -927,7 +1057,8 @@ describe('session model', () => {
                 _worktreeName?: string,
                 resumeSessionId?: string,
                 _effort?: string,
-                permissionMode?: string
+                permissionMode?: string,
+                serviceTier?: string
             ) => {
                 captured = {
                     machineId,
@@ -935,6 +1066,7 @@ describe('session model', () => {
                     agent,
                     model,
                     modelReasoningEffort,
+                    serviceTier,
                     resumeSessionId,
                     permissionMode
                 }
@@ -961,6 +1093,7 @@ describe('session model', () => {
                 agent: 'codex',
                 model: 'gpt-5.4',
                 modelReasoningEffort: 'xhigh',
+                serviceTier: undefined,
                 resumeSessionId: undefined,
                 permissionMode: 'safe-yolo'
             })

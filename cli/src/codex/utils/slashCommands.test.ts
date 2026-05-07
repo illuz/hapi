@@ -5,7 +5,8 @@ const state = {
     permissionMode: 'default' as const,
     collaborationMode: 'default' as const,
     model: 'gpt-5.5',
-    modelReasoningEffort: 'high' as const
+    modelReasoningEffort: 'high' as const,
+    serviceTier: 'auto' as const
 };
 
 describe('resolveCodexSlashCommand', () => {
@@ -34,16 +35,16 @@ describe('resolveCodexSlashCommand', () => {
         });
     });
 
-    it('toggles fast mode via reasoning effort presets', () => {
+    it('toggles fast mode via service tier presets', () => {
         expect(resolveCodexSlashCommand('/fast', state)).toEqual({
             kind: 'handled',
             message: 'Codex fast mode enabled',
-            updates: { modelReasoningEffort: 'low' }
+            updates: { serviceTier: 'priority' }
         });
-        expect(resolveCodexSlashCommand('/fast off', { ...state, modelReasoningEffort: 'low' })).toEqual({
+        expect(resolveCodexSlashCommand('/fast off', { ...state, serviceTier: 'priority' })).toEqual({
             kind: 'handled',
             message: 'Codex fast mode disabled',
-            updates: { modelReasoningEffort: null }
+            updates: { serviceTier: 'auto' }
         });
     });
 

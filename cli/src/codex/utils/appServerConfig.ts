@@ -93,6 +93,7 @@ export function buildThreadStartParams(args: {
         cwd: args.cwd,
         approvalPolicy: resolvedApprovalPolicy,
         sandbox: resolvedSandbox,
+        ...(args.mode.serviceTier ? { serviceTier: args.mode.serviceTier } : {}),
         baseInstructions,
         developerInstructions: resolvedDeveloperInstructions,
         ...(Object.keys(configWithInstructions).length > 0 ? { config: configWithInstructions } : {})
@@ -144,6 +145,10 @@ export function buildTurnStartParams(args: {
     if (args.mode?.modelReasoningEffort) {
         params.effort = args.mode.modelReasoningEffort;
         params.summary = 'detailed';
+    }
+
+    if (args.mode?.serviceTier) {
+        params.serviceTier = args.mode.serviceTier;
     }
 
     const collaborationMode = args.mode?.collaborationMode;

@@ -54,6 +54,7 @@ export function HappyComposer(props: {
     collaborationMode?: CodexCollaborationMode
     model?: string | null
     modelReasoningEffort?: string | null
+    serviceTier?: string | null
     effort?: string | null
     active?: boolean
     allowSendWhenInactive?: boolean
@@ -93,6 +94,7 @@ export function HappyComposer(props: {
         collaborationMode: rawCollaborationMode,
         model: rawModel,
         modelReasoningEffort: rawModelReasoningEffort,
+        serviceTier,
         effort: rawEffort,
         active = true,
         allowSendWhenInactive = false,
@@ -924,6 +926,7 @@ export function HappyComposer(props: {
                         contextWindow={contextWindow}
                         model={model}
                         modelReasoningEffort={modelReasoningEffort}
+                        serviceTier={serviceTier}
                         permissionMode={permissionMode}
                         collaborationMode={collaborationMode}
                         agentFlavor={agentFlavor}

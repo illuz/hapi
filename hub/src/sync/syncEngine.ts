@@ -257,6 +257,7 @@ export class SyncEngine {
         permissionMode?: PermissionMode
         model?: string | null
         modelReasoningEffort?: string | null
+        serviceTier?: string | null
         effort?: string | null
         collaborationMode?: CodexCollaborationMode
     }): void {
@@ -318,9 +319,10 @@ export class SyncEngine {
         namespace: string,
         model?: string,
         effort?: string,
-        modelReasoningEffort?: string
+        modelReasoningEffort?: string,
+        serviceTier?: string
     ): Session {
-        return this.sessionCache.getOrCreateSession(tag, metadata, agentState, namespace, model, effort, modelReasoningEffort)
+        return this.sessionCache.getOrCreateSession(tag, metadata, agentState, namespace, model, effort, modelReasoningEffort, serviceTier)
     }
 
     getOrCreateMachine(id: string, metadata: unknown, runnerState: unknown, namespace: string): Machine {
@@ -408,6 +410,7 @@ export class SyncEngine {
             permissionMode?: PermissionMode
             model?: string | null
             modelReasoningEffort?: string | null
+            serviceTier?: string | null
             effort?: string | null
             collaborationMode?: CodexCollaborationMode
         }
@@ -430,6 +433,7 @@ export class SyncEngine {
                 permissionMode?: Session['permissionMode']
                 model?: Session['model']
                 modelReasoningEffort?: Session['modelReasoningEffort']
+                serviceTier?: Session['serviceTier']
                 effort?: Session['effort']
                 collaborationMode?: Session['collaborationMode']
             }
@@ -453,7 +457,8 @@ export class SyncEngine {
         worktreeName?: string,
         resumeSessionId?: string,
         effort?: string,
-        permissionMode?: PermissionMode
+        permissionMode?: PermissionMode,
+        serviceTier?: string
     ): Promise<{ type: 'success'; sessionId: string } | { type: 'error'; message: string }> {
         return await this.rpcGateway.spawnSession(
             machineId,
@@ -466,7 +471,8 @@ export class SyncEngine {
             worktreeName,
             resumeSessionId,
             effort,
-            permissionMode
+            permissionMode,
+            serviceTier
         )
     }
 
@@ -627,7 +633,8 @@ export class SyncEngine {
             undefined,
             resumeToken,
             session.effort ?? undefined,
-            effectivePermissionMode
+            effectivePermissionMode,
+            session.serviceTier ?? undefined
         )
 
         if (spawnResult.type !== 'success') {
@@ -710,7 +717,8 @@ export class SyncEngine {
             undefined,
             resumeSessionId,
             session.effort ?? undefined,
-            session.permissionMode ?? undefined
+            session.permissionMode ?? undefined,
+            session.serviceTier ?? undefined
         )
 
         if (spawnResult.type !== 'success') {
@@ -732,6 +740,7 @@ export class SyncEngine {
     ): Promise<void> {
         this.sessionCache.applySessionConfig(spawnedSessionId, {
             permissionMode: sourceSession.permissionMode ?? undefined,
+            serviceTier: sourceSession.serviceTier ?? undefined,
             collaborationMode: sourceSession.collaborationMode ?? undefined
         })
 

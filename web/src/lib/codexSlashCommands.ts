@@ -14,7 +14,7 @@ const BUILTIN_COMMANDS: Record<string, SlashCommand[]> = {
     codex: [
         { name: 'clear', description: 'Clear current Codex thread context', source: 'builtin' },
         { name: 'compact', description: 'Compact current Codex thread context', source: 'builtin' },
-        { name: 'fast', description: 'Set Codex reasoning effort to low; use /fast off to restore default', source: 'builtin' },
+        { name: 'fast', description: 'Set Codex service tier to priority; use /fast off to restore auto', source: 'builtin' },
         { name: 'help', description: 'Show supported HAPI Codex slash commands', source: 'builtin' },
         { name: 'plan', description: 'Enable plan mode; use /plan off to return to default', source: 'builtin' },
         { name: 'default', description: 'Return Codex collaboration mode to default', source: 'builtin' },

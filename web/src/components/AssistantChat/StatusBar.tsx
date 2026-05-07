@@ -128,14 +128,8 @@ function formatCodexReasoningLabel(effort?: string | null): string {
     return `reasoning ${normalized}`
 }
 
-function isCodexFastMode(model?: string | null, effort?: string | null): boolean {
-    const normalizedEffort = effort?.trim().toLowerCase()
-    if (normalizedEffort === 'none' || normalizedEffort === 'minimal' || normalizedEffort === 'low') {
-        return true
-    }
-
-    const normalizedModel = model?.trim().toLowerCase() ?? ''
-    return normalizedModel.includes('mini') || normalizedModel.includes('fast')
+function isCodexFastMode(serviceTier?: string | null): boolean {
+    return serviceTier?.trim().toLowerCase() === 'priority'
 }
 
 export function StatusBar(props: {
@@ -148,6 +142,7 @@ export function StatusBar(props: {
     contextWindow?: number | null
     model?: string | null
     modelReasoningEffort?: string | null
+    serviceTier?: string | null
     permissionMode?: PermissionMode
     collaborationMode?: CodexCollaborationMode
     agentFlavor?: string | null
@@ -200,7 +195,7 @@ export function StatusBar(props: {
         ? formatCodexReasoningLabel(props.modelReasoningEffort)
         : null
     const codexFastMode = props.agentFlavor === 'codex'
-        ? isCodexFastMode(props.model, props.modelReasoningEffort)
+        ? isCodexFastMode(props.serviceTier)
         : false
 
     return (

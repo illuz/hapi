@@ -60,6 +60,16 @@ describe('buildCliArgs', () => {
         expect(args).toContain('ollama/exaone:4.5-33b-q8')
     })
 
+    it('passes --service-tier through for codex remote sessions', () => {
+        const args = buildCliArgs('codex', {
+            directory: '/tmp',
+            serviceTier: 'priority',
+        })
+
+        expect(args).toContain('--service-tier')
+        expect(args).toContain('priority')
+    })
+
     it('validates all known permission modes', () => {
         for (const mode of ['default', 'acceptEdits', 'bypassPermissions', 'plan', 'ask', 'read-only', 'safe-yolo', 'yolo']) {
             const args = buildCliArgs('claude', {

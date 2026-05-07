@@ -185,6 +185,7 @@ export const SessionSchema = z.object({
     markerColor: SessionMarkerColorSchema.nullable().default(null),
     model: z.string().nullable().optional().default(null),
     modelReasoningEffort: z.string().nullable().optional().default(null),
+    serviceTier: z.string().nullable().optional(),
     effort: z.string().nullable().optional().default(null),
     permissionMode: PermissionModeSchema.optional(),
     collaborationMode: CodexCollaborationModeSchema.optional()

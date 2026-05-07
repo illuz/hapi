@@ -23,7 +23,7 @@ export { PushStore } from './pushStore'
 export { SessionStore } from './sessionStore'
 export { UserStore } from './userStore'
 
-const SCHEMA_VERSION: number = 9
+const SCHEMA_VERSION: number = 10
 const REQUIRED_TABLES = [
     'sessions',
     'machines',
@@ -88,7 +88,7 @@ export class Store {
         const currentVersion = this.getUserVersion()
         // V1/V2/V3 entries cover legacy DBs that pre-date our migration ladder.
         // Each step is idempotent (column-existence guards inside) so we can
-        // safely run the full V1→V9 chain in the legacy branch where the DB
+        // safely run the full V1→V10 chain in the legacy branch where the DB
         // shape is unknown.
         const buildStepMigrations = (legacy: boolean): Record<number, () => void> => ({
             1: () => this.migrateFromV1ToV2(legacy),
@@ -99,6 +99,7 @@ export class Store {
             6: () => this.migrateFromV6ToV7(),
             7: () => this.migrateFromV7ToV8(),
             8: () => this.migrateFromV8ToV9(),
+            9: () => this.migrateFromV9ToV10(),
         })
 
         if (currentVersion === 0) {
@@ -202,6 +203,7 @@ export class Store {
                 agent_state_version INTEGER DEFAULT 1,
                 model TEXT,
                 model_reasoning_effort TEXT,
+                service_tier TEXT,
                 effort TEXT,
                 permission_mode TEXT,
                 todos TEXT,
@@ -465,6 +467,17 @@ export class Store {
         }
     }
 
+    private migrateFromV9ToV10(): void {
+        const sessionColumns = this.getSessionColumnNames()
+        if (sessionColumns.size === 0) {
+            throw new Error('SQLite schema missing sessions table for v9 to v10 migration.')
+        }
+
+        if (!sessionColumns.has('service_tier')) {
+            this.db.exec('ALTER TABLE sessions ADD COLUMN service_tier TEXT')
+        }
+    }
+
     private getMessageColumnNames(): Set<string> {
         const rows = this.db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>
         return new Set(rows.map((row) => row.name))
@@ -481,6 +494,9 @@ export class Store {
             }
             if (!sessionColumns.has('permission_mode')) {
                 this.db.exec('ALTER TABLE sessions ADD COLUMN permission_mode TEXT')
+            }
+            if (!sessionColumns.has('service_tier')) {
+                this.db.exec('ALTER TABLE sessions ADD COLUMN service_tier TEXT')
             }
         }
 

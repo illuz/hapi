@@ -12,6 +12,7 @@ import {
     setSessionEffort,
     setSessionModel,
     setSessionModelReasoningEffort,
+    setSessionServiceTier,
     setSessionPermissionMode,
     setSessionTeamState,
     setSessionTodos,
@@ -35,9 +36,10 @@ export class SessionStore {
         namespace: string,
         model?: string,
         effort?: string,
-        modelReasoningEffort?: string
+        modelReasoningEffort?: string,
+        serviceTier?: string
     ): StoredSession {
-        return getOrCreateSession(this.db, tag, metadata, agentState, namespace, model, effort, modelReasoningEffort)
+        return getOrCreateSession(this.db, tag, metadata, agentState, namespace, model, effort, modelReasoningEffort, serviceTier)
     }
 
     updateSessionMetadata(
@@ -82,6 +84,15 @@ export class SessionStore {
 
     setSessionEffort(id: string, effort: string | null, namespace: string, options?: { touchUpdatedAt?: boolean }): boolean {
         return setSessionEffort(this.db, id, effort, namespace, options)
+    }
+
+    setSessionServiceTier(
+        id: string,
+        serviceTier: string | null,
+        namespace: string,
+        options?: { touchUpdatedAt?: boolean }
+    ): boolean {
+        return setSessionServiceTier(this.db, id, serviceTier, namespace, options)
     }
 
     setSessionPermissionMode(id: string, permissionMode: PermissionMode | null, namespace: string): boolean {

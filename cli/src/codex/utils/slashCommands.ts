@@ -1,6 +1,6 @@
 import { CODEX_PERMISSION_MODES } from '@hapi/protocol/modes';
 import type { CodexPermissionMode } from '@hapi/protocol/types';
-import type { ReasoningEffort } from '../appServerTypes';
+import type { ReasoningEffort, ServiceTier } from '../appServerTypes';
 import type { EnhancedMode } from '../loop';
 import type { SlashCommand } from '@/modules/common/slashCommands';
 
@@ -32,6 +32,7 @@ export type CodexSlashResolution =
             permissionMode?: CodexPermissionMode;
             model?: string | null;
             modelReasoningEffort?: ReasoningEffort | null;
+            serviceTier?: ServiceTier | null;
         };
     }
     | {
@@ -43,6 +44,7 @@ export type CodexSlashResolution =
             permissionMode?: CodexPermissionMode;
             model?: string | null;
             modelReasoningEffort?: ReasoningEffort | null;
+            serviceTier?: ServiceTier | null;
         };
     };
 
@@ -54,6 +56,7 @@ export function resolveCodexSlashCommand(
         collaborationMode: EnhancedMode['collaborationMode'];
         model?: string;
         modelReasoningEffort?: ReasoningEffort;
+        serviceTier?: ServiceTier;
     }
 ): CodexSlashResolution {
     const match = /^\s*\/([a-z0-9:_-]+)(?:\s+([\s\S]*))?$/i.exec(text);
@@ -108,14 +111,14 @@ export function resolveCodexSlashCommand(
             return {
                 kind: 'handled',
                 message: 'Codex fast mode enabled',
-                updates: { modelReasoningEffort: 'low' }
+                updates: { serviceTier: 'priority' }
             };
         }
         if (lowerRest === 'off' || lowerRest === 'default' || lowerRest === 'exit' || lowerRest === 'disable') {
             return {
                 kind: 'handled',
                 message: 'Codex fast mode disabled',
-                updates: { modelReasoningEffort: null }
+                updates: { serviceTier: 'auto' }
             };
         }
         return {
@@ -140,7 +143,8 @@ export function resolveCodexSlashCommand(
                 `permission: ${state.permissionMode}`,
                 `collaboration: ${state.collaborationMode}`,
                 `model: ${state.model ?? 'auto'}`,
-                `reasoning: ${state.modelReasoningEffort ?? 'default'}`
+                `reasoning: ${state.modelReasoningEffort ?? 'default'}`,
+                `service tier: ${state.serviceTier ?? 'auto'}`
             ].join('\n')
         };
     }
@@ -205,8 +209,8 @@ export function resolveCodexSlashCommand(
                 'Supported Codex slash commands:',
                 '/plan [prompt] — enable plan mode, optionally send prompt',
                 '/plan off — return to default mode',
-                '/fast — switch reasoning effort to low',
-                '/fast off — restore default reasoning effort',
+                '/fast — switch service tier to priority',
+                '/fast off — restore service tier to auto',
                 '/clear — reset current Codex thread context',
                 '/compact — compact current Codex thread context',
                 '/status — show current Codex session config',

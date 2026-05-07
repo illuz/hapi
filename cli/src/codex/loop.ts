@@ -6,7 +6,7 @@ import { codexLocalLauncher } from './codexLocalLauncher';
 import { codexRemoteLauncher } from './codexRemoteLauncher';
 import { ApiClient, ApiSessionClient } from '@/lib';
 import type { CodexCliOverrides } from './utils/codexCliOverrides';
-import type { ReasoningEffort } from './appServerTypes';
+import type { ReasoningEffort, ServiceTier } from './appServerTypes';
 import type { CodexCollaborationMode, CodexPermissionMode } from '@hapi/protocol/types';
 
 export type PermissionMode = CodexPermissionMode;
@@ -16,6 +16,7 @@ export interface EnhancedMode {
     model?: string;
     collaborationMode: CodexCollaborationMode;
     modelReasoningEffort?: ReasoningEffort;
+    serviceTier?: ServiceTier;
 }
 
 interface LoopOptions {
@@ -31,6 +32,7 @@ interface LoopOptions {
     permissionMode?: PermissionMode;
     model?: string;
     modelReasoningEffort?: ReasoningEffort;
+    serviceTier?: ServiceTier;
     collaborationMode?: CodexCollaborationMode;
     resumeSessionId?: string;
     onSessionReady?: (session: CodexSession) => void;
@@ -56,6 +58,7 @@ export async function loop(opts: LoopOptions): Promise<void> {
         permissionMode: opts.permissionMode ?? 'default',
         model: opts.model,
         modelReasoningEffort: opts.modelReasoningEffort,
+        serviceTier: opts.serviceTier,
         collaborationMode: opts.collaborationMode ?? 'default'
     });
 

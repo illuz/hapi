@@ -97,6 +97,16 @@ describe('appServerConfig', () => {
         });
     });
 
+    it('passes service tier via thread params', () => {
+        const params = buildThreadStartParams({
+            cwd: '/workspace/project',
+            mode: { permissionMode: 'default', serviceTier: 'priority', collaborationMode: 'default' },
+            mcpServers
+        });
+
+        expect(params.serviceTier).toBe('priority');
+    });
+
     it('builds turn params with mode defaults', () => {
         const params = buildTurnStartParams({
             threadId: 'thread-1',
@@ -116,6 +126,7 @@ describe('appServerConfig', () => {
         expect(params.approvalPolicy).toBe('never');
         expect(params.sandboxPolicy).toEqual({ type: 'readOnly' });
         expect(params.effort).toBe('high');
+        expect(params.serviceTier).toBeUndefined();
         expect(params.summary).toBe('detailed');
         expect(params.collaborationMode).toEqual({
             mode: 'default',
@@ -150,6 +161,22 @@ describe('appServerConfig', () => {
             }
         });
         expect(params.model).toBeUndefined();
+    });
+
+    it('puts service tier in turn params when configured', () => {
+        const params = buildTurnStartParams({
+            threadId: 'thread-1',
+            message: 'hello',
+            cwd: '/workspace/project',
+            mode: {
+                permissionMode: 'default',
+                model: 'o3',
+                serviceTier: 'priority',
+                collaborationMode: 'default'
+            }
+        });
+
+        expect(params.serviceTier).toBe('priority');
     });
 
     it('carries custom developer instructions into collaboration mode settings', () => {

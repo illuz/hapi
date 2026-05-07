@@ -171,6 +171,7 @@ export class Store {
             throw this.buildSchemaMismatchError(currentVersion)
         }
 
+        this.repairLatestSchemaIfNeeded()
         this.assertRequiredTablesPresent()
     }
 
@@ -443,6 +444,33 @@ export class Store {
     private getMessageColumnNames(): Set<string> {
         const rows = this.db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>
         return new Set(rows.map((row) => row.name))
+    }
+
+    private repairLatestSchemaIfNeeded(): void {
+        const sessionColumns = this.getSessionColumnNames()
+        if (sessionColumns.size > 0) {
+            if (!sessionColumns.has('model_reasoning_effort')) {
+                this.db.exec('ALTER TABLE sessions ADD COLUMN model_reasoning_effort TEXT')
+            }
+            if (!sessionColumns.has('marker_color')) {
+                this.db.exec('ALTER TABLE sessions ADD COLUMN marker_color TEXT')
+            }
+        }
+
+        const messageColumns = this.getMessageColumnNames()
+        if (messageColumns.size === 0) {
+            return
+        }
+
+        if (!messageColumns.has('invoked_at')) {
+            this.db.exec('ALTER TABLE messages ADD COLUMN invoked_at INTEGER')
+            this.db.exec('UPDATE messages SET invoked_at = created_at WHERE invoked_at IS NULL')
+        }
+
+        this.db.exec(`
+            CREATE INDEX IF NOT EXISTS idx_messages_session_position
+                ON messages(session_id, COALESCE(invoked_at, created_at) DESC, seq DESC)
+        `)
     }
 
     private getUserVersion(): number {

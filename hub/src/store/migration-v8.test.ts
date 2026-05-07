@@ -128,6 +128,30 @@ describe('Store V7→V8 migration: invoked_at column', () => {
         }
     })
 
+    it('V8 DB with missing invoked_at column is repaired on reopen', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'hapi-migration-v8-repair-'))
+        const dbPath = join(dir, 'test.db')
+        try {
+            const db = new Database(dbPath, { create: true, readwrite: true, strict: true })
+            db.exec('PRAGMA journal_mode = WAL')
+            db.exec('PRAGMA foreign_keys = ON')
+            createV7Schema(db)
+            db.exec(`INSERT INTO sessions (id, namespace, created_at, updated_at, seq)
+                     VALUES ('s1', 'default', 1000, 1000, 0)`)
+            db.exec(`INSERT INTO messages (id, session_id, content, created_at, seq)
+                     VALUES ('m1', 's1', '"hi"', 1500, 1)`)
+            db.exec('PRAGMA user_version = 8')
+            db.close()
+
+            const store = new Store(dbPath)
+            const cols = getMessageColumns(store)
+            expect(cols).toContain('invoked_at')
+            expect(store.messages.getMessages('s1')[0]?.invokedAt).toBe(1500)
+        } finally {
+            rmSync(dir, { recursive: true, force: true })
+        }
+    })
+
     it('migrateFromV7ToV8 PRAGMA guard: invoked_at column appears exactly once', () => {
         const dir = mkdtempSync(join(tmpdir(), 'hapi-migration-v8-guard-'))
         const dbPath = join(dir, 'test.db')

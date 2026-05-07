@@ -8,6 +8,7 @@ import { SessionActionMenu } from '@/components/SessionActionMenu'
 import { RenameSessionDialog } from '@/components/RenameSessionDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { getSessionModelLabel } from '@/lib/sessionModelLabel'
+import { getSessionMarkerColorHex } from '@/lib/sessionMarkers'
 import { useTranslation } from '@/lib/use-translation'
 
 type SessionGroup = {
@@ -217,7 +218,7 @@ function SessionItem(props: {
     const [archiveOpen, setArchiveOpen] = useState(false)
     const [deleteOpen, setDeleteOpen] = useState(false)
 
-    const { archiveSession, renameSession, deleteSession, isPending } = useSessionActions(
+    const { archiveSession, renameSession, setSessionMarkerColor, deleteSession, isPending } = useSessionActions(
         api,
         s.id,
         s.metadata?.flavor ?? null
@@ -243,14 +244,22 @@ function SessionItem(props: {
         ? (s.thinking ? 'bg-[#007AFF]' : 'bg-[var(--app-badge-success-text)]')
         : 'bg-[var(--app-hint)]'
     const todoProgress = getTodoProgress(s)
+    const markerTextColor = getSessionMarkerColorHex(s.markerColor)
     return (
         <>
             <button
                 type="button"
                 {...longPressHandlers}
-                className={`session-list-item flex w-full flex-col gap-1.5 px-3 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] select-none ${selected ? 'bg-[var(--app-secondary-bg)]' : ''}`}
+                className={`session-list-item flex w-full flex-col gap-1.5 border-l-[3px] px-3 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] select-none ${selected
+                    ? 'border-l-[#4DA3FF] bg-[rgba(77,163,255,0.14)] ring-1 ring-inset ring-[rgba(77,163,255,0.4)]'
+                    : 'border-l-transparent hover:bg-[var(--app-subtle-bg)]'}`}
                 style={{ WebkitTouchCallout: 'none' }}
                 aria-current={selected ? 'page' : undefined}
+                onContextMenu={(event) => {
+                    event.preventDefault()
+                    setMenuAnchorPoint({ x: event.clientX, y: event.clientY })
+                    setMenuOpen(true)
+                }}
             >
                 <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2 min-w-0">
@@ -259,7 +268,10 @@ function SessionItem(props: {
                                 className={`h-2 w-2 rounded-full ${statusDotClass}`}
                             />
                         </span>
-                        <div className="truncate text-base font-medium">
+                        <div
+                            className="truncate text-base font-medium"
+                            style={markerTextColor ? { color: markerTextColor } : undefined}
+                        >
                             {sessionName}
                         </div>
                     </div>
@@ -310,6 +322,8 @@ function SessionItem(props: {
                 isOpen={menuOpen}
                 onClose={() => setMenuOpen(false)}
                 sessionActive={s.active}
+                markerColor={s.markerColor}
+                onSelectMarkerColor={(markerColor) => { void setSessionMarkerColor(markerColor) }}
                 onRename={() => setRenameOpen(true)}
                 onArchive={() => setArchiveOpen(true)}
                 onDelete={() => setDeleteOpen(true)}
@@ -461,7 +475,7 @@ export function SessionList(props: {
                                         className="h-4 w-4 text-[var(--app-hint)] shrink-0"
                                         collapsed={isCollapsed}
                                     />
-                                    <span className="font-semibold text-sm break-words min-w-0" title={group.directory}>
+                                    <span className="text-sm font-medium break-words min-w-0 text-[#AFC0D8]" title={group.directory}>
                                         {group.displayName}
                                     </span>
                                     <span className="shrink-0 rounded-full bg-[var(--app-subtle-bg)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--app-hint)]">

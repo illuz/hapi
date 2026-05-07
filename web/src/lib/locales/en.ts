@@ -81,6 +81,15 @@ export default {
   'session.autoContinueErrorRemaining': 'Remaining runs must be between 0 and max runs.',
 
   // Session actions
+  'session.action.marker': 'Marker',
+  'session.action.setMarker': 'Set marker',
+  'session.action.clearMarker': 'Clear marker',
+  'session.marker.red': 'Red',
+  'session.marker.orange': 'Orange',
+  'session.marker.yellow': 'Yellow',
+  'session.marker.green': 'Green',
+  'session.marker.blue': 'Blue',
+  'session.marker.purple': 'Purple',
   'session.action.rename': 'Rename',
   'session.action.archive': 'Archive',
   'session.action.delete': 'Delete',
@@ -101,7 +110,7 @@ export default {
   'dialog.delete.confirm': 'Delete',
   'dialog.delete.confirming': 'Deleting…',
   'dialog.cleanupInactive.title': 'Clear Inactive Sessions',
-  'dialog.cleanupInactive.description': 'Delete {count} inactive sessions? This action cannot be undone.',
+  'dialog.cleanupInactive.description': 'Delete {count} inactive unmarked sessions? This action cannot be undone.',
   'dialog.cleanupInactive.confirm': 'Clear',
   'dialog.cleanupInactive.confirming': 'Clearing…',
   'dialog.error.default': 'Operation failed. Please try again.',
@@ -331,6 +340,8 @@ export default {
   'settings.about.website': 'Website',
   'settings.about.appVersion': 'App Version',
   'settings.about.protocolVersion': 'Protocol Version',
+  'settings.about.refresh': 'Check update and reload',
+  'settings.about.refreshing': 'Reloading…',
 
   // Misc
   'misc.noMachines': 'No machines available',

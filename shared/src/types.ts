@@ -6,6 +6,7 @@ export type {
     DecryptedMessage,
     Metadata,
     Session,
+    SessionMarkerColor,
     SyncEvent,
     TeamMember,
     TeamMessage,

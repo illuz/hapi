@@ -1,8 +1,11 @@
 import { z } from 'zod'
 import { CODEX_COLLABORATION_MODES, PERMISSION_MODES } from './modes'
+import { SESSION_MARKER_COLORS } from './sessionMarkers'
 
 export const PermissionModeSchema = z.enum(PERMISSION_MODES)
 export const CodexCollaborationModeSchema = z.enum(CODEX_COLLABORATION_MODES)
+export const SessionMarkerColorSchema = z.enum(SESSION_MARKER_COLORS)
+export type SessionMarkerColor = z.infer<typeof SessionMarkerColorSchema>
 
 const MetadataSummarySchema = z.object({
     text: z.string(),
@@ -174,6 +177,7 @@ export const SessionSchema = z.object({
     thinkingAt: z.number(),
     todos: TodosSchema.optional(),
     teamState: TeamStateSchema.optional(),
+    markerColor: SessionMarkerColorSchema.nullable().default(null),
     model: z.string().nullable(),
     effort: z.string().nullable(),
     permissionMode: PermissionModeSchema.optional(),

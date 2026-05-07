@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite'
+import type { SessionMarkerColor } from '@hapi/protocol/types'
 import { randomUUID } from 'node:crypto'
 
 import type { StoredSession, VersionedUpdateResult } from './types'
@@ -22,6 +23,7 @@ type DbSessionRow = {
     todos_updated_at: number | null
     team_state: string | null
     team_state_updated_at: number | null
+    marker_color: SessionMarkerColor | null
     active: number
     active_at: number | null
     seq: number
@@ -45,6 +47,7 @@ function toStoredSession(row: DbSessionRow): StoredSession {
         todosUpdatedAt: row.todos_updated_at,
         teamState: safeJsonParse(row.team_state),
         teamStateUpdatedAt: row.team_state_updated_at,
+        markerColor: row.marker_color,
         active: row.active === 1,
         activeAt: row.active_at,
         seq: row.seq
@@ -82,6 +85,7 @@ export function getOrCreateSession(
             model,
             effort,
             todos, todos_updated_at,
+            marker_color,
             active, active_at, seq
         ) VALUES (
             @id, @tag, @namespace, NULL, @created_at, @updated_at,
@@ -90,6 +94,7 @@ export function getOrCreateSession(
             @model,
             @effort,
             NULL, NULL,
+            NULL,
             0, NULL, 0
         )
     `).run({
@@ -295,6 +300,32 @@ export function setSessionEffort(
             effort,
             updated_at: now,
             touch_updated_at: touchUpdatedAt ? 1 : 0
+        })
+
+        return result.changes === 1
+    } catch {
+        return false
+    }
+}
+
+export function setSessionMarkerColor(
+    db: Database,
+    id: string,
+    markerColor: SessionMarkerColor | null,
+    namespace: string
+): boolean {
+    try {
+        const result = db.prepare(`
+            UPDATE sessions
+            SET marker_color = @marker_color,
+                seq = seq + 1
+            WHERE id = @id
+              AND namespace = @namespace
+              AND marker_color IS NOT @marker_color
+        `).run({
+            id,
+            namespace,
+            marker_color: markerColor
         })
 
         return result.changes === 1

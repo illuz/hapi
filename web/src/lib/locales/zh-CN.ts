@@ -81,6 +81,15 @@ export default {
   'session.autoContinueErrorRemaining': '剩余次数必须在 0 到触发次数之间。',
 
   // Session actions
+  'session.action.marker': '标记颜色',
+  'session.action.setMarker': '设置标记颜色',
+  'session.action.clearMarker': '清除标记颜色',
+  'session.marker.red': '红色',
+  'session.marker.orange': '橙色',
+  'session.marker.yellow': '黄色',
+  'session.marker.green': '绿色',
+  'session.marker.blue': '蓝色',
+  'session.marker.purple': '紫色',
   'session.action.rename': '重命名',
   'session.action.archive': '归档',
   'session.action.delete': '删除',
@@ -103,7 +112,7 @@ export default {
   'dialog.delete.confirm': '删除',
   'dialog.delete.confirming': '删除中…',
   'dialog.cleanupInactive.title': '清理非活跃会话',
-  'dialog.cleanupInactive.description': '确定要删除 {count} 个非活跃会话吗？此操作无法撤销。',
+  'dialog.cleanupInactive.description': '确定要删除 {count} 个未标记颜色的非活跃会话吗？此操作无法撤销。',
   'dialog.cleanupInactive.confirm': '清理',
   'dialog.cleanupInactive.confirming': '清理中…',
   'dialog.error.default': '操作失败，请重试。',
@@ -333,6 +342,8 @@ export default {
   'settings.about.website': '官方网站',
   'settings.about.appVersion': '应用版本',
   'settings.about.protocolVersion': '协议版本',
+  'settings.about.refresh': '检查更新并刷新',
+  'settings.about.refreshing': '刷新中…',
 
   // Misc
   'misc.noMachines': '无可用机器',

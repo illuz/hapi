@@ -7,7 +7,7 @@
  * - No E2E encryption; data is stored as JSON in SQLite
  */
 
-import type { CodexCollaborationMode, DecryptedMessage, PermissionMode, Session, SyncEvent } from '@hapi/protocol/types'
+import type { CodexCollaborationMode, DecryptedMessage, PermissionMode, Session, SessionMarkerColor, SyncEvent } from '@hapi/protocol/types'
 import type { Server } from 'socket.io'
 import type { Store } from '../store'
 import type { RpcRegistry } from '../socket/rpcRegistry'
@@ -280,6 +280,10 @@ export class SyncEngine {
 
     async renameSession(sessionId: string, name: string): Promise<void> {
         await this.sessionCache.renameSession(sessionId, name)
+    }
+
+    async setSessionMarkerColor(sessionId: string, markerColor: SessionMarkerColor | null): Promise<void> {
+        await this.sessionCache.setSessionMarkerColor(sessionId, markerColor)
     }
 
     async deleteSession(sessionId: string): Promise<void> {

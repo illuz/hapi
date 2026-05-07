@@ -22,7 +22,7 @@ export { PushStore } from './pushStore'
 export { SessionStore } from './sessionStore'
 export { UserStore } from './userStore'
 
-const SCHEMA_VERSION: number = 6
+const SCHEMA_VERSION: number = 8
 const REQUIRED_TABLES = [
     'sessions',
     'machines',
@@ -135,6 +135,37 @@ export class Store {
             return
         }
 
+
+        if (currentVersion === 6 && SCHEMA_VERSION === 8) {
+            this.migrateFromV6ToV7()
+            this.migrateFromV7ToV8()
+            this.setUserVersion(SCHEMA_VERSION)
+            return
+        }
+
+        if (currentVersion === 7 && SCHEMA_VERSION === 8) {
+            this.migrateFromV7ToV8()
+            this.setUserVersion(SCHEMA_VERSION)
+            return
+        }
+
+        if (currentVersion === 5 && SCHEMA_VERSION === 8) {
+            this.migrateFromV5ToV6()
+            this.migrateFromV6ToV7()
+            this.migrateFromV7ToV8()
+            this.setUserVersion(SCHEMA_VERSION)
+            return
+        }
+
+        if (currentVersion === 4 && SCHEMA_VERSION === 8) {
+            this.migrateFromV4ToV5()
+            this.migrateFromV5ToV6()
+            this.migrateFromV6ToV7()
+            this.migrateFromV7ToV8()
+            this.setUserVersion(SCHEMA_VERSION)
+            return
+        }
+
         if (currentVersion !== SCHEMA_VERSION) {
             throw this.buildSchemaMismatchError(currentVersion)
         }
@@ -161,6 +192,7 @@ export class Store {
                 todos_updated_at INTEGER,
                 team_state TEXT,
                 team_state_updated_at INTEGER,
+                marker_color TEXT,
                 active INTEGER DEFAULT 0,
                 active_at INTEGER,
                 seq INTEGER DEFAULT 0
@@ -341,6 +373,34 @@ export class Store {
     private getMachineColumnNames(): Set<string> {
         const rows = this.db.prepare('PRAGMA table_info(machines)').all() as Array<{ name: string }>
         return new Set(rows.map((row) => row.name))
+    }
+
+    private migrateFromV6ToV7(): void {
+        const columns = this.getSessionColumnNames()
+        if (columns.size === 0) {
+            throw new Error('SQLite schema missing sessions table for v6 to v7 migration.')
+        }
+
+        if (columns.has('starred')) {
+            return
+        }
+
+        this.db.exec('ALTER TABLE sessions ADD COLUMN starred INTEGER NOT NULL DEFAULT 0')
+    }
+
+    private migrateFromV7ToV8(): void {
+        const columns = this.getSessionColumnNames()
+        if (columns.size === 0) {
+            throw new Error('SQLite schema missing sessions table for v7 to v8 migration.')
+        }
+
+        if (!columns.has('marker_color')) {
+            this.db.exec('ALTER TABLE sessions ADD COLUMN marker_color TEXT')
+        }
+
+        if (columns.has('starred')) {
+            this.db.exec("UPDATE sessions SET marker_color = 'yellow' WHERE starred = 1 AND marker_color IS NULL")
+        }
     }
 
     private getUserVersion(): number {

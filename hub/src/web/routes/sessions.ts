@@ -1,5 +1,5 @@
 import { getPermissionModesForFlavor, isPermissionModeAllowedForFlavor, toSessionSummary } from '@hapi/protocol'
-import { CodexCollaborationModeSchema, PermissionModeSchema } from '@hapi/protocol/schemas'
+import { CodexCollaborationModeSchema, PermissionModeSchema, SessionMarkerColorSchema } from '@hapi/protocol/schemas'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import type { SyncEngine, Session } from '../../sync/syncEngine'
@@ -22,8 +22,11 @@ const effortSchema = z.object({
     effort: z.string().trim().min(1).nullable()
 })
 
-const renameSessionSchema = z.object({
-    name: z.string().min(1).max(255)
+const updateSessionSchema = z.object({
+    name: z.string().min(1).max(255).optional(),
+    markerColor: SessionMarkerColorSchema.nullable().optional()
+}).refine((value) => value.name !== undefined || value.markerColor !== undefined, {
+    message: 'At least one field is required'
 })
 
 const uploadSchema = z.object({
@@ -372,13 +375,18 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
         }
 
         const body = await c.req.json().catch(() => null)
-        const parsed = renameSessionSchema.safeParse(body)
+        const parsed = updateSessionSchema.safeParse(body)
         if (!parsed.success) {
-            return c.json({ error: 'Invalid body: name is required' }, 400)
+            return c.json({ error: 'Invalid body: name or markerColor is required' }, 400)
         }
 
         try {
-            await engine.renameSession(sessionResult.sessionId, parsed.data.name)
+            if (parsed.data.name !== undefined) {
+                await engine.renameSession(sessionResult.sessionId, parsed.data.name)
+            }
+            if (parsed.data.markerColor !== undefined) {
+                await engine.setSessionMarkerColor(sessionResult.sessionId, parsed.data.markerColor)
+            }
             return c.json({ ok: true })
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Failed to rename session'

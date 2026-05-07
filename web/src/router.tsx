@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
     Navigate,
@@ -174,6 +174,10 @@ function SessionsPage() {
     const { machines } = useMachines(api, true)
     const [cleanupDialogOpen, setCleanupDialogOpen] = useState(false)
     const [isCleaningInactive, setIsCleaningInactive] = useState(false)
+    const [lastViewedSessionId, setLastViewedSessionId] = useState<string | null>(() => {
+        if (typeof window === 'undefined') return null
+        return window.sessionStorage.getItem('hapi-last-viewed-session-id')
+    })
 
     const handleRefresh = useCallback(() => {
         void refetch()
@@ -190,12 +194,21 @@ function SessionsPage() {
         return labels
     }, [machines])
     const inactiveSessions = useMemo(
-        () => sessions.filter((session) => !session.active),
+        () => sessions.filter((session) => !session.active && !session.markerColor),
         [sessions]
     )
     const sessionMatch = matchRoute({ to: '/sessions/$sessionId', fuzzy: true })
-    const selectedSessionId = sessionMatch && sessionMatch.sessionId !== 'new' ? sessionMatch.sessionId : null
+    const routeSessionId = sessionMatch && sessionMatch.sessionId !== 'new' ? sessionMatch.sessionId : null
     const isSessionsIndex = pathname === '/sessions' || pathname === '/sessions/'
+    const selectedSessionId = routeSessionId ?? (isSessionsIndex ? lastViewedSessionId : null)
+
+    useEffect(() => {
+        if (!routeSessionId) return
+        setLastViewedSessionId(routeSessionId)
+        if (typeof window !== 'undefined') {
+            window.sessionStorage.setItem('hapi-last-viewed-session-id', routeSessionId)
+        }
+    }, [routeSessionId])
 
     const handleCleanupInactive = useCallback(async () => {
         if (!api) {

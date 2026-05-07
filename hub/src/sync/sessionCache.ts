@@ -1,5 +1,5 @@
 import { AgentStateSchema, MetadataSchema, TeamStateSchema } from '@hapi/protocol/schemas'
-import type { CodexCollaborationMode, PermissionMode, Session } from '@hapi/protocol/types'
+import type { CodexCollaborationMode, PermissionMode, Session, SessionMarkerColor } from '@hapi/protocol/types'
 import type { Store } from '../store'
 import { clampAliveTime } from './aliveTime'
 import { EventPublisher } from './eventPublisher'
@@ -133,6 +133,7 @@ export class SessionCache {
             thinkingAt: existing?.thinkingAt ?? 0,
             todos,
             teamState,
+            markerColor: stored.markerColor,
             model: stored.model,
             effort: stored.effort,
             permissionMode: existing?.permissionMode,
@@ -305,6 +306,22 @@ export class SessionCache {
         this.publisher.emit({ type: 'session-updated', sessionId, data: session })
     }
 
+    async setSessionMarkerColor(sessionId: string, markerColor: SessionMarkerColor | null): Promise<void> {
+        const session = this.sessions.get(sessionId)
+        if (!session) {
+            throw new Error('Session not found')
+        }
+
+        const updated = this.store.sessions.setSessionMarkerColor(sessionId, markerColor, session.namespace)
+        if (!updated && session.markerColor !== markerColor) {
+            throw new Error('Failed to update session marker color')
+        }
+
+        session.markerColor = markerColor
+        session.seq += 1
+        this.publisher.emit({ type: 'session-updated', sessionId, data: session })
+    }
+
     async renameSession(sessionId: string, name: string): Promise<void> {
         const session = this.sessions.get(sessionId)
         if (!session) {
@@ -386,6 +403,13 @@ export class SessionCache {
                 if (result.result === 'error') {
                     break
                 }
+            }
+        }
+
+        if (newStored.markerColor === null && oldStored.markerColor !== null) {
+            const updated = this.store.sessions.setSessionMarkerColor(newSessionId, oldStored.markerColor, namespace)
+            if (!updated) {
+                throw new Error('Failed to preserve session marker color during merge')
             }
         }
 

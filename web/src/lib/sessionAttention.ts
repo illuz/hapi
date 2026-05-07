@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 
-export const SESSION_ATTENTION_DURATION_MS = 2_200
+export const SESSION_ATTENTION_DURATION_MS = 3_600
 
 type SessionAttentionSnapshot = Readonly<Record<string, number>>
 

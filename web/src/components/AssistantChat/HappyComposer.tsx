@@ -400,6 +400,22 @@ export function HappyComposer(props: {
             return // let default textarea behavior handle newline
         }
 
+        // In newline mode, Cmd/Ctrl+Enter should send even if autocomplete is open.
+        if (
+            key === 'Enter'
+            && composerEnterBehavior === 'newline'
+            && (e.ctrlKey || e.metaKey)
+            && !e.altKey
+        ) {
+            e.preventDefault()
+            if (canSend) {
+                api.composer().send()
+                clearDraft()
+                setShowContinueHint(false)
+            }
+            return
+        }
+
         // Enter with suggestions visible: select the suggestion
         if (key === 'Enter' && suggestions.length > 0) {
             e.preventDefault()
@@ -408,15 +424,9 @@ export function HappyComposer(props: {
             return
         }
 
-        // Only plain Enter (no modifiers) sends; other modifier combos are ignored
+        // Only plain Enter sends in send mode; modifier combos are ignored here.
         if (key === 'Enter') {
             if (composerEnterBehavior === 'newline') {
-                if ((e.ctrlKey || e.metaKey) && !e.altKey && canSend) {
-                    e.preventDefault()
-                    api.composer().send()
-                    clearDraft()
-                    setShowContinueHint(false)
-                }
                 return
             }
             e.preventDefault()

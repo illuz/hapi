@@ -56,8 +56,16 @@ function createApp(session: Session, opts?: {
     listSlashCommands?: SyncEngine['listSlashCommands']
 }) {
     const applySessionConfigCalls: Array<[string, Record<string, unknown>]> = []
+    const renameSessionCalls: Array<[string, string]> = []
+    const setSessionMarkerColorCalls: Array<[string, Session['markerColor']]> = []
     const applySessionConfig = async (sessionId: string, config: Record<string, unknown>) => {
         applySessionConfigCalls.push([sessionId, config])
+    }
+    const renameSession = async (sessionId: string, name: string) => {
+        renameSessionCalls.push([sessionId, name])
+    }
+    const setSessionMarkerColor = async (sessionId: string, markerColor: Session['markerColor']) => {
+        setSessionMarkerColorCalls.push([sessionId, markerColor])
     }
     const listCodexModelsForSession = async () => ({
         success: true,
@@ -77,6 +85,8 @@ function createApp(session: Session, opts?: {
     const engine = {
         resolveSessionAccess: () => ({ ok: true, sessionId: session.id, session }),
         applySessionConfig,
+        renameSession,
+        setSessionMarkerColor,
         listCodexModelsForSession,
         listOpencodeModelsForSession,
         resumeSession,
@@ -93,7 +103,7 @@ function createApp(session: Session, opts?: {
     })
     app.route('/api', createSessionsRoutes(() => engine as SyncEngine))
 
-    return { app, applySessionConfigCalls }
+    return { app, applySessionConfigCalls, renameSessionCalls, setSessionMarkerColorCalls }
 }
 
 describe('sessions routes', () => {
@@ -361,6 +371,38 @@ describe('sessions routes', () => {
         expect(await response.json()).toEqual({ ok: true })
         expect(applySessionConfigCalls).toEqual([
             ['session-1', { effort: 'max' }]
+        ])
+    })
+
+    it('updates marker color through patch session route', async () => {
+        const { app, setSessionMarkerColorCalls } = createApp(createSession())
+
+        const response = await app.request('/api/sessions/session-1', {
+            method: 'PATCH',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ markerColor: 'yellow' })
+        })
+
+        expect(response.status).toBe(200)
+        expect(await response.json()).toEqual({ ok: true })
+        expect(setSessionMarkerColorCalls).toEqual([
+            ['session-1', 'yellow']
+        ])
+    })
+
+    it('updates name through patch session route', async () => {
+        const { app, renameSessionCalls } = createApp(createSession())
+
+        const response = await app.request('/api/sessions/session-1', {
+            method: 'PATCH',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ name: 'Renamed session' })
+        })
+
+        expect(response.status).toBe(200)
+        expect(await response.json()).toEqual({ ok: true })
+        expect(renameSessionCalls).toEqual([
+            ['session-1', 'Renamed session']
         ])
     })
 

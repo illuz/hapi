@@ -488,13 +488,29 @@ export function SessionChat(props: {
         setAutoContinuePrompt(settings.prompt)
     }, [])
 
-    const quickPromptActions = useMemo<QuickPromptAction[]>(() => ([
-        { id: 'commit', label: 'ok, commit it', message: 'ok, commit it' },
-        { id: 'commit-and-push', label: 'ok, commit it and push', message: 'ok, commit it and push' },
-        { id: 'plan-1', label: '好的，继续方案一', message: '好的，继续方案一' },
-        { id: 'plan-2', label: '好的，继续方案二', message: '好的，继续方案二' },
-        { id: 'plan-3', label: '好的，继续方案三', message: '好的，继续方案三' }
-    ]), [])
+    const quickPromptActions = useMemo<QuickPromptAction[]>(() => {
+        const commonActions: QuickPromptAction[] = [
+            { id: 'commit', label: 'ok, commit it', message: 'ok, commit it' },
+            { id: 'commit-and-push', label: 'ok, commit it and push', message: 'ok, commit it and push' },
+            { id: 'plan-1', label: '好的，继续方案一', message: '好的，继续方案一' },
+            { id: 'plan-2', label: '好的，继续方案二', message: '好的，继续方案二' },
+            { id: 'plan-3', label: '好的，继续方案三', message: '好的，继续方案三' }
+        ]
+
+        if (agentFlavor !== 'codex') {
+            return commonActions
+        }
+
+        return [
+            { id: 'codex-status', label: '/status', message: '/status' },
+            { id: 'codex-help', label: '/help', message: '/help' },
+            { id: 'codex-clear', label: '/clear', message: '/clear' },
+            { id: 'codex-compact', label: '/compact', message: '/compact' },
+            { id: 'codex-plan', label: '/plan', message: '/plan' },
+            { id: 'codex-plan-off', label: '/plan off', message: '/plan off' },
+            ...commonActions
+        ]
+    }, [agentFlavor])
 
     const handleQuickPrompt = useCallback((action: QuickPromptAction) => {
         handleSend(action.message)

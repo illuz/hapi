@@ -713,6 +713,7 @@ function SessionItem(props: {
                 canForkSession={forkSupported}
                 canSpawnSessionFromConfig={spawnFromConfigSupported}
                 sessionActive={s.active}
+                sessionId={s.id}
                 markerColor={s.markerColor}
                 onSelectMarkerColor={(markerColor) => { void setSessionMarkerColor(markerColor) }}
                 onRename={() => setRenameOpen(true)}

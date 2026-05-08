@@ -121,6 +121,7 @@ export default {
   'session.action.archive': '归档',
   'session.action.delete': '删除',
   'session.action.copy': '复制',
+  'session.action.copyId': '复制会话 ID',
 
   // Dialogs
   'dialog.rename.title': '重命名会话',

@@ -9,8 +9,11 @@ import {
 } from 'react'
 import { SessionMarkerDot } from '@/components/SessionMarkerDot'
 import { Spinner } from '@/components/Spinner'
+import { CopyIcon } from '@/components/icons'
+import { safeCopyToClipboard } from '@/lib/clipboard'
 import { SESSION_MARKER_COLORS } from '@/lib/sessionMarkers'
 import { useTranslation } from '@/lib/use-translation'
+import { usePlatform } from '@/hooks/usePlatform'
 import type { SessionMarkerColor } from '@/types/api'
 
 type SessionActionMenuProps = {
@@ -19,6 +22,7 @@ type SessionActionMenuProps = {
     canForkSession?: boolean
     canSpawnSessionFromConfig?: boolean
     sessionActive: boolean
+    sessionId: string
     markerColor: SessionMarkerColor | null
     onSelectMarkerColor: (markerColor: SessionMarkerColor | null) => void
     onRename: () => void
@@ -152,6 +156,7 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
         canForkSession = false,
         canSpawnSessionFromConfig = false,
         sessionActive,
+        sessionId,
         markerColor,
         onSelectMarkerColor,
         onRename,
@@ -165,6 +170,7 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
     const menuRef = useRef<HTMLDivElement | null>(null)
     const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null)
     const [pendingAction, setPendingAction] = useState<'fork' | 'spawn' | null>(null)
+    const { haptic } = usePlatform()
     const internalId = useId()
     const resolvedMenuId = menuId ?? `session-action-menu-${internalId}`
     const headingId = `${resolvedMenuId}-heading`
@@ -206,6 +212,17 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
             await onSpawnSessionFromConfig()
         } finally {
             setPendingAction(null)
+            onClose()
+        }
+    }
+
+    const handleCopySessionId = async () => {
+        try {
+            await safeCopyToClipboard(sessionId)
+            haptic.notification('success')
+        } catch {
+            haptic.notification('error')
+        } finally {
             onClose()
         }
     }
@@ -362,6 +379,17 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                 >
                     <EditIcon className="text-[var(--app-hint)]" />
                     {t('session.action.rename')}
+                </button>
+
+                <button
+                    type="button"
+                    role="menuitem"
+                    disabled={pendingAction !== null}
+                    className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
+                    onClick={handleCopySessionId}
+                >
+                    <CopyIcon className="text-[var(--app-hint)]" />
+                    {t('session.action.copyId')}
                 </button>
 
                 {canForkSession ? (

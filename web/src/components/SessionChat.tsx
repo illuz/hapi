@@ -500,8 +500,6 @@ export function SessionChat(props: {
             { id: 'codex-goal', label: '/goal', message: '/goal' },
             { id: 'codex-clear', label: '/clear', message: '/clear' },
             { id: 'codex-compact', label: '/compact', message: '/compact' },
-            { id: 'codex-plan', label: '/plan', message: '/plan' },
-            { id: 'codex-plan-off', label: '/plan off', message: '/plan off' },
             ...commonActions
         ]
     }, [agentFlavor])

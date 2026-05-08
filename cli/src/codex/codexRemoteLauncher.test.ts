@@ -11,6 +11,18 @@ const harness = vi.hoisted(() => ({
     startTurnThreadIds: [] as string[],
     interruptedTurns: [] as Array<{ threadId: string; turnId: string }>,
     compactThreadIds: [] as string[],
+    getGoalThreadIds: [] as string[],
+    setGoalCalls: [] as Array<{ threadId: string; objective?: string | null }>,
+    clearGoalThreadIds: [] as string[],
+    currentGoal: null as null | {
+        threadId: string;
+        objective: string;
+        status: string;
+        tokenBudget: number | null;
+        tokensUsed: number;
+        createdAt: number;
+        updatedAt: number;
+    },
     suppressTurnCompletion: false,
     remainingThreadSystemErrors: 0,
     startTurnMessages: [] as string[],
@@ -65,6 +77,45 @@ vi.mock('./codexAppServerClient', () => {
             harness.notifications.push({ method: 'thread/compacted', params: compacted });
             this.notificationHandler?.('thread/compacted', compacted);
             return {};
+        }
+
+        async getThreadGoal(params?: { threadId?: string }): Promise<{ goal: typeof harness.currentGoal }> {
+            const threadId = params?.threadId ?? 'thread-unknown';
+            harness.getGoalThreadIds.push(threadId);
+            return { goal: harness.currentGoal };
+        }
+
+        async setThreadGoal(params?: { threadId?: string; objective?: string | null }): Promise<{ goal: NonNullable<typeof harness.currentGoal> }> {
+            const threadId = params?.threadId ?? 'thread-unknown';
+            harness.setGoalCalls.push({
+                threadId,
+                objective: params?.objective ?? null
+            });
+            harness.currentGoal = {
+                threadId,
+                objective: params?.objective ?? 'unset goal',
+                status: 'active',
+                tokenBudget: null,
+                tokensUsed: 0,
+                createdAt: 1,
+                updatedAt: 1
+            };
+            this.notificationHandler?.('thread/goal/updated', {
+                threadId,
+                goal: harness.currentGoal
+            });
+            return { goal: harness.currentGoal };
+        }
+
+        async clearThreadGoal(params?: { threadId?: string }): Promise<{ cleared: boolean }> {
+            const threadId = params?.threadId ?? 'thread-unknown';
+            harness.clearGoalThreadIds.push(threadId);
+            const hadGoal = Boolean(harness.currentGoal);
+            harness.currentGoal = null;
+            if (hadGoal) {
+                this.notificationHandler?.('thread/goal/cleared', { threadId });
+            }
+            return { cleared: hadGoal };
         }
 
         async startTurn(params?: { threadId?: string; input?: Array<{ text?: string }>; message?: string; userMessage?: string }): Promise<{ turn: { id?: string } }> {
@@ -182,6 +233,7 @@ function createSessionStub(messages = ['hello from launcher test']) {
     const thinkingChanges: boolean[] = [];
     const foundSessionIds: string[] = [];
     const resetThreadCalls: string[] = [];
+    let currentGoal = harness.currentGoal;
     let currentModel: string | null | undefined;
     let agentState: FakeAgentState = {
         requests: {},
@@ -236,6 +288,7 @@ function createSessionStub(messages = ['hello from launcher test']) {
         resetCodexThread() {
             resetThreadCalls.push(session.sessionId ?? 'none');
             session.sessionId = null;
+            currentGoal = null;
         },
         sendAgentMessage(message: unknown) {
             client.sendAgentMessage(message);
@@ -245,6 +298,12 @@ function createSessionStub(messages = ['hello from launcher test']) {
         },
         sendUserMessage(text: string) {
             client.sendUserMessage(text);
+        },
+        setGoal(goal: typeof harness.currentGoal) {
+            currentGoal = goal;
+        },
+        getGoal() {
+            return currentGoal;
         }
     };
 
@@ -271,6 +330,10 @@ describe('codexRemoteLauncher', () => {
         harness.startTurnThreadIds = [];
         harness.interruptedTurns = [];
         harness.compactThreadIds = [];
+        harness.getGoalThreadIds = [];
+        harness.setGoalCalls = [];
+        harness.clearGoalThreadIds = [];
+        harness.currentGoal = null;
         harness.suppressTurnCompletion = false;
         harness.startTurnMessages = [];
         harness.failResumeThreadIds = [];
@@ -589,6 +652,82 @@ describe('codexRemoteLauncher', () => {
         expect(sessionEvents).toContainEqual({
             type: 'message',
             message: 'Nothing to compact'
+        });
+    });
+
+    it('shows the current goal without starting a turn', async () => {
+        harness.currentGoal = {
+            threadId: 'thread-1',
+            objective: 'Ship the benchmark fix',
+            status: 'active',
+            tokenBudget: 50000,
+            tokensUsed: 1200,
+            createdAt: 1,
+            updatedAt: 2
+        };
+        const { session, sessionEvents } = createSessionStub(['first message', '/goal']);
+
+        const exitReason = await codexRemoteLauncher(session as never);
+
+        expect(exitReason).toBe('exit');
+        expect(harness.startThreadIds).toEqual(['thread-1']);
+        expect(harness.startTurnThreadIds).toEqual(['thread-1']);
+        expect(harness.getGoalThreadIds).toEqual(['thread-1']);
+        expect(sessionEvents).toContainEqual({
+            type: 'message',
+            message: 'Codex goal\nobjective: Ship the benchmark fix\nstatus: active\ntokens: 1200 / 50000'
+        });
+    });
+
+    it('sets a goal on a fresh thread without starting a turn', async () => {
+        const { session, sessionEvents } = createSessionStub(['/goal Ship the benchmark fix']);
+
+        const exitReason = await codexRemoteLauncher(session as never);
+
+        expect(exitReason).toBe('exit');
+        expect(harness.startThreadIds).toEqual(['thread-1']);
+        expect(harness.startTurnThreadIds).toEqual([]);
+        expect(harness.setGoalCalls).toEqual([{
+            threadId: 'thread-1',
+            objective: 'Ship the benchmark fix'
+        }]);
+        expect(session.getGoal()).toEqual({
+            threadId: 'thread-1',
+            objective: 'Ship the benchmark fix',
+            status: 'active',
+            tokenBudget: null,
+            tokensUsed: 0,
+            createdAt: 1,
+            updatedAt: 1
+        });
+        expect(sessionEvents).toContainEqual({
+            type: 'message',
+            message: 'Codex goal set\nobjective: Ship the benchmark fix\nstatus: active\ntokens: 0'
+        });
+    });
+
+    it('clears an existing goal without starting a turn', async () => {
+        harness.currentGoal = {
+            threadId: 'thread-1',
+            objective: 'Ship the benchmark fix',
+            status: 'active',
+            tokenBudget: null,
+            tokensUsed: 1200,
+            createdAt: 1,
+            updatedAt: 2
+        };
+        const { session, sessionEvents } = createSessionStub(['first message', '/goal clear']);
+
+        const exitReason = await codexRemoteLauncher(session as never);
+
+        expect(exitReason).toBe('exit');
+        expect(harness.startThreadIds).toEqual(['thread-1']);
+        expect(harness.startTurnThreadIds).toEqual(['thread-1']);
+        expect(harness.clearGoalThreadIds).toEqual(['thread-1']);
+        expect(session.getGoal()).toBeNull();
+        expect(sessionEvents).toContainEqual({
+            type: 'message',
+            message: 'Codex goal cleared'
         });
     });
 

@@ -17,6 +17,7 @@ import { registerAppServerPermissionHandlers } from './utils/appServerPermission
 import { buildThreadStartParams, buildTurnStartParams } from './utils/appServerConfig';
 import { shouldIgnoreTerminalEvent } from './utils/terminalEventGuard';
 import { parseCodexSpecialCommand } from './codexSpecialCommands';
+import type { ThreadGoal } from './appServerTypes';
 import {
     RemoteLauncherBase,
     type RemoteLauncherDisplayContext,
@@ -168,6 +169,84 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
 
         const asString = (value: unknown): string | null => {
             return typeof value === 'string' && value.length > 0 ? value : null;
+        };
+
+        const normalizeGoalStatus = (value: unknown): string | null => {
+            const raw = asString(value);
+            return raw ? raw.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase() : null;
+        };
+
+        const extractThreadGoal = (value: unknown): ThreadGoal | null => {
+            const record = asRecord(value);
+            const objective = asString(record?.objective);
+            const status = asString(record?.status);
+            const tokenBudgetValue = record?.tokenBudget;
+            const tokensUsedValue = record?.tokensUsed;
+            const createdAtValue = record?.createdAt;
+            const updatedAtValue = record?.updatedAt;
+
+            if (!record || !objective || !status) {
+                return null;
+            }
+
+            return {
+                ...record,
+                threadId: asString(record.threadId) ?? this.currentThreadId ?? session.sessionId ?? 'unknown-thread',
+                objective,
+                status,
+                tokenBudget: typeof tokenBudgetValue === 'number' && Number.isFinite(tokenBudgetValue)
+                    ? tokenBudgetValue
+                    : null,
+                tokensUsed: typeof tokensUsedValue === 'number' && Number.isFinite(tokensUsedValue)
+                    ? tokensUsedValue
+                    : 0,
+                ...(typeof record.timeUsedSeconds === 'number' && Number.isFinite(record.timeUsedSeconds)
+                    ? { timeUsedSeconds: record.timeUsedSeconds }
+                    : {}),
+                createdAt: typeof createdAtValue === 'number' && Number.isFinite(createdAtValue) ? createdAtValue : 0,
+                updatedAt: typeof updatedAtValue === 'number' && Number.isFinite(updatedAtValue) ? updatedAtValue : 0,
+            };
+        };
+
+        const formatGoalStatusMessage = (goal: ThreadGoal | null): string => {
+            if (!goal) {
+                return 'No Codex goal is set';
+            }
+
+            const lines = [
+                'Codex goal',
+                `objective: ${goal.objective}`,
+                `status: ${normalizeGoalStatus(goal.status) ?? goal.status}`,
+                `tokens: ${goal.tokensUsed}${goal.tokenBudget !== null ? ` / ${goal.tokenBudget}` : ''}`
+            ];
+            if (typeof goal.timeUsedSeconds === 'number' && Number.isFinite(goal.timeUsedSeconds)) {
+                lines.push(`time used: ${goal.timeUsedSeconds}s`);
+            }
+            return lines.join('\n');
+        };
+
+        const formatGoalCommandError = (error: unknown): string => {
+            const detail = error instanceof Error ? error.message : String(error);
+            if (detail.includes('Method not found: thread/goal/')) {
+                return 'Current Codex CLI does not support /goal yet. Please upgrade Codex and retry.';
+            }
+            return `Goal command failed: ${detail}`;
+        };
+
+        const handleThreadGoalNotification = (method: string, params: unknown): boolean => {
+            if (method === 'thread/goal/updated') {
+                const record = asRecord(params);
+                const goal = extractThreadGoal(record?.goal);
+                if (goal) {
+                    session.setGoal(goal);
+                }
+                return true;
+            }
+            if (method === 'thread/goal/cleared') {
+                session.setGoal(null);
+                return true;
+            }
+            return false;
         };
 
         const applyResolvedModel = (value: unknown): string | undefined => {
@@ -758,6 +837,9 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
         });
 
         appServerClient.setNotificationHandler((method, params) => {
+            if (handleThreadGoalNotification(method, params)) {
+                return;
+            }
             const events = appServerEventConverter.handleNotification(method, params);
             for (const event of events) {
                 const eventRecord = asRecord(event) ?? { type: undefined };
@@ -855,6 +937,120 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
             }
         };
 
+        const ensureThreadForGoal = async (
+            mode: EnhancedMode,
+            options?: { allowStart?: boolean }
+        ): Promise<string | null> => {
+            if (this.currentThreadId && this.currentThreadId !== invalidThreadId) {
+                hasThread = true;
+                return this.currentThreadId;
+            }
+
+            const resumeCandidate = session.sessionId && session.sessionId !== invalidThreadId
+                ? session.sessionId
+                : null;
+            const threadParams = buildThreadStartParams({
+                cwd: session.path,
+                mode,
+                mcpServers,
+                cliOverrides: session.codexCliOverrides
+            });
+
+            if (resumeCandidate) {
+                try {
+                    const resumeResponse = await appServerClient.resumeThread({
+                        threadId: resumeCandidate,
+                        ...threadParams
+                    }, {
+                        signal: this.abortController.signal
+                    });
+                    const resumeRecord = asRecord(resumeResponse);
+                    const resumeThread = resumeRecord ? asRecord(resumeRecord.thread) : null;
+                    const threadId = asString(resumeThread?.id) ?? resumeCandidate;
+                    applyResolvedModel(resumeRecord?.model);
+                    this.currentThreadId = threadId;
+                    session.onSessionFound(threadId);
+                    hasThread = true;
+                    return threadId;
+                } catch (error) {
+                    logger.warn(`[Codex] Failed to resume app-server thread ${resumeCandidate} for /goal`, error);
+                    throw error;
+                }
+            }
+
+            if (!options?.allowStart) {
+                return null;
+            }
+
+            const threadResponse = await appServerClient.startThread(threadParams, {
+                signal: this.abortController.signal
+            });
+            const threadRecord = asRecord(threadResponse);
+            const thread = threadRecord ? asRecord(threadRecord.thread) : null;
+            const threadId = asString(thread?.id);
+            applyResolvedModel(threadRecord?.model);
+            if (!threadId) {
+                throw new Error('app-server thread/start did not return thread.id');
+            }
+            this.currentThreadId = threadId;
+            session.onSessionFound(threadId);
+            hasThread = true;
+            return threadId;
+        };
+
+        const handleGoalCommand = async (message: QueuedMessage, action: 'show' | 'set' | 'clear', objective?: string): Promise<boolean> => {
+            try {
+                if (action === 'show') {
+                    const threadId = await ensureThreadForGoal(message.mode);
+                    if (!threadId) {
+                        sendVisibleStatus('No Codex goal is set');
+                        return true;
+                    }
+
+                    const response = await appServerClient.getThreadGoal({ threadId });
+                    const goal = extractThreadGoal(asRecord(response)?.goal ?? null);
+                    session.setGoal(goal);
+                    sendVisibleStatus(formatGoalStatusMessage(goal));
+                    return true;
+                }
+
+                if (action === 'clear') {
+                    const threadId = await ensureThreadForGoal(message.mode);
+                    if (!threadId) {
+                        session.setGoal(null);
+                        sendVisibleStatus('No Codex goal to clear');
+                        return true;
+                    }
+
+                    const response = await appServerClient.clearThreadGoal({ threadId });
+                    const cleared = asRecord(response)?.cleared;
+                    const didClear = typeof cleared === 'boolean' ? cleared : Boolean(cleared);
+                    session.setGoal(null);
+                    sendVisibleStatus(didClear ? 'Codex goal cleared' : 'No Codex goal to clear');
+                    return true;
+                }
+
+                const threadId = await ensureThreadForGoal(message.mode, { allowStart: true });
+                if (!threadId || !objective) {
+                    sendVisibleStatus('Failed to create a Codex thread for /goal');
+                    return true;
+                }
+
+                const response = await appServerClient.setThreadGoal({
+                    threadId,
+                    objective
+                });
+                const goal = extractThreadGoal(asRecord(response)?.goal ?? null);
+                session.setGoal(goal);
+                sendVisibleStatus(goal
+                    ? formatGoalStatusMessage(goal).replace(/^Codex goal\b/, 'Codex goal set')
+                    : 'Codex goal set');
+            } catch (error) {
+                sendVisibleStatus(formatGoalCommandError(error));
+            }
+            return true;
+        };
+
         const resumeExistingThreadForCompact = async (mode: EnhancedMode): Promise<string | null> => {
             if (this.currentThreadId && this.currentThreadId !== invalidThreadId) {
                 hasThread = true;
@@ -904,8 +1100,6 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
             }
 
             if (specialCommand.type === 'invalid') {
-                await interruptActiveTurn();
-                resetCurrentTurnState();
                 sendVisibleStatus(specialCommand.message);
                 return true;
             }
@@ -919,6 +1113,10 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                 session.resetCodexThread();
                 sendVisibleStatus('Context was reset');
                 return true;
+            }
+
+            if (specialCommand.type === 'goal') {
+                return handleGoalCommand(message, specialCommand.action, specialCommand.objective);
             }
 
             await interruptActiveTurn();

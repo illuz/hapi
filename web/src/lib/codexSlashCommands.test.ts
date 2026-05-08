@@ -12,6 +12,7 @@ describe('getBuiltinSlashCommands', () => {
             'clear',
             'compact',
             'fast',
+            'goal',
             'plan',
             'status',
             'execute',
@@ -35,17 +36,20 @@ describe('mergeSlashCommands', () => {
         ])
     })
 
-    it('keeps reserved /clear and /compact mapped to built-ins', () => {
+    it('keeps reserved /clear, /compact, and /goal mapped to built-ins', () => {
         const commands = mergeSlashCommands([
             { name: 'clear', source: 'builtin' },
             { name: 'compact', source: 'builtin' },
+            { name: 'goal', source: 'builtin' },
             { name: 'clear', source: 'project', content: 'project clear prompt' },
-            { name: 'compact', source: 'project', content: 'project compact prompt' }
+            { name: 'compact', source: 'project', content: 'project compact prompt' },
+            { name: 'goal', source: 'project', content: 'project goal prompt' }
         ])
 
         expect(commands).toEqual([
             { name: 'clear', source: 'builtin' },
-            { name: 'compact', source: 'builtin' }
+            { name: 'compact', source: 'builtin' },
+            { name: 'goal', source: 'builtin' }
         ])
     })
 
@@ -80,6 +84,10 @@ describe('findCodexCustomPromptExpansion', () => {
         expect(findCodexCustomPromptExpansion('  /clear  ', [
             { name: 'clear', source: 'builtin' },
             { name: 'clear', source: 'project', content: 'custom clear prompt' }
+        ])).toBeNull()
+        expect(findCodexCustomPromptExpansion('/goal', [
+            { name: 'goal', source: 'builtin' },
+            { name: 'goal', source: 'project', content: 'custom goal prompt' }
         ])).toBeNull()
     })
 

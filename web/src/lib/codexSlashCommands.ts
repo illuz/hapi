@@ -15,6 +15,7 @@ const BUILTIN_COMMANDS: Record<string, SlashCommand[]> = {
         { name: 'clear', description: 'Clear current Codex thread context', source: 'builtin' },
         { name: 'compact', description: 'Compact current Codex thread context', source: 'builtin' },
         { name: 'fast', description: 'Set Codex service tier to priority; use /fast off to restore auto', source: 'builtin' },
+        { name: 'goal', description: 'Show or set current Codex thread goal; use /goal clear to remove it', source: 'builtin' },
         { name: 'help', description: 'Show supported HAPI Codex slash commands', source: 'builtin' },
         { name: 'plan', description: 'Enable plan mode; use /plan off to return to default', source: 'builtin' },
         { name: 'default', description: 'Return Codex collaboration mode to default', source: 'builtin' },
@@ -42,7 +43,7 @@ const UNSUPPORTED_CODEX_BUILTIN_COMMANDS = new Set([
     'undo',
     'diff',
 ])
-const RESERVED_CODEX_CONTROL_COMMANDS = new Set(['clear', 'compact'])
+const RESERVED_CODEX_CONTROL_COMMANDS = new Set(['clear', 'compact', 'goal'])
 
 export function getBuiltinSlashCommands(agentType: string): SlashCommand[] {
     return BUILTIN_COMMANDS[agentType] ?? BUILTIN_COMMANDS.claude ?? []

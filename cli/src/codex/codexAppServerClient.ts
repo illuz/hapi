@@ -6,6 +6,12 @@ import type {
     InitializeResponse,
     ModelListParams,
     ModelListResponse,
+    ThreadGoalClearParams,
+    ThreadGoalClearResponse,
+    ThreadGoalGetParams,
+    ThreadGoalGetResponse,
+    ThreadGoalSetParams,
+    ThreadGoalSetResponse,
     ThreadStartParams,
     ThreadStartResponse,
     ThreadResumeParams,
@@ -205,6 +211,27 @@ export class CodexAppServerClient {
             timeoutMs: CodexAppServerClient.DEFAULT_TIMEOUT_MS
         });
         return response as ThreadCompactStartResponse;
+    }
+
+    async getThreadGoal(params: ThreadGoalGetParams): Promise<ThreadGoalGetResponse> {
+        const response = await this.sendRequest('thread/goal/get', params, {
+            timeoutMs: 30_000
+        });
+        return response as ThreadGoalGetResponse;
+    }
+
+    async setThreadGoal(params: ThreadGoalSetParams): Promise<ThreadGoalSetResponse> {
+        const response = await this.sendRequest('thread/goal/set', params, {
+            timeoutMs: 30_000
+        });
+        return response as ThreadGoalSetResponse;
+    }
+
+    async clearThreadGoal(params: ThreadGoalClearParams): Promise<ThreadGoalClearResponse> {
+        const response = await this.sendRequest('thread/goal/clear', params, {
+            timeoutMs: 30_000
+        });
+        return response as ThreadGoalClearResponse;
     }
 
     async disconnect(): Promise<void> {

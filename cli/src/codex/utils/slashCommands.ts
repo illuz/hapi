@@ -1,11 +1,11 @@
 import { CODEX_PERMISSION_MODES } from '@hapi/protocol/modes';
 import type { CodexPermissionMode } from '@hapi/protocol/types';
-import type { ReasoningEffort, ServiceTier } from '../appServerTypes';
+import type { ReasoningEffort, ServiceTier, ThreadGoal } from '../appServerTypes';
 import type { EnhancedMode } from '../loop';
 import type { SlashCommand } from '@/modules/common/slashCommands';
 
 const REASONING_EFFORTS = new Set<ReasoningEffort>(['none', 'minimal', 'low', 'medium', 'high', 'xhigh']);
-const RESERVED_CODEX_CONTROL_COMMANDS = new Set(['clear', 'compact']);
+const RESERVED_CODEX_CONTROL_COMMANDS = new Set(['clear', 'compact', 'goal']);
 
 const UNSUPPORTED_CODEX_BUILTIN_COMMANDS = new Set([
     'compat',
@@ -57,6 +57,7 @@ export function resolveCodexSlashCommand(
         model?: string;
         modelReasoningEffort?: ReasoningEffort;
         serviceTier?: ServiceTier;
+        goal?: ThreadGoal | null;
     }
 ): CodexSlashResolution {
     const match = /^\s*\/([a-z0-9:_-]+)(?:\s+([\s\S]*))?$/i.exec(text);
@@ -136,6 +137,12 @@ export function resolveCodexSlashCommand(
     }
 
     if (command === 'status') {
+        const goalStatus = !state.goal
+            ? 'none'
+            : [
+                `[${state.goal.status}] ${state.goal.objective}`,
+                `(used ${state.goal.tokensUsed}${state.goal.tokenBudget !== null ? ` / ${state.goal.tokenBudget}` : ''} tokens)`
+            ].join(' ');
         return {
             kind: 'handled',
             message: [
@@ -144,7 +151,8 @@ export function resolveCodexSlashCommand(
                 `collaboration: ${state.collaborationMode}`,
                 `model: ${state.model ?? 'auto'}`,
                 `reasoning: ${state.modelReasoningEffort ?? 'default'}`,
-                `service tier: ${state.serviceTier ?? 'auto'}`
+                `service tier: ${state.serviceTier ?? 'auto'}`,
+                `goal: ${goalStatus}`
             ].join('\n')
         };
     }
@@ -213,6 +221,9 @@ export function resolveCodexSlashCommand(
                 '/fast off — restore service tier to auto',
                 '/clear — reset current Codex thread context',
                 '/compact — compact current Codex thread context',
+                '/goal — show current Codex thread goal',
+                '/goal [objective] — set current Codex thread goal',
+                '/goal clear — clear current Codex thread goal',
                 '/status — show current Codex session config',
                 '/model [name|auto] — show or set model',
                 '/reasoning [low|medium|high|xhigh|default] — show or set reasoning effort',

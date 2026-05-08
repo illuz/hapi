@@ -87,6 +87,39 @@ describe('resolveCodexSlashCommand', () => {
                 { name: 'compact', source: 'project', content: 'custom compact prompt' }
             ]
         })).toEqual({ kind: 'passthrough' });
+
+        expect(resolveCodexSlashCommand('/goal', {
+            ...state,
+            commands: [
+                { name: 'goal', source: 'project', content: 'custom goal prompt' }
+            ]
+        })).toEqual({ kind: 'passthrough' });
+    });
+
+    it('includes current goal in /status output when available', () => {
+        expect(resolveCodexSlashCommand('/status', {
+            ...state,
+            goal: {
+                threadId: 'thread-1',
+                objective: 'Ship the benchmark fix',
+                status: 'active',
+                tokenBudget: 50000,
+                tokensUsed: 1200,
+                createdAt: 1,
+                updatedAt: 2
+            }
+        })).toEqual({
+            kind: 'handled',
+            message: [
+                'Codex status',
+                'permission: default',
+                'collaboration: default',
+                'model: gpt-5.5',
+                'reasoning: high',
+                'service tier: auto',
+                'goal: [active] Ship the benchmark fix (used 1200 / 50000 tokens)'
+            ].join('\n')
+        });
     });
 
     it('handles unsupported Codex built-in commands instead of sending them to the model', () => {

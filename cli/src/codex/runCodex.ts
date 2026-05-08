@@ -13,7 +13,7 @@ import { isPermissionModeAllowedForFlavor } from '@hapi/protocol';
 import { CodexCollaborationModeSchema, PermissionModeSchema } from '@hapi/protocol/schemas';
 import { formatMessageWithAttachments } from '@/utils/attachmentFormatter';
 import { getInvokedCwd } from '@/utils/invokedCwd';
-import type { ReasoningEffort, ServiceTier } from './appServerTypes';
+import type { ReasoningEffort, ServiceTier, ThreadGoal } from './appServerTypes';
 import { parseCodexSpecialCommand } from './codexSpecialCommands';
 import { listSlashCommands } from '@/modules/common/slashCommands';
 import { resolveCodexSlashCommand } from './utils/slashCommands';
@@ -70,6 +70,7 @@ export async function runCodex(opts: {
     let currentModelReasoningEffort: ReasoningEffort | undefined = opts.modelReasoningEffort;
     let currentServiceTier: ServiceTier | undefined = opts.serviceTier;
     let currentCollaborationMode: EnhancedMode['collaborationMode'] = 'default';
+    let currentGoal: ThreadGoal | null = null;
 
     const lifecycle = createRunnerLifecycle({
         session,
@@ -147,6 +148,7 @@ export async function runCodex(opts: {
         if (sessionCollaborationMode) {
             currentCollaborationMode = sessionCollaborationMode;
         }
+        currentGoal = sessionWrapperRef.current?.getGoal() ?? null;
     };
 
     let userMessageChain: Promise<void> = Promise.resolve();
@@ -168,7 +170,8 @@ export async function runCodex(opts: {
                         collaborationMode: currentCollaborationMode,
                         model: currentModel,
                         modelReasoningEffort: currentModelReasoningEffort,
-                        serviceTier: currentServiceTier
+                        serviceTier: currentServiceTier,
+                        goal: currentGoal
                     });
                     if (slash.kind !== 'passthrough') {
                         applySlashUpdates(slash.updates);

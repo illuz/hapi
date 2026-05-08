@@ -2,6 +2,7 @@ import { ApiClient, ApiSessionClient } from '@/lib';
 import { MessageQueue2 } from '@/utils/MessageQueue2';
 import { AgentSessionBase } from '@/agent/sessionBase';
 import type { EnhancedMode, PermissionMode } from './loop';
+import type { ThreadGoal } from './appServerTypes';
 import type { CodexCliOverrides } from './utils/codexCliOverrides';
 import type { LocalLaunchExitReason } from '@/agent/localLaunchPolicy';
 import type { Metadata, SessionModel, SessionModelReasoningEffort, SessionServiceTier } from '@/api/types';
@@ -18,6 +19,7 @@ export class CodexSession extends AgentSessionBase<EnhancedMode> {
     readonly startedBy: 'runner' | 'terminal';
     readonly startingMode: 'local' | 'remote';
     localLaunchFailure: LocalLaunchFailure | null = null;
+    private goal: ThreadGoal | null = null;
 
     private transcriptPathCallbacks: Array<(path: string) => void> = [];
 
@@ -101,6 +103,7 @@ export class CodexSession extends AgentSessionBase<EnhancedMode> {
     resetCodexThread(): void {
         this.sessionId = null;
         this.resetTranscriptPath();
+        this.goal = null;
         this.client.updateMetadata((metadata: Metadata) => {
             const updated = { ...metadata };
             delete updated.codexSessionId;
@@ -126,6 +129,14 @@ export class CodexSession extends AgentSessionBase<EnhancedMode> {
 
     setCollaborationMode = (mode: EnhancedMode['collaborationMode']): void => {
         this.collaborationMode = mode;
+    };
+
+    setGoal = (goal: ThreadGoal | null): void => {
+        this.goal = goal;
+    };
+
+    getGoal = (): ThreadGoal | null => {
+        return this.goal;
     };
 
     recordLocalLaunchFailure = (message: string, exitReason: LocalLaunchExitReason): void => {

@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { isPageVisible, subscribePageVisibility } from '@/lib/pageVisibility'
 import { randomId } from '@/lib/randomId'
 
 export type Toast = {
@@ -17,7 +18,11 @@ export type ToastContextValue = {
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null)
-const TOAST_DURATION_MS = 15000
+export const TOAST_DURATION_MS = 15000
+
+type ToastLifetime = {
+    started: boolean
+}
 
 function createToastId(): string {
     return randomId()
@@ -26,6 +31,16 @@ function createToastId(): string {
 export function ToastProvider({ children }: { children: ReactNode }) {
     const [toasts, setToasts] = useState<Toast[]>([])
     const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+    const lifetimesRef = useRef<Map<string, ToastLifetime>>(new Map())
+
+    const clearTimer = useCallback((id: string) => {
+        const timer = timersRef.current.get(id)
+        if (!timer) {
+            return
+        }
+        clearTimeout(timer)
+        timersRef.current.delete(id)
+    }, [])
 
     useEffect(() => {
         return () => {
@@ -33,26 +48,56 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 clearTimeout(timer)
             }
             timersRef.current.clear()
+            lifetimesRef.current.clear()
         }
     }, [])
 
     const removeToast = useCallback((id: string) => {
         setToasts((prev) => prev.filter((toast) => toast.id !== id))
-        const timer = timersRef.current.get(id)
-        if (timer) {
-            clearTimeout(timer)
-            timersRef.current.delete(id)
-        }
-    }, [])
+        clearTimer(id)
+        lifetimesRef.current.delete(id)
+    }, [clearTimer])
 
-    const addToast = useCallback((toast: Omit<Toast, 'id'>) => {
-        const id = createToastId()
-        setToasts((prev) => [...prev, { id, ...toast }])
+    const startToastTimer = useCallback((id: string, lifetime: ToastLifetime) => {
+        clearTimer(id)
+        lifetime.started = true
         const timer = setTimeout(() => {
             removeToast(id)
         }, TOAST_DURATION_MS)
         timersRef.current.set(id, timer)
-    }, [removeToast])
+    }, [clearTimer, removeToast])
+
+    const syncToastTimers = useCallback(() => {
+        if (!isPageVisible()) {
+            return
+        }
+
+        for (const [id, lifetime] of lifetimesRef.current) {
+            if (lifetime.started) {
+                continue
+            }
+            startToastTimer(id, lifetime)
+        }
+    }, [startToastTimer])
+
+    useEffect(() => {
+        const unsubscribe = subscribePageVisibility(syncToastTimers)
+        syncToastTimers()
+        return unsubscribe
+    }, [syncToastTimers])
+
+    const addToast = useCallback((toast: Omit<Toast, 'id'>) => {
+        const id = createToastId()
+        const lifetime: ToastLifetime = {
+            started: false
+        }
+
+        lifetimesRef.current.set(id, lifetime)
+        setToasts((prev) => [...prev, { id, ...toast }])
+        if (isPageVisible()) {
+            startToastTimer(id, lifetime)
+        }
+    }, [startToastTimer])
 
     const value = useMemo<ToastContextValue>(() => ({
         toasts,

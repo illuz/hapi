@@ -388,7 +388,7 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                     className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
                     onClick={handleCopySessionId}
                 >
-                    <CopyIcon className="text-[var(--app-hint)]" />
+                    <CopyIcon className="h-[18px] w-[18px] text-[var(--app-hint)]" />
                     {t('session.action.copyId')}
                 </button>
 

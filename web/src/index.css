@@ -568,7 +568,7 @@ html[data-theme="dark"] .shiki span {
 }
 
 .session-list-item-attention {
-  animation: session-list-attention 10s ease-in-out forwards;
+  animation: session-list-attention 2.8s ease-in-out infinite;
 }
 
 /* ReactQueryDevtools button - move to middle-right to avoid blocking UI */

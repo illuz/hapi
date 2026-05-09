@@ -1,17 +1,19 @@
 import { useSyncExternalStore } from 'react'
+import { isPageVisible, subscribePageVisibility } from '@/lib/pageVisibility'
 
 export const SESSION_ATTENTION_DURATION_MS = 5 * 60_000
 
 type SessionAttentionSnapshot = Readonly<Record<string, number>>
 type SessionAttentionEntry = {
     token: number
-    expiresAt: number
+    started: boolean
 }
 
 let snapshot: SessionAttentionSnapshot = {}
 const listeners = new Set<() => void>()
 const entries = new Map<string, SessionAttentionEntry>()
 const expiryTimers = new Map<string, ReturnType<typeof setTimeout>>()
+let visibilityUnsubscribe: (() => void) | null = null
 let nextToken = 1
 
 function emit(): void {
@@ -70,6 +72,51 @@ function setSnapshotEntry(sessionId: string, token: number): boolean {
     return true
 }
 
+function clearVisibilitySubscription(): void {
+    if (!visibilityUnsubscribe) {
+        return
+    }
+    visibilityUnsubscribe()
+    visibilityUnsubscribe = null
+}
+
+function ensureVisibilitySubscription(): void {
+    if (visibilityUnsubscribe || entries.size === 0) {
+        return
+    }
+    visibilityUnsubscribe = subscribePageVisibility(() => {
+        if (!isPageVisible()) {
+            return
+        }
+
+        let changed = false
+
+        for (const [sessionId, entry] of entries) {
+            if (entry.started) {
+                continue
+            }
+
+            entry.started = true
+            clearExpiryTimer(sessionId)
+            expiryTimers.set(sessionId, setTimeout(() => {
+                expireSessionAttention(sessionId, entry.token)
+            }, SESSION_ATTENTION_DURATION_MS))
+
+            if (setSnapshotEntry(sessionId, entry.token)) {
+                changed = true
+            }
+        }
+
+        if (Array.from(entries.values()).every((entry) => entry.started)) {
+            clearVisibilitySubscription()
+        }
+
+        if (changed) {
+            emit()
+        }
+    })
+}
+
 function expireSessionAttention(sessionId: string, token: number): void {
     const entry = entries.get(sessionId)
     if (!entry || entry.token !== token) {
@@ -79,6 +126,10 @@ function expireSessionAttention(sessionId: string, token: number): void {
     clearExpiryTimer(sessionId)
     entries.delete(sessionId)
     const changed = clearSnapshotEntry(sessionId)
+
+    if (entries.size === 0) {
+        clearVisibilitySubscription()
+    }
 
     if (changed) {
         emit()
@@ -91,6 +142,7 @@ export function clearSessionAttention(): void {
     }
     expiryTimers.clear()
     entries.clear()
+    clearVisibilitySubscription()
 
     if (Object.keys(snapshot).length === 0) {
         return
@@ -104,19 +156,6 @@ export function getSessionAttentionSnapshot(): SessionAttentionSnapshot {
     return snapshot
 }
 
-export function clearSessionAttentionForSession(sessionId: string): void {
-    const normalizedSessionId = sessionId.trim()
-    if (!normalizedSessionId) {
-        return
-    }
-
-    clearExpiryTimer(normalizedSessionId)
-    entries.delete(normalizedSessionId)
-    if (clearSnapshotEntry(normalizedSessionId)) {
-        emit()
-    }
-}
-
 export function triggerSessionAttention(sessionId: string): void {
     const normalizedSessionId = sessionId.trim()
     if (!normalizedSessionId) {
@@ -126,16 +165,22 @@ export function triggerSessionAttention(sessionId: string): void {
     clearExpiryTimer(normalizedSessionId)
 
     const token = createAttentionToken()
-    const now = Date.now()
-    const entry = {
+    const visible = isPageVisible()
+    entries.set(normalizedSessionId, {
         token,
-        expiresAt: now + SESSION_ATTENTION_DURATION_MS
+        started: visible
+    })
+
+    let changed = false
+    if (visible) {
+        changed = setSnapshotEntry(normalizedSessionId, token)
+        expiryTimers.set(normalizedSessionId, setTimeout(() => {
+            expireSessionAttention(normalizedSessionId, token)
+        }, SESSION_ATTENTION_DURATION_MS))
+    } else {
+        changed = clearSnapshotEntry(normalizedSessionId)
+        ensureVisibilitySubscription()
     }
-    entries.set(normalizedSessionId, entry)
-    const changed = setSnapshotEntry(normalizedSessionId, token)
-    expiryTimers.set(normalizedSessionId, setTimeout(() => {
-        expireSessionAttention(normalizedSessionId, token)
-    }, Math.max(0, entry.expiresAt - now)))
 
     if (changed) {
         emit()

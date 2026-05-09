@@ -3,16 +3,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
     SESSION_ATTENTION_DURATION_MS,
     clearSessionAttention,
-    clearSessionAttentionForSession,
     getSessionAttentionSnapshot,
     triggerSessionAttention,
     useSessionAttentionTokens
 } from './sessionAttention'
 
 describe('sessionAttention', () => {
+    let visibilityState: 'visible' | 'hidden'
+
     beforeEach(() => {
         vi.useFakeTimers()
         clearSessionAttention()
+        visibilityState = 'visible'
+        Object.defineProperty(document, 'visibilityState', {
+            configurable: true,
+            get: () => visibilityState
+        })
     })
 
     afterEach(() => {
@@ -67,11 +73,20 @@ describe('sessionAttention', () => {
         expect(result.current['session-1']).toBeUndefined()
     })
 
-    it('keeps the flash active for up to 5 minutes', () => {
+    it('waits until the page becomes visible before starting the flash lifetime', () => {
+        visibilityState = 'hidden'
         const { result } = renderHook(() => useSessionAttentionTokens())
 
         act(() => {
             triggerSessionAttention('session-1')
+            vi.advanceTimersByTime(SESSION_ATTENTION_DURATION_MS * 2)
+        })
+
+        expect(result.current['session-1']).toBeUndefined()
+
+        act(() => {
+            visibilityState = 'visible'
+            document.dispatchEvent(new Event('visibilitychange'))
         })
 
         expect(result.current['session-1']).toEqual(expect.any(Number))
@@ -87,31 +102,28 @@ describe('sessionAttention', () => {
         expect(result.current['session-1']).toBeUndefined()
     })
 
-    it('clears a session flash once the session is opened', () => {
+    it('continues the flash lifetime while the page is hidden after it starts', () => {
         const { result } = renderHook(() => useSessionAttentionTokens())
 
         act(() => {
             triggerSessionAttention('session-1')
-            triggerSessionAttention('session-2')
+            vi.advanceTimersByTime(4_000)
         })
 
-        expect(result.current['session-1']).toEqual(expect.any(Number))
-        expect(result.current['session-2']).toEqual(expect.any(Number))
+        const activeToken = result.current['session-1']
+        expect(activeToken).toEqual(expect.any(Number))
 
         act(() => {
-            clearSessionAttentionForSession('session-1')
+            visibilityState = 'hidden'
+            document.dispatchEvent(new Event('visibilitychange'))
+            vi.advanceTimersByTime(SESSION_ATTENTION_DURATION_MS - 4_001)
         })
 
+        expect(result.current['session-1']).toBe(activeToken)
+
+        act(() => {
+            vi.advanceTimersByTime(1)
+        })
         expect(result.current['session-1']).toBeUndefined()
-        expect(result.current['session-2']).toEqual(expect.any(Number))
-    })
-
-    it('ignores clearing an unknown session attention id', () => {
-        act(() => {
-            triggerSessionAttention('session-1')
-            clearSessionAttentionForSession('session-2')
-        })
-
-        expect(getSessionAttentionSnapshot()['session-1']).toEqual(expect.any(Number))
     })
 })

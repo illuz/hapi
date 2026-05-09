@@ -14,7 +14,7 @@ import { useVisibilityReporter } from '@/hooks/useVisibilityReporter'
 import { queryKeys } from '@/lib/query-keys'
 import { AppContextProvider } from '@/lib/app-context'
 import { clearMessageWindow, fetchLatestMessages } from '@/lib/message-window-store'
-import { clearSessionAttention, clearSessionAttentionForSession, triggerSessionAttention } from '@/lib/sessionAttention'
+import { clearSessionAttention, triggerSessionAttention } from '@/lib/sessionAttention'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
 import { playNotificationSound } from '@/lib/readyChime'
 import { getStoredEventSound, getStoredPlaybackMode, type SoundEvent } from '@/lib/readySound'
@@ -243,14 +243,6 @@ function AppInner() {
         clearMessageWindow(event.sessionId)
         void fetchLatestMessages(api, event.sessionId)
     }, [api, selectedSessionId])
-
-    useEffect(() => {
-        if (!selectedSessionId) {
-            return
-        }
-        clearSessionAttentionForSession(selectedSessionId)
-    }, [selectedSessionId])
-
     const translateIncomingToast = useCallback((title: string, body: string): { title: string; body: string } => {
         const normalizedTitle = title.trim()
         const normalizedBody = body.trim()
@@ -296,9 +288,7 @@ function AppInner() {
     }, [t])
 
     const handleToast = useCallback((event: ToastEvent) => {
-        if (event.data.kind === 'message' && event.data.sessionId !== selectedSessionId) {
-            triggerSessionAttention(event.data.sessionId)
-        }
+        triggerSessionAttention(event.data.sessionId)
 
         const playbackMode = getStoredPlaybackMode()
         const visibilityState = typeof document !== 'undefined' ? document.visibilityState : 'visible'
@@ -330,7 +320,7 @@ function AppInner() {
             url: event.data.url,
             kind: event.data.kind
         })
-    }, [addToast, selectedSessionId, translateIncomingToast])
+    }, [addToast, translateIncomingToast])
 
     const eventSubscription = useMemo(() => {
         if (selectedSessionId) {

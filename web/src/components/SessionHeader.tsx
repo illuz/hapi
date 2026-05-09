@@ -1,6 +1,8 @@
 import { useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import type { Session } from '@/types/api'
 import type { ApiClient } from '@/api/client'
+import { usePlatform } from '@/hooks/usePlatform'
 import { isTelegramApp } from '@/hooks/useTelegram'
 import { useSessionActions } from '@/hooks/mutations/useSessionActions'
 import { SessionActionMenu } from '@/components/SessionActionMenu'
@@ -8,9 +10,11 @@ import { SessionMarkerDot } from '@/components/SessionMarkerDot'
 import { SessionMarkerMenu } from '@/components/SessionMarkerMenu'
 import { RenameSessionDialog } from '@/components/RenameSessionDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { canForkSession, canSpawnSessionFromConfig } from '@/lib/sessionBranching'
 import { getSessionModelLabel } from '@/lib/sessionModelLabel'
 import { getSessionMarkerColorHex } from '@/lib/sessionMarkers'
 import { getDisplaySessionTitle, getSessionTitle } from '@/lib/sessionTitle'
+import { useToast } from '@/lib/toast-context'
 import { useTranslation } from '@/lib/use-translation'
 
 function FilesIcon(props: { className?: string }) {
@@ -85,11 +89,16 @@ export function SessionHeader(props: {
 }) {
     const { t } = useTranslation()
     const { session, api, onSessionDeleted } = props
+    const navigate = useNavigate()
+    const { haptic } = usePlatform()
+    const { addToast } = useToast()
     const title = useMemo(() => getSessionTitle(session), [session])
     const displayTitle = useMemo(() => getDisplaySessionTitle(session), [session])
     const worktreeBranch = session.metadata?.worktree?.branch
     const modelLabel = getSessionModelLabel(session)
     const markerTextColor = getSessionMarkerColorHex(session.markerColor)
+    const forkSupported = canForkSession(session)
+    const spawnFromConfigSupported = canSpawnSessionFromConfig(session)
 
     const [menuOpen, setMenuOpen] = useState(false)
     const [menuAnchorPoint, setMenuAnchorPoint] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
@@ -103,7 +112,15 @@ export function SessionHeader(props: {
     const [archiveOpen, setArchiveOpen] = useState(false)
     const [deleteOpen, setDeleteOpen] = useState(false)
 
-    const { archiveSession, renameSession, setSessionMarkerColor, deleteSession, isPending } = useSessionActions(
+    const {
+        archiveSession,
+        renameSession,
+        setSessionMarkerColor,
+        deleteSession,
+        forkSession,
+        spawnSessionFromConfig,
+        isPending
+    } = useSessionActions(
         api,
         session.id,
         session.metadata?.flavor ?? null
@@ -112,6 +129,44 @@ export function SessionHeader(props: {
     const handleDelete = async () => {
         await deleteSession()
         onSessionDeleted?.()
+    }
+
+    const showActionError = (title: string, error: unknown) => {
+        addToast({
+            title,
+            body: error instanceof Error ? error.message : t('dialog.error.default'),
+            sessionId: session.id,
+            url: `/sessions/${session.id}`,
+            kind: 'failure'
+        })
+    }
+
+    const handleForkSession = async () => {
+        try {
+            const result = await forkSession()
+            haptic.notification('success')
+            await navigate({
+                to: '/sessions/$sessionId',
+                params: { sessionId: result.sessionId }
+            })
+        } catch (error) {
+            haptic.notification('error')
+            showActionError(t('session.action.fork'), error)
+        }
+    }
+
+    const handleSpawnSessionFromConfig = async () => {
+        try {
+            const result = await spawnSessionFromConfig()
+            haptic.notification('success')
+            await navigate({
+                to: '/sessions/$sessionId',
+                params: { sessionId: result.sessionId }
+            })
+        } catch (error) {
+            haptic.notification('error')
+            showActionError(t('session.action.newSession'), error)
+        }
     }
 
     const handleMenuToggle = () => {
@@ -253,6 +308,8 @@ export function SessionHeader(props: {
             <SessionActionMenu
                 isOpen={menuOpen}
                 onClose={() => setMenuOpen(false)}
+                canForkSession={forkSupported}
+                canSpawnSessionFromConfig={spawnFromConfigSupported}
                 sessionActive={session.active}
                 sessionId={session.id}
                 markerColor={session.markerColor}
@@ -260,6 +317,8 @@ export function SessionHeader(props: {
                 onRename={() => setRenameOpen(true)}
                 onArchive={() => setArchiveOpen(true)}
                 onDelete={() => setDeleteOpen(true)}
+                onForkSession={handleForkSession}
+                onSpawnSessionFromConfig={handleSpawnSessionFromConfig}
                 anchorPoint={menuAnchorPoint}
                 menuId={menuId}
             />

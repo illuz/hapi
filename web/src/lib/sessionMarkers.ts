@@ -1,6 +1,20 @@
-import { SESSION_MARKER_COLORS, type SessionMarkerColor } from '@hapi/protocol'
+import { SESSION_MARKER_COLORS as PROTOCOL_SESSION_MARKER_COLORS, type SessionMarkerColor } from '@hapi/protocol'
 
-export { SESSION_MARKER_COLORS }
+// Web UI specific display order:
+// planning → in progress → wrap-up → continue later → reference → focus/mainline.
+const SESSION_MARKER_COLOR_PREFERENCE = [
+    'orange',
+    'blue',
+    'green',
+    'yellow',
+    'purple',
+    'red'
+] as const satisfies readonly SessionMarkerColor[]
+
+export const SESSION_MARKER_COLORS: SessionMarkerColor[] = SESSION_MARKER_COLOR_PREFERENCE.filter(
+    (color): color is SessionMarkerColor => PROTOCOL_SESSION_MARKER_COLORS.includes(color)
+)
+
 export type { SessionMarkerColor }
 
 export const SESSION_MARKER_COLOR_HEX: Record<SessionMarkerColor, string> = {

@@ -156,6 +156,20 @@ export function getSessionAttentionSnapshot(): SessionAttentionSnapshot {
     return snapshot
 }
 
+export function clearSessionAttentionForSession(sessionId: string): void {
+    const normalizedSessionId = sessionId.trim()
+    if (!normalizedSessionId) {
+        return
+    }
+
+    clearExpiryTimer(normalizedSessionId)
+    entries.delete(normalizedSessionId)
+
+    if (clearSnapshotEntry(normalizedSessionId)) {
+        emit()
+    }
+}
+
 export function triggerSessionAttention(sessionId: string): void {
     const normalizedSessionId = sessionId.trim()
     if (!normalizedSessionId) {

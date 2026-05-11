@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
     SESSION_ATTENTION_DURATION_MS,
     clearSessionAttention,
+    clearSessionAttentionForSession,
     getSessionAttentionSnapshot,
     triggerSessionAttention,
     useSessionAttentionTokens
@@ -70,6 +71,17 @@ describe('sessionAttention', () => {
         act(() => {
             vi.advanceTimersByTime(201)
         })
+        expect(result.current['session-1']).toBeUndefined()
+    })
+
+    it('clears the flash when the session is opened', () => {
+        const { result } = renderHook(() => useSessionAttentionTokens())
+
+        act(() => {
+            triggerSessionAttention('session-1')
+            clearSessionAttentionForSession('session-1')
+        })
+
         expect(result.current['session-1']).toBeUndefined()
     })
 

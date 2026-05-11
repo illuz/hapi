@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import type { ApiClient } from '@/api/client'
 import type { Machine, MachineDirectoryEntry } from '@/types/api'
 import { queryKeys } from '@/lib/query-keys'
+import { getMachineTitle } from '@/lib/machineTitle'
 import { useTranslation } from '@/lib/use-translation'
 
 function FolderIcon(props: { className?: string }) {
@@ -50,12 +51,6 @@ function RefreshIcon(props: { className?: string }) {
             <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
         </svg>
     )
-}
-
-function getMachineTitle(machine: Machine): string {
-    if (machine.metadata?.displayName) return machine.metadata.displayName
-    if (machine.metadata?.host) return machine.metadata.host
-    return machine.id.slice(0, 8)
 }
 
 function getMachineRootsSummary(machine: Machine): string {

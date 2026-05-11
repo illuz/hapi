@@ -6,17 +6,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useMachinePathsExists } from '@/hooks/useMachinePathsExists'
 import { usePlatform } from '@/hooks/usePlatform'
 import { useSpawnSession } from '@/hooks/mutations/useSpawnSession'
+import { getMachineTitle } from '@/lib/machineTitle'
 import { formatRunnerSpawnError } from '@/utils/formatRunnerSpawnError'
 import { useTranslation } from '@/lib/use-translation'
 
 type SessionType = 'simple' | 'worktree'
-
-function getMachineTitle(machine: Machine | null): string {
-    if (!machine) return 'Machine'
-    if (machine.metadata?.displayName) return machine.metadata.displayName
-    if (machine.metadata?.host) return machine.metadata.host
-    return machine.id.slice(0, 8)
-}
 
 export function SpawnSession(props: {
     api: ApiClient
@@ -34,7 +28,7 @@ export function SpawnSession(props: {
     const [error, setError] = useState<string | null>(null)
     const { spawnSession, isPending, error: spawnError } = useSpawnSession(props.api)
 
-    const machineTitle = useMemo(() => getMachineTitle(props.machine), [props.machine])
+    const machineTitle = useMemo(() => props.machine ? getMachineTitle(props.machine) : 'Machine', [props.machine])
     const runnerSpawnError = useMemo(
         () => formatRunnerSpawnError(props.machine),
         [props.machine?.runnerState?.lastSpawnError]

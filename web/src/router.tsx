@@ -15,6 +15,7 @@ import { App } from '@/App'
 import { SessionChat } from '@/components/SessionChat'
 import { SessionUnavailableState } from '@/components/SessionUnavailableState'
 import { SessionList } from '@/components/SessionList'
+import { SessionSidebarMoreMenu } from '@/components/SessionSidebarMoreMenu'
 import { NewSession } from '@/components/NewSession'
 import { WorkspaceBrowser } from '@/components/WorkspaceBrowser'
 import { LoadingState } from '@/components/LoadingState'
@@ -308,39 +309,50 @@ function SessionsPage() {
                             >
                                 <RefreshIcon className="h-5 w-5" />
                             </button>
-                            <button
-                                type="button"
-                                onClick={() => navigate({ to: '/browse' })}
-                                className="p-1.5 rounded-full text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)] transition-colors"
-                                title={t('browse.nav')}
-                            >
-                                <FolderOpenIcon className="h-5 w-5" />
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => navigate({ to: '/settings' })}
-                                className="p-1.5 rounded-full text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)] transition-colors"
-                                title={t('settings.title')}
-                            >
-                                <SettingsIcon className="h-5 w-5" />
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setCleanupDialogOpen(true)}
-                                disabled={inactiveSessions.length === 0 || isCleaningInactive}
-                                className="p-1.5 rounded-full text-[var(--app-hint)] hover:text-red-500 hover:bg-[var(--app-subtle-bg)] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-                                title={t('sessions.cleanupInactive')}
-                            >
-                                <TrashIcon className="h-5 w-5" />
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => navigate({ to: '/sessions/new' })}
-                                className="session-list-new-button p-1.5 rounded-full text-[var(--app-link)] transition-colors"
-                                title={t('sessions.new')}
-                            >
-                                <PlusIcon className="h-5 w-5" />
-                            </button>
+                            <div className="lg:hidden">
+                                <SessionSidebarMoreMenu
+                                    isDeleteDisabled={inactiveSessions.length === 0 || isCleaningInactive}
+                                    onBrowse={() => navigate({ to: '/browse' })}
+                                    onSettings={() => navigate({ to: '/settings' })}
+                                    onCleanupInactive={() => setCleanupDialogOpen(true)}
+                                    onNewSession={() => navigate({ to: '/sessions/new' })}
+                                />
+                            </div>
+                            <div className="hidden items-center gap-2 lg:flex">
+                                <button
+                                    type="button"
+                                    onClick={() => navigate({ to: '/browse' })}
+                                    className="p-1.5 rounded-full text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)] transition-colors"
+                                    title={t('browse.nav')}
+                                >
+                                    <FolderOpenIcon className="h-5 w-5" />
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => navigate({ to: '/settings' })}
+                                    className="p-1.5 rounded-full text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)] transition-colors"
+                                    title={t('settings.title')}
+                                >
+                                    <SettingsIcon className="h-5 w-5" />
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setCleanupDialogOpen(true)}
+                                    disabled={inactiveSessions.length === 0 || isCleaningInactive}
+                                    className="p-1.5 rounded-full text-[var(--app-hint)] hover:text-red-500 hover:bg-[var(--app-subtle-bg)] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                                    title={t('sessions.cleanupInactive')}
+                                >
+                                    <TrashIcon className="h-5 w-5" />
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => navigate({ to: '/sessions/new' })}
+                                    className="session-list-new-button p-1.5 rounded-full text-[var(--app-link)] transition-colors"
+                                    title={t('sessions.new')}
+                                >
+                                    <PlusIcon className="h-5 w-5" />
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

@@ -34,7 +34,7 @@ export function createMessagesRoutes(getSyncEngine: () => SyncEngine | null): Ho
         const sessionId = sessionResult.sessionId
 
         const parsed = querySchema.safeParse(c.req.query())
-        const limit = parsed.success ? (parsed.data.limit ?? 50) : 50
+        const limit = parsed.success ? (parsed.data.limit ?? 200) : 200
 
         // V8 byPosition mode: use composite (position_at, seq) cursor
         if (parsed.success && parsed.data.byPosition === '1') {

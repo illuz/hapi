@@ -12,6 +12,7 @@ import { logger } from '@/ui/logger'
 import { runtimePath } from '@/projectPath'
 import { getInvokedCwd } from '@/utils/invokedCwd'
 import { readWorktreeEnv } from '@/utils/worktreeEnv'
+import { getDefaultSessionTitle } from '@hapi/protocol'
 import packageJson from '../../package.json'
 
 export type SessionStartedBy = 'runner' | 'terminal'
@@ -62,6 +63,7 @@ export function buildSessionMetadata(options: {
     const happyLibDir = runtimePath()
     const worktreeInfo = readWorktreeEnv()
     const now = options.now ?? Date.now()
+    const defaultSummaryText = getDefaultSessionTitle(options.flavor)
 
     return {
         path: options.workingDirectory,
@@ -79,6 +81,7 @@ export function buildSessionMetadata(options: {
         lifecycleState: 'running',
         lifecycleStateSince: now,
         flavor: options.flavor,
+        summary: defaultSummaryText ? { text: defaultSummaryText, updatedAt: now } : undefined,
         worktree: worktreeInfo ?? undefined,
         ...options.metadataOverrides
     }

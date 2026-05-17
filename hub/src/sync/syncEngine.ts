@@ -9,6 +9,7 @@
 
 import type { AutoContinueSettings } from '@hapi/protocol/types'
 import type { CodexCollaborationMode, DecryptedMessage, PermissionMode, Session, SessionMarkerColor, SyncEvent } from '@hapi/protocol/types'
+import { getDefaultSessionTitle } from '@hapi/protocol'
 import type { Server } from 'socket.io'
 import type { Store, CancelQueuedMessageResult } from '../store'
 import type { RpcRegistry } from '../socket/rpcRegistry'
@@ -507,7 +508,7 @@ export class SyncEngine {
             return { type: 'error', message: spawnResult.message, code: 'spawn_failed' }
         }
 
-        await this.seedSpawnedSessionFromSource(session, spawnResult.sessionId)
+        await this.seedSpawnedSessionFromSource(session, spawnResult.sessionId, { defaultTitle: true })
         return { type: 'success', sessionId: spawnResult.sessionId }
     }
 
@@ -735,6 +736,7 @@ export class SyncEngine {
         options?: {
             copyHistory?: boolean
             forkLabel?: boolean
+            defaultTitle?: boolean
             rollbackTurns?: number
         }
     ): Promise<void> {
@@ -745,7 +747,8 @@ export class SyncEngine {
         })
 
         this.seedSpawnedSessionSummary(sourceSession, spawnedSessionId, {
-            forkLabel: options?.forkLabel === true
+            forkLabel: options?.forkLabel === true,
+            defaultTitle: options?.defaultTitle === true
         })
 
         if (options?.copyHistory) {
@@ -756,10 +759,12 @@ export class SyncEngine {
     private seedSpawnedSessionSummary(
         sourceSession: Session,
         spawnedSessionId: string,
-        options?: { forkLabel?: boolean }
+        options?: { forkLabel?: boolean; defaultTitle?: boolean }
     ): void {
-        const baseTitle = this.getSessionDisplayTitle(sourceSession)
-            ?? (options?.forkLabel ? this.getSessionPathFallbackTitle(sourceSession) : null)
+        const baseTitle = options?.defaultTitle
+            ? getDefaultSessionTitle(sourceSession.metadata?.flavor)
+            : this.getSessionDisplayTitle(sourceSession)
+                ?? (options?.forkLabel ? this.getSessionPathFallbackTitle(sourceSession) : null)
         if (!baseTitle) {
             return
         }

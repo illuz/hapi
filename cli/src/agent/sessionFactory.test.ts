@@ -25,4 +25,19 @@ describe('buildSessionMetadata', () => {
 
         expect(metadata.host).toBe('custom-session-host')
     })
+
+    it('sets a default title for Codex sessions', () => {
+        const metadata = buildSessionMetadata({
+            flavor: 'codex',
+            startedBy: 'terminal',
+            workingDirectory: '/tmp/project',
+            machineId: 'machine-1',
+            now: 123
+        })
+
+        expect(metadata.summary).toEqual({
+            text: 'Codex新建会话',
+            updatedAt: 123
+        })
+    })
 })

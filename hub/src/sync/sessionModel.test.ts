@@ -1098,7 +1098,7 @@ describe('session model', () => {
                 permissionMode: 'safe-yolo'
             })
             const clonedSession = engine.getSession((result as { sessionId: string }).sessionId)
-            expect(clonedSession?.metadata?.summary?.text).toBe('Original Title')
+            expect(clonedSession?.metadata?.summary?.text).toBe('Codex新建会话')
             expect(clonedSession?.permissionMode).toBe('safe-yolo')
         } finally {
             engine.stop()

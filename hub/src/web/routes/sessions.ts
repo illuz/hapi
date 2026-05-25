@@ -19,6 +19,10 @@ const forkSessionSchema = z.object({
     rollbackTurns: z.number().int().min(0).optional()
 })
 
+const spawnSessionFromConfigSchema = z.object({
+    agent: z.enum(['claude', 'codex']).optional()
+})
+
 const collaborationModeSchema = z.object({
     mode: CodexCollaborationModeSchema
 })
@@ -195,8 +199,16 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
             return sessionResult
         }
 
+        const body = await c.req.json().catch(() => null)
+        const parsed = body ? spawnSessionFromConfigSchema.safeParse(body) : { success: true as const, data: {} }
+        if (!parsed.success) {
+            return c.json({ error: 'Invalid body' }, 400)
+        }
+
         const namespace = c.get('namespace')
-        const result = await engine.spawnSessionFromConfig(sessionResult.sessionId, namespace)
+        const result = await engine.spawnSessionFromConfig(sessionResult.sessionId, namespace, {
+            agent: parsed.data.agent
+        })
         if (result.type === 'error') {
             const status = result.code === 'no_machine_online' ? 503
                 : result.code === 'access_denied' ? 403

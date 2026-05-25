@@ -90,7 +90,7 @@ vi.mock('@/utils/attachmentFormatter', () => ({
     formatMessageWithAttachments: vi.fn((text: string) => text)
 }))
 
-import { runAgentSession } from './runAgentSession'
+import { addProjectAgentContextToPrompt, runAgentSession } from './runAgentSession'
 
 describe('runAgentSession', () => {
     beforeEach(() => {
@@ -119,5 +119,15 @@ describe('runAgentSession', () => {
 
         expect(harness.sendSessionDeath).toHaveBeenCalledWith('error')
         expect(harness.sendSessionDeath).not.toHaveBeenCalledWith('completed')
+    })
+
+    it('prefixes agent context without treating it as a separate message', () => {
+        expect(addProjectAgentContextToPrompt('Analyze logs', ' Review logs carefully ')).toBe(
+            '<project-agent-context>\nReview logs carefully\n</project-agent-context>\n\nAnalyze logs'
+        )
+    })
+
+    it('leaves prompts unchanged when agent context is empty', () => {
+        expect(addProjectAgentContextToPrompt('Analyze logs', '  ')).toBe('Analyze logs')
     })
 })

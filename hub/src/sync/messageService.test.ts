@@ -63,6 +63,34 @@ function makePublisher() {
 // ---------------------------------------------------------------------------
 
 describe('MessageService.cancelQueuedMessage race scenarios', () => {
+    it('persists optional message meta alongside sentFrom when sending messages', async () => {
+        const store = makeStore()
+        const session = makeSession(store, 'agent-context')
+        const publisher = makePublisher()
+        const service = new MessageService(store, makeIo(() => {}), publisher as any)
+
+        await service.sendMessage(session.id, {
+            text: 'Analyze logs',
+            sentFrom: 'webapp',
+            meta: {
+                appendSystemPrompt: 'Use the log-reviewer agent context.'
+            }
+        })
+
+        const [message] = store.messages.getMessages(session.id, 1)
+        expect(message.content).toEqual({
+            role: 'user',
+            content: {
+                type: 'text',
+                text: 'Analyze logs'
+            },
+            meta: {
+                appendSystemPrompt: 'Use the log-reviewer agent context.',
+                sentFrom: 'webapp'
+            }
+        })
+    })
+
     describe('Race-A: CLI ack removed:true → DELETE + status=cancelled', () => {
         it('returns cancelled and emits message-cancelled SSE after CLI confirms removal', async () => {
             const store = makeStore()

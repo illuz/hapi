@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { PermissionHandler } from './permissionHandler';
 import { PLAN_FAKE_REJECT, PLAN_FAKE_RESTART } from '../sdk/prompts';
 import type { Session } from '../session';
+import { resolveToolAutoApprovalDecision } from '@/modules/common/permission/BasePermissionHandler';
 
 function createFakeSession() {
     const queueItems: { message: string; mode: unknown }[] = [];
@@ -104,5 +105,25 @@ describe('PermissionHandler — YOLO plan mode', () => {
 
         expect(result.behavior).toBe('allow');
         expect(queueItems).toHaveLength(0);
+    });
+});
+
+describe('PermissionHandler — project tools write detection', () => {
+    it('does not auto-approve upsert project tools in read-only mode', () => {
+        expect(resolveToolAutoApprovalDecision(
+            'read-only',
+            'mcp__hapi__upsert_project_agent',
+            'tool-call-1'
+        )).toBeNull();
+        expect(resolveToolAutoApprovalDecision(
+            'read-only',
+            'hapi_upsert_project_cron',
+            'tool-call-2'
+        )).toBeNull();
+        expect(resolveToolAutoApprovalDecision(
+            'read-only',
+            'mcp__hapi__list_project_agents',
+            'tool-call-3'
+        )).toBe('approved');
     });
 });

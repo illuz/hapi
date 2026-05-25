@@ -10,6 +10,7 @@
 
 import { createConfiguration, type ConfigSource } from './configuration'
 import { Store } from './store'
+import { CronScheduler } from './sync/cronScheduler'
 import { SyncEngine, type SyncEvent } from './sync/syncEngine'
 import { NotificationHub } from './notifications/notificationHub'
 import type { NotificationChannel } from './notifications/notificationTypes'
@@ -105,6 +106,7 @@ let sseManager: SSEManager | null = null
 let visibilityTracker: VisibilityTracker | null = null
 let notificationHub: NotificationHub | null = null
 let tunnelManager: TunnelManager | null = null
+let cronScheduler: CronScheduler | null = null
 
 async function main() {
     console.log('HAPI Hub starting...')
@@ -194,6 +196,8 @@ async function main() {
     })
 
     syncEngine = new SyncEngine(store, socketServer.io, socketServer.rpcRegistry, sseManager)
+    cronScheduler = new CronScheduler({ store, syncEngine })
+    cronScheduler.start()
 
     const notificationChannels: NotificationChannel[] = [
         new PushNotificationChannel(pushService, sseManager, visibilityTracker, config.publicUrl)
@@ -311,6 +315,7 @@ async function main() {
         await tunnelManager?.stop()
         await happyBot?.stop()
         notificationHub?.stop()
+        cronScheduler?.stop()
         syncEngine?.stop()
         sseManager?.stop()
         webServer?.stop()

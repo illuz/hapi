@@ -510,6 +510,16 @@ export class ApiSessionClient extends EventEmitter {
         })
     }
 
+    getCurrentProjectPath(): string | null {
+        const path = this.metadata?.path
+        return typeof path === 'string' && path.trim().length > 0 ? path : null
+    }
+
+    getCurrentWorkspaceRoots(): string[] | undefined {
+        const path = this.getCurrentProjectPath()
+        return path ? [path] : undefined
+    }
+
     emitMessagesConsumed(localIds: string[]): void {
         if (localIds.length === 0) return
         this.socket.emit('messages-consumed', { sid: this.sessionId, localIds })

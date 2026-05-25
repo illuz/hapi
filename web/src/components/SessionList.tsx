@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import type { SessionSummary } from '@/types/api'
+import type { AgentFlavor, ProjectToolCounts, SessionSummary } from '@/types/api'
 import type { ApiClient } from '@/api/client'
 import { useLongPress } from '@/hooks/useLongPress'
 import { usePlatform } from '@/hooks/usePlatform'
@@ -25,6 +25,15 @@ type SessionGroup = {
     sessions: SessionSummary[]
     latestUpdatedAt: number
     hasActiveSession: boolean
+}
+
+type ProjectToolCountsByKey = Record<string, ProjectToolCounts>
+
+export function getProjectToolCountsKey(machineId: string | null, projectPath: string): string | null {
+    if (!machineId || !projectPath || projectPath === 'Other') {
+        return null
+    }
+    return `${machineId}::${projectPath}`
 }
 
 function SessionsEmptyState(props: {
@@ -267,6 +276,25 @@ function CopyPathButton({ path, className }: { path: string; className?: string 
                 ? <CheckIcon className="h-3.5 w-3.5" />
                 : <CopyIcon className="h-3.5 w-3.5" />
             }
+        </button>
+    )
+}
+
+function ProjectToolCountButton(props: {
+    label: string
+    icon: string
+    count: number
+    onClick: (event: React.MouseEvent<HTMLButtonElement>) => void
+}) {
+    return (
+        <button
+            type="button"
+            onClick={props.onClick}
+            className="shrink-0 rounded-full border border-[var(--app-border)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--app-hint)] transition-colors hover:border-[var(--app-link)] hover:text-[var(--app-link)]"
+            aria-label={`${props.label} ${props.count}`}
+            title={`${props.label}: ${props.count}`}
+        >
+            <span aria-hidden="true">{props.icon}</span> {props.count}
         </button>
     )
 }
@@ -632,9 +660,9 @@ function SessionItem(props: {
         }
     }
 
-    const handleSpawnSessionFromConfig = async () => {
+    const handleSpawnSessionFromConfig = async (agent: Extract<AgentFlavor, 'claude' | 'codex'>) => {
         try {
-            const result = await spawnSessionFromConfig()
+            const result = await spawnSessionFromConfig(agent)
             haptic.notification('success')
             onSelect(result.sessionId)
             await navigate({
@@ -770,6 +798,8 @@ export function SessionList(props: {
     api: ApiClient | null
     machineLabelsById?: Record<string, string>
     selectedSessionId?: string | null
+    projectToolCountsByKey?: ProjectToolCountsByKey
+    onOpenProjectTools?: (args: { machineId: string; projectPath: string; tab: 'agents' | 'cron' }) => void
 }) {
     const { t } = useTranslation()
     const { renderHeader = true, api, selectedSessionId, machineLabelsById = {} } = props
@@ -982,6 +1012,9 @@ export function SessionList(props: {
                                         const visibleGroupSessions = getVisibleGroupSessions(group)
                                         const hiddenSessionCount = group.sessions.length - visibleGroupSessions.length
                                         const sessionGroupExpanded = isSessionGroupExpanded(group)
+                                        const projectToolsKey = getProjectToolCountsKey(group.machineId, group.directory)
+                                        const projectToolCounts = projectToolsKey ? props.projectToolCountsByKey?.[projectToolsKey] : undefined
+                                        const canOpenProjectTools = Boolean(group.machineId && props.onOpenProjectTools && group.directory !== 'Other')
                                         return (
                                             <div key={group.key}>
                                                 <div
@@ -993,6 +1026,36 @@ export function SessionList(props: {
                                                     <span className="font-medium text-sm truncate flex-1">
                                                         {group.displayName}
                                                     </span>
+                                                    {canOpenProjectTools ? (
+                                                        <>
+                                                            <ProjectToolCountButton
+                                                                label="Agents"
+                                                                icon="🤖"
+                                                                count={projectToolCounts?.agents ?? 0}
+                                                                onClick={(event) => {
+                                                                    event.stopPropagation()
+                                                                    props.onOpenProjectTools?.({
+                                                                        machineId: group.machineId!,
+                                                                        projectPath: group.directory,
+                                                                        tab: 'agents',
+                                                                    })
+                                                                }}
+                                                            />
+                                                            <ProjectToolCountButton
+                                                                label="Cron"
+                                                                icon="⏰"
+                                                                count={projectToolCounts?.crons ?? 0}
+                                                                onClick={(event) => {
+                                                                    event.stopPropagation()
+                                                                    props.onOpenProjectTools?.({
+                                                                        machineId: group.machineId!,
+                                                                        projectPath: group.directory,
+                                                                        tab: 'cron',
+                                                                    })
+                                                                }}
+                                                            />
+                                                        </>
+                                                    ) : null}
                                                     <CopyPathButton path={group.directory} className="opacity-0 group-hover/project:opacity-100 transition-opacity duration-150" />
                                                     <span className="text-[11px] tabular-nums text-[var(--app-hint)] shrink-0">
                                                         ({group.sessions.length})

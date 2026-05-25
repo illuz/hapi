@@ -5,6 +5,17 @@ export interface PathValidationResult {
     error?: string;
 }
 
+export function isWithinPathRoot(targetPath: string, rootPath: string): boolean {
+    const resolvedTarget = resolve(targetPath);
+    const resolvedRoot = resolve(rootPath);
+
+    const normalizedTarget = process.platform === 'win32' ? resolvedTarget.toLowerCase() : resolvedTarget;
+    const normalizedRoot = process.platform === 'win32' ? resolvedRoot.toLowerCase() : resolvedRoot;
+    const rootPrefix = normalizedRoot.endsWith(sep) ? normalizedRoot : normalizedRoot + sep;
+
+    return normalizedTarget === normalizedRoot || normalizedTarget.startsWith(rootPrefix);
+}
+
 /**
  * Validates that a path is within the allowed working directory
  * @param targetPath - The path to validate (can be relative or absolute)
@@ -18,11 +29,7 @@ export function validatePath(targetPath: string, workingDirectory: string): Path
 
     // Check if the resolved target path starts with the working directory
     // This prevents access to files outside the working directory
-    const normalizedTarget = process.platform === 'win32' ? resolvedTarget.toLowerCase() : resolvedTarget
-    const normalizedWorkingDir = process.platform === 'win32' ? resolvedWorkingDir.toLowerCase() : resolvedWorkingDir
-    const workingDirPrefix = normalizedWorkingDir.endsWith(sep) ? normalizedWorkingDir : normalizedWorkingDir + sep
-
-    if (normalizedTarget !== normalizedWorkingDir && !normalizedTarget.startsWith(workingDirPrefix)) {
+    if (!isWithinPathRoot(resolvedTarget, resolvedWorkingDir)) {
         return {
             valid: false,
             error: `Access denied: Path '${targetPath}' is outside the working directory`

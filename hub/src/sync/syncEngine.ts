@@ -9,6 +9,11 @@
 
 import type { AutoContinueSettings } from '@hapi/protocol/types'
 import type { CodexCollaborationMode, DecryptedMessage, PermissionMode, Session, SessionMarkerColor, SyncEvent } from '@hapi/protocol/types'
+import type {
+    ProjectToolCountsResult,
+    ProjectCronConfig,
+    ProjectToolKind
+} from '@hapi/protocol/projectTools'
 import { getDefaultSessionTitle } from '@hapi/protocol'
 import type { Server } from 'socket.io'
 import type { Store, CancelQueuedMessageResult } from '../store'
@@ -16,7 +21,7 @@ import type { RpcRegistry } from '../socket/rpcRegistry'
 import type { SSEManager } from '../sse/sseManager'
 import { EventPublisher, type SyncEventListener } from './eventPublisher'
 import { MachineCache, type Machine } from './machineCache'
-import { MessageService } from './messageService'
+import { MessageService, type MessageSentFrom } from './messageService'
 import { AutoContinueService } from './autoContinueService'
 import {
     RpcGateway,
@@ -29,10 +34,16 @@ import {
     type RpcListOpencodeModelsResponse,
     type RpcOpencodeModel,
     type RpcPathExistsResponse,
+    type RpcProjectToolCountsResponse,
+    type RpcProjectToolListResponse,
+    type RpcProjectToolMutationResponse,
     type RpcReadFileResponse,
     type RpcUploadFileResponse
 } from './rpcGateway'
+import { ProjectToolsService } from './projectToolsService'
 import { SessionCache } from './sessionCache'
+import type { StoredCronRun } from '../store'
+import { triggerProjectCronRun } from './cronScheduler'
 
 export type { Session, SyncEvent } from '@hapi/protocol/types'
 export type { Machine } from './machineCache'
@@ -47,6 +58,9 @@ export type {
     RpcListOpencodeModelsResponse,
     RpcOpencodeModel,
     RpcPathExistsResponse,
+    RpcProjectToolCountsResponse,
+    RpcProjectToolListResponse,
+    RpcProjectToolMutationResponse,
     RpcReadFileResponse,
     RpcUploadFileResponse
 } from './rpcGateway'
@@ -58,6 +72,8 @@ export type ResumeSessionResult =
 export type SpawnSessionFromConfigResult =
     | { type: 'success'; sessionId: string }
     | { type: 'error'; message: string; code: 'session_not_found' | 'access_denied' | 'no_machine_online' | 'spawn_unavailable' | 'spawn_failed' }
+
+type SpawnSessionFromConfigAgent = 'claude' | 'codex'
 
 export type ForkSessionResult =
     | { type: 'success'; sessionId: string }
@@ -81,6 +97,7 @@ export class SyncEngine {
     private readonly messageService: MessageService
     private readonly autoContinueService: AutoContinueService
     private readonly rpcGateway: RpcGateway
+    private readonly projectToolsService: ProjectToolsService
     private inactivityTimer: NodeJS.Timeout | null = null
 
     constructor(
@@ -106,6 +123,18 @@ export class SyncEngine {
             updateSettings: (sessionId, settings) => this.sessionCache.updateAutoContinueSettings(sessionId, settings)
         })
         this.rpcGateway = new RpcGateway(io, rpcRegistry)
+        this.projectToolsService = new ProjectToolsService({
+            store,
+            rpcGateway: this.rpcGateway,
+            emit: (event) => this.eventPublisher.emit(event),
+            spawnSession: (...args) => this.spawnSession(...args),
+            waitForSessionActive: (sessionId, timeoutMs) => this.waitForSessionActive(sessionId, timeoutMs),
+            sendMessage: (sessionId, payload) => this.sendMessage(sessionId, payload),
+            getSession: (sessionId) => this.getSession(sessionId),
+            refreshSession: (sessionId) => this.sessionCache.refreshSession(sessionId),
+            archiveSession: (sessionId) => this.archiveSession(sessionId),
+            waitForSessionEnd: (sessionId, timeoutMs) => this.waitForSessionEnd(sessionId, timeoutMs)
+        })
         this.reloadAll()
         this.inactivityTimer = setInterval(() => this.expireInactive(), 5_000)
     }
@@ -343,11 +372,57 @@ export class SyncEngine {
                 path: string
                 previewUrl?: string
             }>
-            sentFrom?: 'telegram-bot' | 'webapp'
+            sentFrom?: MessageSentFrom
+            meta?: {
+                appendSystemPrompt?: string | null
+                customSystemPrompt?: string | null
+                fallbackModel?: string | null
+                allowedTools?: string[] | null
+                disallowedTools?: string[] | null
+            }
         }
     ): Promise<void> {
-        await this.messageService.sendMessage(sessionId, payload)
+        await this.messageService.sendMessage(sessionId, this.withProjectAgentContext(sessionId, payload))
         this.sessionCache.markMessageQueued(sessionId)
+    }
+
+    private withProjectAgentContext<T extends {
+        sentFrom?: MessageSentFrom
+        meta?: {
+            appendSystemPrompt?: string | null
+            customSystemPrompt?: string | null
+            fallbackModel?: string | null
+            allowedTools?: string[] | null
+            disallowedTools?: string[] | null
+        }
+    }>(sessionId: string, payload: T): T {
+        if (payload.sentFrom === 'project-agent' || payload.sentFrom === 'cron') {
+            return payload
+        }
+
+        const session = this.getSession(sessionId)
+        const prompt = session?.metadata?.agentPrompt?.trim()
+        if (!prompt) {
+            return payload
+        }
+
+        if (
+            payload.meta
+            && (
+                Object.prototype.hasOwnProperty.call(payload.meta, 'appendSystemPrompt')
+                || Object.prototype.hasOwnProperty.call(payload.meta, 'customSystemPrompt')
+            )
+        ) {
+            return payload
+        }
+
+        return {
+            ...payload,
+            meta: {
+                ...payload.meta,
+                appendSystemPrompt: prompt
+            }
+        }
     }
 
     async cancelQueuedMessage(
@@ -477,7 +552,11 @@ export class SyncEngine {
         )
     }
 
-    async spawnSessionFromConfig(sessionId: string, namespace: string): Promise<SpawnSessionFromConfigResult> {
+    async spawnSessionFromConfig(
+        sessionId: string,
+        namespace: string,
+        options?: { agent?: SpawnSessionFromConfigAgent }
+    ): Promise<SpawnSessionFromConfigResult> {
         const access = this.sessionCache.resolveSessionAccess(sessionId, namespace)
         if (!access.ok) {
             return {
@@ -498,17 +577,29 @@ export class SyncEngine {
             return { type: 'error', message: 'No machine online', code: 'no_machine_online' }
         }
 
-        const spawnResult = await this.spawnSessionWithStoredConfig(
-            session,
-            targetMachine.id,
-            metadata.path
-        )
+        const sourceFlavor = this.resolveSessionFlavor(metadata.flavor)
+        const requestedAgent = options?.agent
+        const spawnResult = !requestedAgent || requestedAgent === sourceFlavor
+            ? await this.spawnSessionWithStoredConfig(
+                session,
+                targetMachine.id,
+                metadata.path
+            )
+            : await this.spawnSessionWithDefaultConfig(
+                targetMachine.id,
+                metadata.path,
+                requestedAgent
+            )
 
         if (spawnResult.type !== 'success') {
             return { type: 'error', message: spawnResult.message, code: 'spawn_failed' }
         }
 
-        await this.seedSpawnedSessionFromSource(session, spawnResult.sessionId, { defaultTitle: true })
+        await this.seedSpawnedSessionFromSource(session, spawnResult.sessionId, {
+            defaultTitle: true,
+            titleFlavor: requestedAgent ?? sourceFlavor,
+            copyConfig: !requestedAgent || requestedAgent === sourceFlavor
+        })
         return { type: 'success', sessionId: spawnResult.sessionId }
     }
 
@@ -730,6 +821,14 @@ export class SyncEngine {
         return spawnResult
     }
 
+    private async spawnSessionWithDefaultConfig(
+        machineId: string,
+        directory: string,
+        agent: SpawnSessionFromConfigAgent
+    ): Promise<{ type: 'success'; sessionId: string } | { type: 'error'; message: string }> {
+        return await this.rpcGateway.spawnSession(machineId, directory, agent)
+    }
+
     private async seedSpawnedSessionFromSource(
         sourceSession: Session,
         spawnedSessionId: string,
@@ -737,18 +836,23 @@ export class SyncEngine {
             copyHistory?: boolean
             forkLabel?: boolean
             defaultTitle?: boolean
+            titleFlavor?: string | null
+            copyConfig?: boolean
             rollbackTurns?: number
         }
     ): Promise<void> {
-        this.sessionCache.applySessionConfig(spawnedSessionId, {
-            permissionMode: sourceSession.permissionMode ?? undefined,
-            serviceTier: sourceSession.serviceTier ?? undefined,
-            collaborationMode: sourceSession.collaborationMode ?? undefined
-        })
+        if (options?.copyConfig !== false) {
+            this.sessionCache.applySessionConfig(spawnedSessionId, {
+                permissionMode: sourceSession.permissionMode ?? undefined,
+                serviceTier: sourceSession.serviceTier ?? undefined,
+                collaborationMode: sourceSession.collaborationMode ?? undefined
+            })
+        }
 
         this.seedSpawnedSessionSummary(sourceSession, spawnedSessionId, {
             forkLabel: options?.forkLabel === true,
-            defaultTitle: options?.defaultTitle === true
+            defaultTitle: options?.defaultTitle === true,
+            titleFlavor: options?.titleFlavor
         })
 
         if (options?.copyHistory) {
@@ -759,10 +863,10 @@ export class SyncEngine {
     private seedSpawnedSessionSummary(
         sourceSession: Session,
         spawnedSessionId: string,
-        options?: { forkLabel?: boolean; defaultTitle?: boolean }
+        options?: { forkLabel?: boolean; defaultTitle?: boolean; titleFlavor?: string | null }
     ): void {
         const baseTitle = options?.defaultTitle
-            ? getDefaultSessionTitle(sourceSession.metadata?.flavor)
+            ? getDefaultSessionTitle(options.titleFlavor ?? sourceSession.metadata?.flavor)
             : this.getSessionDisplayTitle(sourceSession)
                 ?? (options?.forkLabel ? this.getSessionPathFallbackTitle(sourceSession) : null)
         if (!baseTitle) {
@@ -970,6 +1074,18 @@ export class SyncEngine {
         return false
     }
 
+    async waitForSessionEnd(sessionId: string, timeoutMs: number = 30 * 60_000): Promise<boolean> {
+        const start = Date.now()
+        while (Date.now() - start < timeoutMs) {
+            const session = this.getSession(sessionId)
+            if (!session?.active) {
+                return true
+            }
+            await new Promise((resolve) => setTimeout(resolve, 1_000))
+        }
+        return false
+    }
+
     async checkPathsExist(machineId: string, paths: string[]): Promise<Record<string, boolean>> {
         return await this.rpcGateway.checkPathsExist(machineId, paths)
     }
@@ -1040,5 +1156,105 @@ export class SyncEngine {
 
     async listOpencodeModelsForCwd(machineId: string, cwd: string): Promise<RpcListOpencodeModelsResponse> {
         return await this.rpcGateway.listOpencodeModelsForCwd(machineId, cwd)
+    }
+
+    async listProjectTools(
+        machineId: string,
+        projectPath: string,
+        kind: ProjectToolKind,
+        namespace?: string
+    ): Promise<RpcProjectToolListResponse> {
+        return await this.projectToolsService.listProjectTools({ machineId, namespace, projectPath, kind })
+    }
+
+    async countProjectTools(
+        projects: Array<{ machineId: string; projectPath: string }>,
+        namespace?: string
+    ): Promise<{ counts: ProjectToolCountsResult[]; errors?: Array<{ machineId?: string; projectPath?: string; error: string }> }> {
+        return await this.projectToolsService.countProjectTools(projects, namespace)
+    }
+
+    async upsertProjectTool(params: {
+        machineId: string
+        namespace: string
+        projectPath: string
+        kind: ProjectToolKind
+        id: string
+        value: unknown
+        expectedHash?: string | null
+    }): Promise<RpcProjectToolMutationResponse> {
+        return await this.projectToolsService.upsertProjectTool(params)
+    }
+
+    async deleteProjectTool(params: {
+        machineId: string
+        namespace: string
+        projectPath: string
+        kind: ProjectToolKind
+        id: string
+        expectedHash?: string | null
+    }): Promise<RpcProjectToolMutationResponse> {
+        return await this.projectToolsService.deleteProjectTool(params)
+    }
+
+    async startProjectAgent(params: {
+        machineId: string
+        namespace: string
+        projectPath: string
+        agentId: string
+    }): Promise<{ type: 'success'; sessionId: string } | { type: 'error'; message: string; code: string }> {
+        return await this.projectToolsService.startProjectAgent(params)
+    }
+
+    async listProjectCrons(params: {
+        machineId: string
+        namespace: string
+        projectPath: string
+    }): Promise<{ type: 'success'; projectPath: string; crons: ProjectCronConfig[] } | { type: 'error'; message: string }> {
+        return await this.projectToolsService.listProjectCrons(params)
+    }
+
+    async startProjectCron(params: {
+        machineId: string
+        namespace: string
+        projectPath: string
+        cronRunId: string
+        config: ProjectCronConfig
+    }): Promise<{ type: 'success'; sessionId: string } | { type: 'error'; message: string; code: string }> {
+        return await this.projectToolsService.startProjectCron(params)
+    }
+
+    async archiveCronSession(sessionId: string, timeoutMs?: number): Promise<boolean> {
+        return await this.projectToolsService.archiveCronSession(sessionId, timeoutMs)
+    }
+
+    async triggerProjectCron(params: {
+        machineId: string
+        namespace: string
+        projectPath: string
+        cronId: string
+    }): Promise<{ type: 'success'; cronRunId: string; sessionId?: string | null } | { type: 'error'; message: string; code: string }> {
+        const result = await triggerProjectCronRun({
+            store: this.store,
+            syncEngine: this,
+            namespace: params.namespace,
+            machineId: params.machineId,
+            projectPath: params.projectPath,
+            cronId: params.cronId
+        })
+        if (result.type === 'error') {
+            return result
+        }
+        return { type: 'success', cronRunId: result.run.id, sessionId: result.sessionId }
+    }
+
+    listCronRuns(params: {
+        namespace: string
+        machineId?: string
+        projectPath?: string
+        cronId?: string
+        limit?: number
+    }): StoredCronRun[] {
+        return this.projectToolsService.listCronRuns(params)
     }
 }

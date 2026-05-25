@@ -4,6 +4,15 @@ import { randomUUID } from 'node:crypto'
 import type { Store, CancelQueuedMessageResult } from '../store'
 import { EventPublisher } from './eventPublisher'
 
+export type MessageSentFrom = 'telegram-bot' | 'webapp' | 'auto-continue' | 'project-agent' | 'cron'
+type MessageMetaPatch = {
+    appendSystemPrompt?: string | null
+    customSystemPrompt?: string | null
+    fallbackModel?: string | null
+    allowedTools?: string[] | null
+    disallowedTools?: string[] | null
+}
+
 export class MessageService {
     constructor(
         private readonly store: Store,
@@ -321,7 +330,8 @@ export class MessageService {
             text: string
             localId?: string | null
             attachments?: AttachmentMetadata[]
-            sentFrom?: 'telegram-bot' | 'webapp' | 'auto-continue'
+            sentFrom?: MessageSentFrom
+            meta?: MessageMetaPatch
         }
     ): Promise<void> {
         const sentFrom = payload.sentFrom ?? 'webapp'
@@ -334,6 +344,7 @@ export class MessageService {
                 attachments: payload.attachments
             },
             meta: {
+                ...payload.meta,
                 sentFrom
             }
         }

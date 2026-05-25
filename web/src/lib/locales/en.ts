@@ -118,6 +118,8 @@ export default {
   'session.action.rename': 'Rename',
   'session.action.fork': 'Fork',
   'session.action.newSession': 'New session',
+  'session.action.newSessionCx': 'New session Cx',
+  'session.action.newSessionCl': 'New session Cl',
   'session.action.archive': 'Archive',
   'session.action.delete': 'Delete',
   'session.action.copy': 'Copy',

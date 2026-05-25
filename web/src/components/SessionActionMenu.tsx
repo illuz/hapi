@@ -14,7 +14,7 @@ import { safeCopyToClipboard } from '@/lib/clipboard'
 import { SESSION_MARKER_COLORS } from '@/lib/sessionMarkers'
 import { useTranslation } from '@/lib/use-translation'
 import { usePlatform } from '@/hooks/usePlatform'
-import type { SessionMarkerColor } from '@/types/api'
+import type { AgentFlavor, SessionMarkerColor } from '@/types/api'
 
 type SessionActionMenuProps = {
     isOpen: boolean
@@ -29,7 +29,7 @@ type SessionActionMenuProps = {
     onArchive: () => void
     onDelete: () => void
     onForkSession?: () => void | Promise<void>
-    onSpawnSessionFromConfig?: () => void | Promise<void>
+    onSpawnSessionFromConfig?: (agent: Extract<AgentFlavor, 'claude' | 'codex'>) => void | Promise<void>
     anchorPoint: { x: number; y: number }
     menuId?: string
 }
@@ -169,7 +169,7 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
     } = props
     const menuRef = useRef<HTMLDivElement | null>(null)
     const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null)
-    const [pendingAction, setPendingAction] = useState<'fork' | 'spawn' | null>(null)
+    const [pendingAction, setPendingAction] = useState<'fork' | 'spawn-codex' | 'spawn-claude' | null>(null)
     const { haptic } = usePlatform()
     const internalId = useId()
     const resolvedMenuId = menuId ?? `session-action-menu-${internalId}`
@@ -203,13 +203,14 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
         }
     }
 
-    const handleSpawnSessionFromConfig = async () => {
+    const handleSpawnSessionFromConfig = async (agent: Extract<AgentFlavor, 'claude' | 'codex'>) => {
         if (!onSpawnSessionFromConfig || pendingAction) {
             return
         }
-        setPendingAction('spawn')
+        const action = agent === 'codex' ? 'spawn-codex' : 'spawn-claude'
+        setPendingAction(action)
         try {
-            await onSpawnSessionFromConfig()
+            await onSpawnSessionFromConfig(agent)
         } finally {
             setPendingAction(null)
             onClose()
@@ -410,20 +411,36 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                 ) : null}
 
                 {canSpawnSessionFromConfig ? (
-                    <button
-                        type="button"
-                        role="menuitem"
-                        disabled={pendingAction !== null}
-                        className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
-                        onClick={handleSpawnSessionFromConfig}
-                    >
-                        {pendingAction === 'spawn' ? (
-                            <Spinner size="sm" label={null} className="text-[var(--app-hint)]" />
-                        ) : (
-                            <PlusIcon className="text-[var(--app-hint)]" />
-                        )}
-                        <span>{t('session.action.newSession')}</span>
-                    </button>
+                    <>
+                        <button
+                            type="button"
+                            role="menuitem"
+                            disabled={pendingAction !== null}
+                            className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
+                            onClick={() => { void handleSpawnSessionFromConfig('codex') }}
+                        >
+                            {pendingAction === 'spawn-codex' ? (
+                                <Spinner size="sm" label={null} className="text-[var(--app-hint)]" />
+                            ) : (
+                                <PlusIcon className="text-[var(--app-hint)]" />
+                            )}
+                            <span>{t('session.action.newSessionCx')}</span>
+                        </button>
+                        <button
+                            type="button"
+                            role="menuitem"
+                            disabled={pendingAction !== null}
+                            className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
+                            onClick={() => { void handleSpawnSessionFromConfig('claude') }}
+                        >
+                            {pendingAction === 'spawn-claude' ? (
+                                <Spinner size="sm" label={null} className="text-[var(--app-hint)]" />
+                            ) : (
+                                <PlusIcon className="text-[var(--app-hint)]" />
+                            )}
+                            <span>{t('session.action.newSessionCl')}</span>
+                        </button>
+                    </>
                 ) : null}
 
                 {sessionActive ? (

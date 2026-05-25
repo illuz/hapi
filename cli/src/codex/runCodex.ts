@@ -59,7 +59,8 @@ export async function runCodex(opts: {
         model: mode.model,
         modelReasoningEffort: mode.modelReasoningEffort,
         serviceTier: mode.serviceTier,
-        collaborationMode: mode.collaborationMode
+        collaborationMode: mode.collaborationMode,
+        developerInstructions: mode.developerInstructions
     }));
 
     const codexCliOverrides = parseCodexCliOverrides(opts.codexArgs);
@@ -70,6 +71,7 @@ export async function runCodex(opts: {
     let currentModelReasoningEffort: ReasoningEffort | undefined = opts.modelReasoningEffort;
     let currentServiceTier: ServiceTier | undefined = opts.serviceTier;
     let currentCollaborationMode: EnhancedMode['collaborationMode'] = 'default';
+    let currentDeveloperInstructions: string | undefined = undefined;
     let currentGoal: ThreadGoal | null = null;
 
     const lifecycle = createRunnerLifecycle({
@@ -192,6 +194,12 @@ export async function runCodex(opts: {
                 text = formatMessageWithAttachments(text, message.content.attachments);
 
                 const messagePermissionMode = currentPermissionMode;
+                let messageDeveloperInstructions = currentDeveloperInstructions;
+                if (message.meta?.hasOwnProperty('appendSystemPrompt')) {
+                    messageDeveloperInstructions = message.meta.appendSystemPrompt || undefined;
+                    currentDeveloperInstructions = messageDeveloperInstructions;
+                    logger.debug(`[Codex] Developer instructions updated from user message: ${messageDeveloperInstructions ? 'set' : 'reset to none'}`);
+                }
                 logger.debug(
                     `[Codex] User message received with permission mode: ${currentPermissionMode}, ` +
                     `model: ${currentModel ?? 'auto'}, modelReasoningEffort: ${currentModelReasoningEffort ?? 'default'}, ` +
@@ -204,7 +212,8 @@ export async function runCodex(opts: {
                     model: currentModel,
                     modelReasoningEffort: currentModelReasoningEffort,
                     serviceTier: currentServiceTier,
-                    collaborationMode: currentCollaborationMode
+                    collaborationMode: currentCollaborationMode,
+                    developerInstructions: messageDeveloperInstructions
                 };
                 if (isolatedCommandText) {
                     messageQueue.pushIsolateAndClear(isolatedCommandText, enhancedMode, localId);
@@ -218,7 +227,8 @@ export async function runCodex(opts: {
                     model: currentModel,
                     modelReasoningEffort: currentModelReasoningEffort,
                     serviceTier: currentServiceTier,
-                    collaborationMode: currentCollaborationMode
+                    collaborationMode: currentCollaborationMode,
+                    developerInstructions: currentDeveloperInstructions
                 };
                 messageQueue.push(formatMessageWithAttachments(message.content.text, message.content.attachments), enhancedMode, localId);
             }

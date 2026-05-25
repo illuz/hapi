@@ -53,7 +53,7 @@ function createSession(overrides?: Partial<Session>): Session {
 
 function createApp(session: Session, opts?: {
     resumeSession?: (sessionId: string, namespace: string, resumeOpts?: { permissionMode?: string }) => Promise<{ type: string; sessionId?: string; message?: string; code?: string }>
-    spawnSessionFromConfig?: (sessionId: string, namespace: string) => Promise<{ type: string; sessionId?: string; message?: string; code?: string }>
+    spawnSessionFromConfig?: (sessionId: string, namespace: string, options?: { agent?: 'claude' | 'codex' }) => Promise<{ type: string; sessionId?: string; message?: string; code?: string }>
     forkSession?: (sessionId: string, namespace: string, options?: { rollbackTurns?: number }) => Promise<{ type: string; sessionId?: string; message?: string; code?: string }>
     listSlashCommands?: SyncEngine['listSlashCommands']
 }) {
@@ -114,20 +114,21 @@ function createApp(session: Session, opts?: {
 
 describe('sessions routes', () => {
     it('spawns a new session from stored config', async () => {
-        let captured: { sessionId: string; namespace: string } | null = null
+        let captured: { sessionId: string; namespace: string; agent?: 'claude' | 'codex' } | null = null
         const { app } = createApp(createSession(), {
-            spawnSessionFromConfig: async (sessionId, namespace) => {
-                captured = { sessionId, namespace }
+            spawnSessionFromConfig: async (sessionId, namespace, options) => {
+                captured = { sessionId, namespace, agent: options?.agent }
                 return { type: 'success', sessionId: 'session-new' }
             }
         })
 
         const response = await app.request('/api/sessions/session-1/spawn-from-config', {
-            method: 'POST'
+            method: 'POST',
+            body: JSON.stringify({ agent: 'claude' })
         })
 
         expect(response.status).toBe(200)
-        expect(captured!).toEqual({ sessionId: 'session-1', namespace: 'default' })
+        expect(captured!).toEqual({ sessionId: 'session-1', namespace: 'default', agent: 'claude' })
         expect(await response.json()).toEqual({ type: 'success', sessionId: 'session-new' })
     })
 

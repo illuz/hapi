@@ -2,6 +2,7 @@ import { Database } from 'bun:sqlite'
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync } from 'node:fs'
 import { dirname } from 'node:path'
 
+import { CronRunsStore } from './cronRunsStore'
 import { MachineStore } from './machineStore'
 import { MessageStore } from './messageStore'
 import { PushStore } from './pushStore'
@@ -9,6 +10,8 @@ import { SessionStore } from './sessionStore'
 import { UserStore } from './userStore'
 
 export type {
+    StoredCronProject,
+    StoredCronRun,
     StoredMachine,
     StoredMessage,
     StoredPushSubscription,
@@ -17,19 +20,22 @@ export type {
     VersionedUpdateResult
 } from './types'
 export type { CancelQueuedMessageResult, LookupQueuedMessageResult } from './messages'
+export { CronRunsStore } from './cronRunsStore'
 export { MachineStore } from './machineStore'
 export { MessageStore } from './messageStore'
 export { PushStore } from './pushStore'
 export { SessionStore } from './sessionStore'
 export { UserStore } from './userStore'
 
-const SCHEMA_VERSION: number = 10
+const SCHEMA_VERSION: number = 11
 const REQUIRED_TABLES = [
     'sessions',
     'machines',
     'messages',
     'users',
-    'push_subscriptions'
+    'push_subscriptions',
+    'cron_projects',
+    'cron_runs'
 ] as const
 
 export class Store {
@@ -41,6 +47,7 @@ export class Store {
     readonly messages: MessageStore
     readonly users: UserStore
     readonly push: PushStore
+    readonly cronRuns: CronRunsStore
 
     constructor(dbPath: string) {
         this.dbPath = dbPath
@@ -82,6 +89,7 @@ export class Store {
         this.messages = new MessageStore(this.db)
         this.users = new UserStore(this.db)
         this.push = new PushStore(this.db)
+        this.cronRuns = new CronRunsStore(this.db)
     }
 
     private initSchema(): void {
@@ -100,6 +108,7 @@ export class Store {
             7: () => this.migrateFromV7ToV8(),
             8: () => this.migrateFromV8ToV9(),
             9: () => this.migrateFromV9ToV10(),
+            10: () => this.migrateFromV10ToV11(),
         })
 
         if (currentVersion === 0) {
@@ -128,6 +137,13 @@ export class Store {
         }
 
         const stepMigrations = buildStepMigrations(false)
+
+        // Repair historically possible V8-shape DBs before continuing the normal
+        // ladder. Some V8 databases were stamped before invoked_at/index creation
+        // completed; later migrations assume the V8 additions are present.
+        if (currentVersion >= 8) {
+            this.repairLatestSchemaIfNeeded()
+        }
 
         if (currentVersion === 8 && SCHEMA_VERSION === 9) {
             this.migrateFromV7ToV8()
@@ -269,6 +285,41 @@ export class Store {
                 UNIQUE(namespace, endpoint)
             );
             CREATE INDEX IF NOT EXISTS idx_push_subscriptions_namespace ON push_subscriptions(namespace);
+
+            CREATE TABLE IF NOT EXISTS cron_projects (
+                namespace TEXT NOT NULL,
+                machine_id TEXT NOT NULL,
+                project_path TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                last_seen_at INTEGER NOT NULL,
+                last_loaded_at INTEGER,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                PRIMARY KEY (namespace, machine_id, project_path)
+            );
+            CREATE INDEX IF NOT EXISTS idx_cron_projects_namespace ON cron_projects(namespace);
+            CREATE INDEX IF NOT EXISTS idx_cron_projects_machine ON cron_projects(machine_id, namespace);
+
+            CREATE TABLE IF NOT EXISTS cron_runs (
+                id TEXT PRIMARY KEY,
+                namespace TEXT NOT NULL,
+                machine_id TEXT NOT NULL,
+                project_path TEXT NOT NULL,
+                cron_id TEXT NOT NULL,
+                session_id TEXT,
+                status TEXT NOT NULL,
+                scheduled_at INTEGER NOT NULL,
+                queued_at INTEGER NOT NULL,
+                started_at INTEGER,
+                finished_at INTEGER,
+                error TEXT,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                UNIQUE(namespace, machine_id, project_path, cron_id, scheduled_at)
+            );
+            CREATE INDEX IF NOT EXISTS idx_cron_runs_namespace_project ON cron_runs(namespace, machine_id, project_path);
+            CREATE INDEX IF NOT EXISTS idx_cron_runs_status ON cron_runs(status, scheduled_at);
+            CREATE INDEX IF NOT EXISTS idx_cron_runs_session ON cron_runs(session_id) WHERE session_id IS NOT NULL;
         `)
     }
 
@@ -478,6 +529,10 @@ export class Store {
         }
     }
 
+    private migrateFromV10ToV11(): void {
+        this.createCronSchema()
+    }
+
     private getMessageColumnNames(): Set<string> {
         const rows = this.db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>
         return new Set(rows.map((row) => row.name))
@@ -500,6 +555,8 @@ export class Store {
             }
         }
 
+        this.createCronSchema()
+
         const messageColumns = this.getMessageColumnNames()
         if (messageColumns.size === 0) {
             return
@@ -513,6 +570,45 @@ export class Store {
         this.db.exec(`
             CREATE INDEX IF NOT EXISTS idx_messages_session_position
                 ON messages(session_id, COALESCE(invoked_at, created_at) DESC, seq DESC)
+        `)
+    }
+
+    private createCronSchema(): void {
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS cron_projects (
+                namespace TEXT NOT NULL,
+                machine_id TEXT NOT NULL,
+                project_path TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                last_seen_at INTEGER NOT NULL,
+                last_loaded_at INTEGER,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                PRIMARY KEY (namespace, machine_id, project_path)
+            );
+            CREATE INDEX IF NOT EXISTS idx_cron_projects_namespace ON cron_projects(namespace);
+            CREATE INDEX IF NOT EXISTS idx_cron_projects_machine ON cron_projects(machine_id, namespace);
+
+            CREATE TABLE IF NOT EXISTS cron_runs (
+                id TEXT PRIMARY KEY,
+                namespace TEXT NOT NULL,
+                machine_id TEXT NOT NULL,
+                project_path TEXT NOT NULL,
+                cron_id TEXT NOT NULL,
+                session_id TEXT,
+                status TEXT NOT NULL,
+                scheduled_at INTEGER NOT NULL,
+                queued_at INTEGER NOT NULL,
+                started_at INTEGER,
+                finished_at INTEGER,
+                error TEXT,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                UNIQUE(namespace, machine_id, project_path, cron_id, scheduled_at)
+            );
+            CREATE INDEX IF NOT EXISTS idx_cron_runs_namespace_project ON cron_runs(namespace, machine_id, project_path);
+            CREATE INDEX IF NOT EXISTS idx_cron_runs_status ON cron_runs(status, scheduled_at);
+            CREATE INDEX IF NOT EXISTS idx_cron_runs_session ON cron_runs(session_id) WHERE session_id IS NOT NULL;
         `)
     }
 

@@ -19,4 +19,7 @@ export const queryKeys = {
     sessionOpencodeModels: (sessionId: string) => ['session-opencode-models', sessionId] as const,
     machineOpencodeModelsForCwd: (machineId: string, cwd: string) => ['machine-opencode-models', machineId, cwd] as const,
     skills: (sessionId: string) => ['skills', sessionId] as const,
+    projectToolCounts: (projectsKey: string) => ['project-tool-counts', projectsKey] as const,
+    projectTools: (machineId: string, projectPath: string, kind: 'agent' | 'cron') => ['project-tools', machineId, projectPath, kind] as const,
+    cronRuns: (machineId: string, projectPath: string, cronId?: string | null) => ['cron-runs', machineId, projectPath, cronId ?? 'all'] as const,
 }

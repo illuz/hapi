@@ -118,6 +118,8 @@ export default {
   'session.action.rename': '重命名',
   'session.action.fork': 'Fork 会话',
   'session.action.newSession': '新建会话',
+  'session.action.newSessionCx': '新建会话 Cx',
+  'session.action.newSessionCl': '新建会话 Cl',
   'session.action.archive': '归档',
   'session.action.delete': '删除',
   'session.action.copy': '复制',

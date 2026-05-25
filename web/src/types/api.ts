@@ -5,8 +5,17 @@ import type {
     SyncEvent as ProtocolSyncEvent,
     WorktreeMetadata
 } from '@hapi/protocol/types'
+import type {
+    CronRunStatus,
+    ProjectAgentConfig,
+    ProjectCronConfig,
+    ProjectToolCounts,
+    ProjectToolCountsResult,
+    ProjectToolKind
+} from '@hapi/protocol/projectTools'
 
 export type {
+    AgentFlavor,
     AgentState,
     AttachmentMetadata,
     CodexCollaborationMode,
@@ -22,6 +31,17 @@ export type {
     TodoItem,
     WorktreeMetadata
 } from '@hapi/protocol/types'
+
+export type {
+    CronRunStatus,
+    ProjectAgentConfig,
+    ProjectCronConfig,
+    ProjectCronSchedule,
+    ProjectToolAgent,
+    ProjectToolCounts,
+    ProjectToolCountsResult,
+    ProjectToolKind
+} from '@hapi/protocol/projectTools'
 
 export type SessionMetadataSummary = {
     path: string
@@ -116,6 +136,95 @@ export type MachineListDirectoryResponse = {
 export type SpawnResponse =
     | { type: 'success'; sessionId: string }
     | { type: 'error'; message: string }
+
+export type ProjectToolFileError = {
+    path: string
+    id?: string
+    error: string
+}
+
+export type ProjectAgentToolItem = {
+    kind: 'agent'
+    id: string
+    path: string
+    config: ProjectAgentConfig
+    value?: ProjectAgentConfig
+    hash?: string
+    updatedAt?: number
+}
+
+export type ProjectCronToolItem = {
+    kind: 'cron'
+    id: string
+    path: string
+    config: ProjectCronConfig
+    value?: ProjectCronConfig
+    hash?: string
+    updatedAt?: number
+}
+
+export type ProjectToolItem = ProjectAgentToolItem | ProjectCronToolItem
+
+export type ProjectToolListResponse<K extends ProjectToolKind = ProjectToolKind> =
+    | {
+        success: true
+        kind: K
+        projectPath: string
+        items: K extends 'agent' ? ProjectAgentToolItem[] : ProjectCronToolItem[]
+        errors?: ProjectToolFileError[]
+    }
+    | {
+        success: false
+        error: string
+    }
+
+export type ProjectToolCountsResponse = {
+    counts: ProjectToolCountsResult[]
+    errors?: Array<{ machineId?: string; projectPath?: string; error: string }>
+}
+
+export type ProjectToolMutationResponse =
+    | {
+        success: true
+        kind: ProjectToolKind
+        projectPath: string
+        id: string
+        item?: ProjectToolItem
+        hash?: string
+    }
+    | {
+        success: false
+        error: string
+    }
+
+export type StartProjectAgentResponse =
+    | { type: 'success'; sessionId: string }
+    | { type: 'error'; message: string; code?: string }
+
+export type RunProjectCronResponse =
+    | { type: 'success'; cronRunId: string; sessionId?: string | null }
+    | { type: 'error'; message: string; code?: string }
+
+export type ProjectCronRun = {
+    id: string
+    namespace?: string
+    machineId: string
+    projectPath: string
+    cronId: string
+    sessionId: string | null
+    status: CronRunStatus
+    scheduledAt: number
+    queuedAt: number
+    startedAt: number | null
+    finishedAt: number | null
+    error: string | null
+    createdAt: number
+    updatedAt: number
+}
+
+export type CronRunsResponse = {
+    runs: ProjectCronRun[]
+}
 
 export type GitCommandResponse = {
     success: boolean

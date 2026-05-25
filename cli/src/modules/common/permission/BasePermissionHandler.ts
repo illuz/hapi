@@ -26,7 +26,7 @@ const AUTO_APPROVE_TOOL_NAME_HINTS = [
     'save_memory'
 ];
 const AUTO_APPROVE_TOOL_ID_HINTS = ['change_title', 'save_memory'];
-const AUTO_APPROVE_WRITE_TOOL_HINTS = ['write', 'edit', 'create', 'delete', 'patch', 'fs-edit'];
+const AUTO_APPROVE_WRITE_TOOL_HINTS = ['write', 'edit', 'create', 'delete', 'patch', 'fs-edit', 'upsert'];
 
 export function resolveToolAutoApprovalDecision(
     mode: PermissionMode | undefined,

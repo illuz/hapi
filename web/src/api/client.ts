@@ -13,14 +13,23 @@ import type {
     MachinesResponse,
     MessagesResponse,
     CodexModelsResponse,
+    CronRunsResponse,
     OpencodeModelsResponse,
     PermissionMode,
+    ProjectAgentConfig,
+    ProjectCronConfig,
+    ProjectToolCountsResponse,
+    ProjectToolKind,
+    ProjectToolListResponse,
+    ProjectToolMutationResponse,
     PushSubscriptionPayload,
     PushUnsubscribePayload,
     PushVapidPublicKeyResponse,
+    RunProjectCronResponse,
     SlashCommandsResponse,
     SkillsResponse,
     SpawnResponse,
+    StartProjectAgentResponse,
     UploadFileResponse,
     VisibilityPayload,
     SessionResponse,
@@ -300,12 +309,12 @@ export class ApiClient {
         return response.sessionId
     }
 
-    async spawnSessionFromConfig(sessionId: string): Promise<{ sessionId: string }> {
+    async spawnSessionFromConfig(sessionId: string, agent?: 'claude' | 'codex'): Promise<{ sessionId: string }> {
         return await this.request<{ sessionId: string }>(
             `/api/sessions/${encodeURIComponent(sessionId)}/spawn-from-config`,
             {
                 method: 'POST',
-                body: JSON.stringify({})
+                body: JSON.stringify(agent ? { agent } : {})
             }
         )
     }
@@ -444,6 +453,107 @@ export class ApiClient {
 
     async getMachines(): Promise<MachinesResponse> {
         return await this.request<MachinesResponse>('/api/machines')
+    }
+
+    async getProjectTools<K extends ProjectToolKind>(
+        machineId: string,
+        projectPath: string,
+        kind: K
+    ): Promise<ProjectToolListResponse<K>> {
+        const params = new URLSearchParams()
+        params.set('projectPath', projectPath)
+        return await this.request<ProjectToolListResponse<K>>(
+            `/api/machines/${encodeURIComponent(machineId)}/project-tools/${encodeURIComponent(kind)}?${params.toString()}`
+        )
+    }
+
+    async getProjectToolCounts(projects: Array<{ machineId: string; projectPath: string }>): Promise<ProjectToolCountsResponse> {
+        return await this.request<ProjectToolCountsResponse>('/api/project-tools/counts', {
+            method: 'POST',
+            body: JSON.stringify({ projects })
+        })
+    }
+
+    async upsertProjectTool(
+        machineId: string,
+        kind: ProjectToolKind,
+        projectPath: string,
+        config: ProjectAgentConfig | ProjectCronConfig,
+        expectedHash?: string | null
+    ): Promise<ProjectToolMutationResponse> {
+        return await this.request<ProjectToolMutationResponse>(
+            `/api/machines/${encodeURIComponent(machineId)}/project-tools/${encodeURIComponent(kind)}`,
+            {
+                method: 'POST',
+                body: JSON.stringify({ projectPath, config, expectedHash })
+            }
+        )
+    }
+
+    async deleteProjectTool(
+        machineId: string,
+        kind: ProjectToolKind,
+        projectPath: string,
+        toolId: string,
+        expectedHash?: string | null
+    ): Promise<ProjectToolMutationResponse> {
+        const params = new URLSearchParams()
+        params.set('projectPath', projectPath)
+        if (expectedHash) {
+            params.set('expectedHash', expectedHash)
+        }
+        return await this.request<ProjectToolMutationResponse>(
+            `/api/machines/${encodeURIComponent(machineId)}/project-tools/${encodeURIComponent(kind)}/${encodeURIComponent(toolId)}?${params.toString()}`,
+            { method: 'DELETE' }
+        )
+    }
+
+    async startProjectAgent(
+        machineId: string,
+        projectPath: string,
+        agentId: string
+    ): Promise<StartProjectAgentResponse> {
+        return await this.request<StartProjectAgentResponse>(
+            `/api/machines/${encodeURIComponent(machineId)}/project-tools/agents/${encodeURIComponent(agentId)}/start`,
+            {
+                method: 'POST',
+                body: JSON.stringify({ projectPath })
+            }
+        )
+    }
+
+    async getCronRuns(
+        machineId: string,
+        options: { projectPath?: string; cronId?: string; limit?: number } = {}
+    ): Promise<CronRunsResponse> {
+        const params = new URLSearchParams()
+        if (options.projectPath) {
+            params.set('projectPath', options.projectPath)
+        }
+        if (options.cronId) {
+            params.set('cronId', options.cronId)
+        }
+        if (options.limit !== undefined) {
+            params.set('limit', String(options.limit))
+        }
+        const query = params.toString()
+        return await this.request<CronRunsResponse>(
+            `/api/machines/${encodeURIComponent(machineId)}/project-tools/cron-runs${query ? `?${query}` : ''}`
+        )
+    }
+
+    async runProjectCron(
+        machineId: string,
+        projectPath: string,
+        cronId: string
+    ): Promise<RunProjectCronResponse> {
+        return await this.request<RunProjectCronResponse>(
+            `/api/machines/${encodeURIComponent(machineId)}/project-tools/cron/${encodeURIComponent(cronId)}/run`,
+            {
+                method: 'POST',
+                body: JSON.stringify({ projectPath })
+            }
+        )
     }
 
     async listMachineDirectory(

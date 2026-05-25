@@ -1,4 +1,8 @@
 import type { CodexCollaborationMode, PermissionMode } from '@hapi/protocol/types'
+import type {
+    ProjectToolKind,
+    ProjectToolCountsResult
+} from '@hapi/protocol/projectTools'
 import type { Server } from 'socket.io'
 import type { RpcRegistry } from '../socket/rpcRegistry'
 
@@ -75,6 +79,56 @@ export type RpcListOpencodeModelsResponse = {
     availableModels?: RpcOpencodeModel[]
     currentModelId?: string | null
     error?: string
+}
+
+export type RpcProjectToolFileError = {
+    path: string
+    id?: string
+    error: string
+}
+
+export type RpcProjectToolItem = {
+    kind: ProjectToolKind
+    id: string
+    path: string
+    config: unknown
+    value?: unknown
+    hash?: string
+    updatedAt?: number
+}
+
+export type RpcProjectToolListResponse = {
+    success: true
+    kind: ProjectToolKind
+    projectPath: string
+    items: RpcProjectToolItem[]
+    errors?: RpcProjectToolFileError[]
+} | {
+    success: false
+    error: string
+}
+
+export type RpcProjectToolCountsResponse = {
+    success: true
+    counts: ProjectToolCountsResult[]
+    errors?: Array<{ machineId?: string; projectPath?: string; error: string }>
+} | {
+    success: false
+    error?: string
+    counts?: ProjectToolCountsResult[]
+    errors?: Array<{ machineId?: string; projectPath?: string; error: string }>
+}
+
+export type RpcProjectToolMutationResponse = {
+    success: true
+    kind: ProjectToolKind
+    projectPath: string
+    id: string
+    item?: RpcProjectToolItem
+    hash?: string
+} | {
+    success: false
+    error: string
 }
 
 export class RpcGateway {
@@ -325,6 +379,54 @@ export class RpcGateway {
 
     async listOpencodeModelsForCwd(machineId: string, cwd: string): Promise<RpcListOpencodeModelsResponse> {
         return await this.machineRpc(machineId, 'listOpencodeModelsForCwd', { cwd }) as RpcListOpencodeModelsResponse
+    }
+
+    async listProjectTools(
+        machineId: string,
+        params: { projectPath: string; kind: ProjectToolKind }
+    ): Promise<RpcProjectToolListResponse> {
+        return await this.machineRpc(machineId, 'project-tools:list', {
+            machineId,
+            ...params
+        }) as RpcProjectToolListResponse
+    }
+
+    async countProjectTools(
+        machineId: string,
+        projects: Array<{ machineId: string; projectPath: string }>
+    ): Promise<RpcProjectToolCountsResponse> {
+        return await this.machineRpc(machineId, 'project-tools:counts', { projects }) as RpcProjectToolCountsResponse
+    }
+
+    async upsertProjectTool(
+        machineId: string,
+        params: {
+            projectPath: string
+            kind: ProjectToolKind
+            id: string
+            value: unknown
+            expectedHash?: string | null
+        }
+    ): Promise<RpcProjectToolMutationResponse> {
+        return await this.machineRpc(machineId, 'project-tools:upsert', {
+            machineId,
+            ...params
+        }) as RpcProjectToolMutationResponse
+    }
+
+    async deleteProjectTool(
+        machineId: string,
+        params: {
+            projectPath: string
+            kind: ProjectToolKind
+            id: string
+            expectedHash?: string | null
+        }
+    ): Promise<RpcProjectToolMutationResponse> {
+        return await this.machineRpc(machineId, 'project-tools:delete', {
+            machineId,
+            ...params
+        }) as RpcProjectToolMutationResponse
     }
 
     private async sessionRpc(

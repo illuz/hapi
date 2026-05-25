@@ -1105,6 +1105,117 @@ describe('session model', () => {
         }
     })
 
+    it('spawns a different agent type with default config on the original machine', async () => {
+        const store = new Store(':memory:')
+        const engine = new SyncEngine(
+            store,
+            {} as never,
+            new RpcRegistry(),
+            { broadcast() {} } as never
+        )
+
+        try {
+            const session = engine.getOrCreateSession(
+                'session-spawn-default-agent',
+                {
+                    path: '/tmp/project',
+                    host: 'localhost',
+                    machineId: 'machine-1',
+                    flavor: 'codex',
+                    codexSessionId: 'codex-thread-1'
+                },
+                null,
+                'default',
+                'gpt-5.4',
+                undefined,
+                'xhigh'
+            )
+            engine.getOrCreateMachine(
+                'machine-1',
+                { host: 'localhost', platform: 'linux', happyCliVersion: '0.1.0' },
+                null,
+                'default'
+            )
+            engine.handleMachineAlive({ machineId: 'machine-1', time: Date.now() })
+            engine.handleSessionAlive({
+                sid: session.id,
+                permissionMode: 'safe-yolo',
+                time: Date.now()
+            })
+
+            let captured: {
+                machineId?: string
+                directory?: string
+                agent?: string
+                model?: string
+                modelReasoningEffort?: string
+                serviceTier?: string
+                resumeSessionId?: string
+                effort?: string
+                permissionMode?: string
+            } | null = null
+
+            ;(engine as any).rpcGateway.spawnSession = async (
+                machineId: string,
+                directory: string,
+                agent: string,
+                model?: string,
+                modelReasoningEffort?: string,
+                _yolo?: boolean,
+                _sessionType?: string,
+                _worktreeName?: string,
+                resumeSessionId?: string,
+                effort?: string,
+                permissionMode?: string,
+                serviceTier?: string
+            ) => {
+                captured = {
+                    machineId,
+                    directory,
+                    agent,
+                    model,
+                    modelReasoningEffort,
+                    serviceTier,
+                    resumeSessionId,
+                    effort,
+                    permissionMode
+                }
+                const cloned = engine.getOrCreateSession(
+                    'session-default-agent-cloned-tag',
+                    {
+                        path: directory,
+                        host: 'localhost',
+                        machineId,
+                        flavor: agent
+                    },
+                    null,
+                    'default'
+                )
+                return { type: 'success', sessionId: cloned.id }
+            }
+
+            const result = await engine.spawnSessionFromConfig(session.id, 'default', { agent: 'claude' })
+
+            expect(result.type).toBe('success')
+            expect(captured!).toEqual({
+                machineId: 'machine-1',
+                directory: '/tmp/project',
+                agent: 'claude',
+                model: undefined,
+                modelReasoningEffort: undefined,
+                serviceTier: undefined,
+                resumeSessionId: undefined,
+                effort: undefined,
+                permissionMode: undefined
+            })
+            const clonedSession = engine.getSession((result as { sessionId: string }).sessionId)
+            expect(clonedSession?.metadata?.summary?.text).toBe('Claude新建会话')
+            expect(clonedSession?.permissionMode).toBeUndefined()
+        } finally {
+            engine.stop()
+        }
+    })
+
     it('forks a Codex session and spawns a new session from the forked thread', async () => {
         const store = new Store(':memory:')
         const engine = new SyncEngine(

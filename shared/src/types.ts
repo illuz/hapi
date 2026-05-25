@@ -21,6 +21,39 @@ export type { SessionSummary, SessionSummaryMetadata } from './sessionSummary'
 export { AGENT_MESSAGE_PAYLOAD_TYPE } from './modes'
 
 export type {
+    CronRunRecord,
+    CronRunStatus,
+    CronRunUpdatedEvent,
+    ProjectAgentConfig,
+    ProjectAgentListResponse,
+    ProjectAgentToolFile,
+    ProjectAgentWriteRequest,
+    ProjectCronConfig,
+    ProjectCronDailySchedule,
+    ProjectCronIntervalSchedule,
+    ProjectCronListResponse,
+    ProjectCronManualSchedule,
+    ProjectCronSchedule,
+    ProjectCronToolFile,
+    ProjectCronWriteRequest,
+    ProjectToolAgent,
+    ProjectToolBatchCountsRequest,
+    ProjectToolBatchCountsResponse,
+    ProjectToolCounts,
+    ProjectToolCountsRequest,
+    ProjectToolCountsResult,
+    ProjectToolDeleteRequest,
+    ProjectToolFile,
+    ProjectToolId,
+    ProjectToolKind,
+    ProjectToolListResponse,
+    ProjectToolMutationResponse,
+    ProjectToolReadRequest,
+    ProjectToolsUpdatedEvent,
+    ProjectToolWriteRequest
+} from './projectTools'
+
+export type {
     AgentFlavor,
     ClaudePermissionMode,
     CodexCollaborationMode,

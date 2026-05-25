@@ -1,4 +1,5 @@
 import type { PermissionMode, SessionMarkerColor } from '@hapi/protocol/types'
+import type { CronRunStatus } from '@hapi/protocol/projectTools'
 
 export type StoredSession = {
     id: string
@@ -65,6 +66,34 @@ export type StoredPushSubscription = {
     p256dh: string
     auth: string
     createdAt: number
+}
+
+export type StoredCronProject = {
+    namespace: string
+    machineId: string
+    projectPath: string
+    enabled: boolean
+    lastSeenAt: number
+    lastLoadedAt: number | null
+    createdAt: number
+    updatedAt: number
+}
+
+export type StoredCronRun = {
+    id: string
+    namespace: string
+    machineId: string
+    projectPath: string
+    cronId: string
+    sessionId: string | null
+    status: CronRunStatus
+    scheduledAt: number
+    queuedAt: number
+    startedAt: number | null
+    finishedAt: number | null
+    error: string | null
+    createdAt: number
+    updatedAt: number
 }
 
 export type VersionedUpdateResult<T> =

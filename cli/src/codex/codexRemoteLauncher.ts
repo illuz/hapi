@@ -953,7 +953,8 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                 cwd: session.path,
                 mode,
                 mcpServers,
-                cliOverrides: session.codexCliOverrides
+                cliOverrides: session.codexCliOverrides,
+                developerInstructions: mode.developerInstructions
             });
 
             if (resumeCandidate) {
@@ -1068,7 +1069,8 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                 cwd: session.path,
                 mode,
                 mcpServers,
-                cliOverrides: session.codexCliOverrides
+                cliOverrides: session.codexCliOverrides,
+                developerInstructions: mode.developerInstructions
             });
 
             try {
@@ -1190,7 +1192,8 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                         cwd: session.path,
                         mode: message.mode,
                         mcpServers,
-                        cliOverrides: session.codexCliOverrides
+                        cliOverrides: session.codexCliOverrides,
+                        developerInstructions: message.mode.developerInstructions
                     });
 
                     const resumeCandidate = session.sessionId ?? null;
@@ -1256,7 +1259,8 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                         ...message.mode,
                         model: session.getModel() ?? message.mode.model
                     },
-                    cliOverrides: session.codexCliOverrides
+                    cliOverrides: session.codexCliOverrides,
+                    developerInstructions: message.mode.developerInstructions
                 });
                 turnInFlight = true;
                 allowAnonymousTerminalEvent = false;

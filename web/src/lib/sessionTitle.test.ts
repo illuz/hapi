@@ -50,4 +50,14 @@ describe('sessionTitle', () => {
             }
         })).toBe(`${getSessionTitleEmoji('session-4')} Ship landing page`)
     })
+
+    it('uses a fixed robot emoji for project agent sessions', () => {
+        expect(getDisplaySessionTitle({
+            id: 'session-agent',
+            metadata: {
+                agentId: 'reviewer',
+                name: 'Review current diff'
+            }
+        })).toBe('🤖 Review current diff')
+    })
 })

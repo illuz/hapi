@@ -20,6 +20,12 @@ import {
     type ListOpencodeModelsForCwdRequest,
     type ListOpencodeModelsForCwdResponse
 } from '../modules/common/opencodeModels'
+import {
+    countProjectTools,
+    deleteProjectTool,
+    listProjectTools,
+    upsertProjectTool
+} from '../modules/common/projectToolsFs'
 import type { SpawnSessionOptions, SpawnSessionResult } from '../modules/common/rpcTypes'
 import { applyVersionedAck } from './versionedUpdate'
 import { buildSocketIoExtraHeaderOptions } from './hubExtraHeaders'
@@ -260,6 +266,97 @@ export class ApiMachineClient {
                 return await listOpencodeModelsForCwd(resolvedCwd)
             }
         )
+
+        this.rpcHandlerManager.registerHandler('project-tools:list', async (params: any) => {
+            if (typeof params?.machineId === 'string' && params.machineId !== this.machine.id) {
+                return { success: false, error: 'machineId does not match this runner' }
+            }
+
+            return await listProjectTools({
+                workspaceRoots: this.normalizedWorkspaceRoots,
+                projectPath: params?.projectPath,
+                kind: params?.kind
+            })
+        })
+
+        this.rpcHandlerManager.registerHandler('project-tools:counts', async (params: any) => {
+            const rawProjects = Array.isArray(params?.projects)
+                ? params.projects
+                : params?.projectPath
+                    ? [params]
+                    : []
+
+            if (!rawProjects.length) {
+                return { success: false, error: 'projects is required' }
+            }
+
+            const counts: Array<{
+                machineId: string
+                projectPath: string
+                counts: { agents: number; crons: number }
+            }> = []
+            const errors: Array<{ machineId?: string; projectPath?: string; error: string }> = []
+
+            for (const project of rawProjects) {
+                const machineId = typeof project?.machineId === 'string' ? project.machineId : this.machine.id
+                const projectPath = typeof project?.projectPath === 'string' ? project.projectPath : ''
+                if (machineId !== this.machine.id) {
+                    errors.push({ machineId, projectPath, error: 'machineId does not match this runner' })
+                    continue
+                }
+
+                const result = await countProjectTools({
+                    workspaceRoots: this.normalizedWorkspaceRoots,
+                    projectPath
+                })
+
+                if (result.success) {
+                    counts.push({
+                        machineId,
+                        projectPath: result.projectPath,
+                        counts: result.counts
+                    })
+                } else {
+                    errors.push({ machineId, projectPath, error: result.error })
+                }
+            }
+
+            return {
+                success: errors.length === 0,
+                counts,
+                errors: errors.length ? errors : undefined
+            }
+        })
+
+        this.rpcHandlerManager.registerHandler('project-tools:upsert', async (params: any) => {
+            if (typeof params?.machineId === 'string' && params.machineId !== this.machine.id) {
+                return { success: false, error: 'machineId does not match this runner' }
+            }
+
+            const value = params?.value ?? params?.config
+            return await upsertProjectTool({
+                workspaceRoots: this.normalizedWorkspaceRoots,
+                projectPath: params?.projectPath,
+                kind: params?.kind,
+                id: params?.id ?? value?.id,
+                value,
+                expectedHash: params?.expectedHash
+            })
+        })
+
+        this.rpcHandlerManager.registerHandler('project-tools:delete', async (params: any) => {
+            if (typeof params?.machineId === 'string' && params.machineId !== this.machine.id) {
+                return { success: false, error: 'machineId does not match this runner' }
+            }
+
+            return await deleteProjectTool({
+                workspaceRoots: this.normalizedWorkspaceRoots,
+                projectPath: params?.projectPath,
+                kind: params?.kind,
+                id: params?.id,
+                expectedHash: params?.expectedHash
+            })
+        })
     }
 
     private isWithinWorkspaceRoots(absolutePath: string): boolean {

@@ -17,6 +17,7 @@ export interface EnhancedMode {
     collaborationMode: CodexCollaborationMode;
     modelReasoningEffort?: ReasoningEffort;
     serviceTier?: ServiceTier;
+    developerInstructions?: string;
 }
 
 interface LoopOptions {

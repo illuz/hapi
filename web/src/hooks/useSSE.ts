@@ -203,7 +203,17 @@ export function useSSE(options: {
         sessions: boolean
         machines: boolean
         sessionIds: Set<string>
-    }>({ sessions: false, machines: false, sessionIds: new Set() })
+        projectToolCounts: boolean
+        projectTools: Map<string, { machineId: string; projectPath: string; kind?: 'agent' | 'cron' }>
+        cronRuns: Map<string, { machineId: string; projectPath: string; cronId?: string | null }>
+    }>({
+        sessions: false,
+        machines: false,
+        sessionIds: new Set(),
+        projectToolCounts: false,
+        projectTools: new Map(),
+        cronRuns: new Map()
+    })
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const reconnectAttemptRef = useRef(0)
     const lastActivityAtRef = useRef(0)
@@ -247,6 +257,9 @@ export function useSSE(options: {
             pendingInvalidationsRef.current.sessions = false
             pendingInvalidationsRef.current.machines = false
             pendingInvalidationsRef.current.sessionIds.clear()
+            pendingInvalidationsRef.current.projectToolCounts = false
+            pendingInvalidationsRef.current.projectTools.clear()
+            pendingInvalidationsRef.current.cronRuns.clear()
             if (reconnectTimerRef.current) {
                 clearTimeout(reconnectTimerRef.current)
                 reconnectTimerRef.current = null
@@ -305,17 +318,30 @@ export function useSSE(options: {
 
         const flushInvalidations = () => {
             const pending = pendingInvalidationsRef.current
-            if (!pending.sessions && !pending.machines && pending.sessionIds.size === 0) {
+            if (
+                !pending.sessions
+                && !pending.machines
+                && pending.sessionIds.size === 0
+                && !pending.projectToolCounts
+                && pending.projectTools.size === 0
+                && pending.cronRuns.size === 0
+            ) {
                 return
             }
 
             const shouldInvalidateSessions = pending.sessions
             const shouldInvalidateMachines = pending.machines
             const sessionIds = Array.from(pending.sessionIds)
+            const shouldInvalidateProjectToolCounts = pending.projectToolCounts
+            const projectTools = Array.from(pending.projectTools.values())
+            const cronRuns = Array.from(pending.cronRuns.values())
 
             pending.sessions = false
             pending.machines = false
             pending.sessionIds.clear()
+            pending.projectToolCounts = false
+            pending.projectTools.clear()
+            pending.cronRuns.clear()
 
             const tasks: Array<Promise<unknown>> = []
             if (shouldInvalidateSessions) {
@@ -326,6 +352,31 @@ export function useSSE(options: {
             }
             if (shouldInvalidateMachines) {
                 tasks.push(queryClient.invalidateQueries({ queryKey: queryKeys.machines }))
+            }
+            if (shouldInvalidateProjectToolCounts) {
+                tasks.push(queryClient.invalidateQueries({ queryKey: ['project-tool-counts'] }))
+            }
+            for (const item of projectTools) {
+                if (item.kind) {
+                    tasks.push(queryClient.invalidateQueries({
+                        queryKey: queryKeys.projectTools(item.machineId, item.projectPath, item.kind)
+                    }))
+                } else {
+                    tasks.push(queryClient.invalidateQueries({
+                        queryKey: queryKeys.projectTools(item.machineId, item.projectPath, 'agent')
+                    }))
+                    tasks.push(queryClient.invalidateQueries({
+                        queryKey: queryKeys.projectTools(item.machineId, item.projectPath, 'cron')
+                    }))
+                }
+            }
+            for (const item of cronRuns) {
+                tasks.push(queryClient.invalidateQueries({
+                    queryKey: queryKeys.cronRuns(item.machineId, item.projectPath, item.cronId)
+                }))
+                tasks.push(queryClient.invalidateQueries({
+                    queryKey: queryKeys.cronRuns(item.machineId, item.projectPath, null)
+                }))
             }
 
             if (tasks.length === 0) {
@@ -356,6 +407,29 @@ export function useSSE(options: {
 
         const queueMachinesInvalidation = () => {
             pendingInvalidationsRef.current.machines = true
+            scheduleInvalidationFlush()
+        }
+
+        const queueProjectToolsInvalidation = (event: Extract<SyncEvent, { type: 'project-tools-updated' }>) => {
+            pendingInvalidationsRef.current.projectToolCounts = true
+            pendingInvalidationsRef.current.projectTools.set(
+                `${event.machineId}::${event.projectPath}`,
+                { machineId: event.machineId, projectPath: event.projectPath, kind: event.kind }
+            )
+            scheduleInvalidationFlush()
+        }
+
+        const queueCronRunsInvalidation = (event: Extract<SyncEvent, { type: 'cron-run-updated' }>) => {
+            pendingInvalidationsRef.current.projectToolCounts = true
+            const machineId = 'machineId' in event ? event.machineId : undefined
+            if (machineId && event.projectPath) {
+                pendingInvalidationsRef.current.cronRuns.set(
+                    `${machineId}::${event.projectPath}::${event.cronId ?? 'all'}`,
+                    { machineId, projectPath: event.projectPath, cronId: event.cronId }
+                )
+            } else {
+                void queryClient.invalidateQueries({ queryKey: ['cron-runs'] })
+            }
             scheduleInvalidationFlush()
         }
 
@@ -562,6 +636,14 @@ export function useSSE(options: {
                 } else if (!hasRecordShape(event.data) || typeof event.data.activeAt !== 'number') {
                     queueMachinesInvalidation()
                 }
+            }
+
+            if (event.type === 'project-tools-updated') {
+                queueProjectToolsInvalidation(event)
+            }
+
+            if (event.type === 'cron-run-updated') {
+                queueCronRunsInvalidation(event)
             }
 
             onEventRef.current(event)

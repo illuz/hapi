@@ -1,6 +1,6 @@
 import { useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import type { Session } from '@/types/api'
+import type { AgentFlavor, Session } from '@/types/api'
 import type { ApiClient } from '@/api/client'
 import { usePlatform } from '@/hooks/usePlatform'
 import { isTelegramApp } from '@/hooks/useTelegram'
@@ -155,9 +155,9 @@ export function SessionHeader(props: {
         }
     }
 
-    const handleSpawnSessionFromConfig = async () => {
+    const handleSpawnSessionFromConfig = async (agent: Extract<AgentFlavor, 'claude' | 'codex'>) => {
         try {
-            const result = await spawnSessionFromConfig()
+            const result = await spawnSessionFromConfig(agent)
             haptic.notification('success')
             await navigate({
                 to: '/sessions/$sessionId',

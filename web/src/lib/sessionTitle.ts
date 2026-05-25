@@ -6,6 +6,7 @@ type SessionTitleSource = {
             text?: string | null
         } | null
         path?: string | null
+        agentId?: string | null
     } | null
 }
 
@@ -110,5 +111,6 @@ export function getDisplaySessionTitle(
         pathMode?: 'basename' | 'full'
     } = {}
 ): string {
-    return `${getSessionTitleEmoji(session.id)} ${getSessionTitle(session, options)}`
+    const emoji = session.metadata?.agentId ? '🤖' : getSessionTitleEmoji(session.id)
+    return `${emoji} ${getSessionTitle(session, options)}`
 }

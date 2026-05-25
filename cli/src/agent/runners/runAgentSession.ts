@@ -16,6 +16,14 @@ import { PermissionModeSchema } from '@hapi/protocol/schemas';
 import { isPermissionModeAllowedForFlavor } from '@hapi/protocol';
 import type { SessionEndReason } from '@hapi/protocol';
 
+export function addProjectAgentContextToPrompt(text: string, appendSystemPrompt?: string | null): string {
+    const prompt = appendSystemPrompt?.trim();
+    if (!prompt) {
+        return text;
+    }
+    return `<project-agent-context>\n${prompt}\n</project-agent-context>\n\n${text}`;
+}
+
 function emitReadyIfIdle(props: {
     queueSize: () => number;
     shouldExit: boolean;
@@ -53,7 +61,7 @@ export async function runAgentSession(opts: {
 
     session.onUserMessage((message, localId) => {
         const formattedText = formatMessageWithAttachments(message.content.text, message.content.attachments);
-        messageQueue.push(formattedText, {}, localId);
+        messageQueue.push(addProjectAgentContextToPrompt(formattedText, message.meta?.appendSystemPrompt), {}, localId);
     });
 
     session.onCancelQueuedMessage((localId) => {

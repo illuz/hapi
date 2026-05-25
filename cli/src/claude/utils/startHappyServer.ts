@@ -11,6 +11,7 @@ import { z } from "zod";
 import { logger } from "@/ui/logger";
 import { ApiSessionClient } from "@/api/apiSession";
 import { randomUUID } from "node:crypto";
+import { registerProjectToolsMcpTools } from "./projectToolsMcp";
 
 export async function startHappyServer(client: ApiSessionClient) {
     // Handler that sends title updates via the client
@@ -75,6 +76,14 @@ export async function startHappyServer(client: ApiSessionClient) {
         }
     });
 
+    const projectTools = registerProjectToolsMcpTools(mcp, {
+        getProjectPath: () => client.getCurrentProjectPath(),
+        getWorkspaceRoots: () => client.getCurrentWorkspaceRoots(),
+        logger: {
+            debug: (message, ...args) => logger.debug(String(message), ...args)
+        }
+    });
+
     const transport = new StreamableHTTPServerTransport({
         // NOTE: Returning session id here will result in claude
         // sdk spawn to fail with `Invalid Request: Server already initialized`
@@ -106,7 +115,9 @@ export async function startHappyServer(client: ApiSessionClient) {
 
     return {
         url: baseUrl.toString(),
-        toolNames: ['change_title'],
+        toolNames: ['change_title', ...projectTools.readToolNames],
+        readToolNames: ['change_title', ...projectTools.readToolNames],
+        writeToolNames: projectTools.writeToolNames,
         stop: () => {
             logger.debug('[hapiMCP] Stopping server');
             mcp.close();

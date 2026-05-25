@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { isPermissionModeAllowedForFlavor } from '@hapi/protocol'
 import type { ApiClient } from '@/api/client'
-import type { CodexCollaborationMode, PermissionMode, SessionMarkerColor } from '@/types/api'
+import type { AgentFlavor, CodexCollaborationMode, PermissionMode, SessionMarkerColor } from '@/types/api'
 import { queryKeys } from '@/lib/query-keys'
 import { clearMessageWindow } from '@/lib/message-window-store'
 import { isKnownFlavor } from '@/lib/agentFlavorUtils'
@@ -16,7 +16,7 @@ export function useSessionActions(
     archiveSession: () => Promise<void>
     forkSession: (rollbackTurns?: number) => Promise<{ sessionId: string }>
     switchSession: () => Promise<void>
-    spawnSessionFromConfig: () => Promise<{ sessionId: string }>
+    spawnSessionFromConfig: (agent?: Extract<AgentFlavor, 'claude' | 'codex'>) => Promise<{ sessionId: string }>
     setPermissionMode: (mode: PermissionMode) => Promise<void>
     setCollaborationMode: (mode: CodexCollaborationMode) => Promise<void>
     setModel: (model: string | null) => Promise<void>
@@ -78,11 +78,11 @@ export function useSessionActions(
     })
 
     const spawnSessionFromConfigMutation = useMutation({
-        mutationFn: async () => {
+        mutationFn: async (agent?: Extract<AgentFlavor, 'claude' | 'codex'>) => {
             if (!api || !sessionId) {
                 throw new Error('Session unavailable')
             }
-            return await api.spawnSessionFromConfig(sessionId)
+            return await api.spawnSessionFromConfig(sessionId, agent)
         },
         onSuccess: async () => {
             await queryClient.invalidateQueries({ queryKey: queryKeys.sessions })

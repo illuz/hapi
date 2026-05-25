@@ -16,6 +16,7 @@ import { SessionChat } from '@/components/SessionChat'
 import { SessionUnavailableState } from '@/components/SessionUnavailableState'
 import { SessionList } from '@/components/SessionList'
 import { SessionSidebarMoreMenu } from '@/components/SessionSidebarMoreMenu'
+import { ProjectToolsPanel } from '@/components/ProjectToolsPanel'
 import { NewSession } from '@/components/NewSession'
 import { WorkspaceBrowser } from '@/components/WorkspaceBrowser'
 import { LoadingState } from '@/components/LoadingState'
@@ -27,6 +28,7 @@ import { useMessages } from '@/hooks/queries/useMessages'
 import { useMachines } from '@/hooks/queries/useMachines'
 import { useSession } from '@/hooks/queries/useSession'
 import { useSessions } from '@/hooks/queries/useSessions'
+import { useProjectToolCounts } from '@/hooks/queries/useProjectTools'
 import { useSlashCommands } from '@/hooks/queries/useSlashCommands'
 import { useSkills } from '@/hooks/queries/useSkills'
 import { useSendMessage } from '@/hooks/mutations/useSendMessage'
@@ -213,6 +215,25 @@ function SessionsPage() {
     const filteredProjectCount = useMemo(() => new Set(filteredSessions.map(s =>
         s.metadata?.worktree?.basePath ?? s.metadata?.path ?? 'Other'
     )).size, [filteredSessions])
+    const visibleProjectToolTargets = useMemo(() => {
+        const seen = new Set<string>()
+        const targets: Array<{ machineId: string; projectPath: string }> = []
+        for (const session of filteredSessions) {
+            const machineId = session.metadata?.machineId
+            const projectPath = session.metadata?.worktree?.basePath ?? session.metadata?.path
+            if (!machineId || !projectPath) {
+                continue
+            }
+            const key = `${machineId}::${projectPath}`
+            if (seen.has(key)) {
+                continue
+            }
+            seen.add(key)
+            targets.push({ machineId, projectPath })
+        }
+        return targets
+    }, [filteredSessions])
+    const { countsByKey: projectToolCountsByKey } = useProjectToolCounts(api, visibleProjectToolTargets)
 
     const handleToggleFilter = useCallback(() => {
         setActivityFilterEnabled(previous => !previous)
@@ -377,6 +398,11 @@ function SessionsPage() {
                         renderHeader={false}
                         api={api}
                         machineLabelsById={machineLabelsById}
+                        projectToolCountsByKey={projectToolCountsByKey}
+                        onOpenProjectTools={({ machineId, projectPath, tab }) => navigate({
+                            to: '/sessions/project-tools',
+                            search: { machineId, projectPath, tab }
+                        })}
                     />
                 </div>
             </div>
@@ -411,6 +437,36 @@ function SessionsPage() {
 
 function SessionsIndexPage() {
     return null
+}
+
+function ProjectToolsRoutePage() {
+    const { api } = useAppContext()
+    const navigate = useNavigate()
+    const goBack = useAppGoBack()
+    const search = projectToolsRoute.useSearch()
+
+    if (!search.machineId || !search.projectPath) {
+        return (
+            <SessionUnavailableState
+                error="Choose a project from the session list to manage Agents and Cron."
+                onBack={() => { void navigate({ to: '/sessions' }) }}
+            />
+        )
+    }
+
+    return (
+        <ProjectToolsPanel
+            api={api}
+            machineId={search.machineId}
+            projectPath={search.projectPath}
+            initialTab={search.tab}
+            onClose={goBack}
+            onOpenSession={(sessionId) => navigate({
+                to: '/sessions/$sessionId',
+                params: { sessionId }
+            })}
+        />
+    )
 }
 
 function SessionPage() {
@@ -724,6 +780,31 @@ const sessionsIndexRoute = createRoute({
     component: SessionsIndexPage,
 })
 
+type ProjectToolsSearch = {
+    machineId?: string
+    projectPath?: string
+    tab?: 'agents' | 'cron' | 'runs'
+}
+
+const projectToolsRoute = createRoute({
+    getParentRoute: () => sessionsRoute,
+    path: 'project-tools',
+    validateSearch: (search: Record<string, unknown>): ProjectToolsSearch => {
+        const result: ProjectToolsSearch = {}
+        if (typeof search.machineId === 'string' && search.machineId) {
+            result.machineId = search.machineId
+        }
+        if (typeof search.projectPath === 'string' && search.projectPath) {
+            result.projectPath = search.projectPath
+        }
+        if (search.tab === 'cron' || search.tab === 'runs' || search.tab === 'agents') {
+            result.tab = search.tab
+        }
+        return result
+    },
+    component: ProjectToolsRoutePage,
+})
+
 const sessionDetailRoute = createRoute({
     getParentRoute: () => sessionsRoute,
     path: '$sessionId',
@@ -832,6 +913,7 @@ export const routeTree = rootRoute.addChildren([
     sessionsRoute.addChildren([
         sessionsIndexRoute,
         newSessionRoute,
+        projectToolsRoute,
         sessionDetailRoute.addChildren([
             sessionTerminalRoute,
             sessionFilesRoute,

@@ -21,6 +21,7 @@ import { getStoredEventSound, getStoredPlaybackMode, type SoundEvent } from '@/l
 import { useTranslation } from '@/lib/use-translation'
 import { VoiceProvider } from '@/lib/voice-context'
 import { requireHubUrlForLogin } from '@/lib/runtime-config'
+import { getSelectedSessionIdFromRoute } from '@/lib/selected-session-route'
 import { LoginPrompt } from '@/components/LoginPrompt'
 import { InstallPrompt } from '@/components/InstallPrompt'
 import { OfflineBanner } from '@/components/OfflineBanner'
@@ -121,7 +122,7 @@ function AppInner() {
     }, [goBack, pathname])
     const queryClient = useQueryClient()
     const sessionMatch = matchRoute({ to: '/sessions/$sessionId' })
-    const selectedSessionId = sessionMatch && sessionMatch.sessionId !== 'new' ? sessionMatch.sessionId : null
+    const selectedSessionId = getSelectedSessionIdFromRoute(sessionMatch ? sessionMatch.sessionId : null)
     const { isSyncing, startSync, endSync } = useSyncingState()
     const [sseDisconnected, setSseDisconnected] = useState(false)
     const [sseDisconnectReason, setSseDisconnectReason] = useState<string | null>(null)

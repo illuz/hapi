@@ -35,6 +35,8 @@ vi.mock('@/lib/use-translation', () => ({
                 'session.action.copyId': 'Copy ID',
                 'session.action.fork': 'Fork',
                 'session.action.newSession': 'New session',
+                'session.action.newSessionCx': 'New session Cx',
+                'session.action.newSessionCl': 'New session Cl',
                 'session.action.archive': 'Archive',
                 'session.action.delete': 'Delete',
                 'session.marker.red': 'Red',
@@ -111,6 +113,63 @@ describe('SessionActionMenu', () => {
             expect(mockCopyToClipboard).toHaveBeenCalledWith('session-123')
         })
         expect(mockHaptic.notification).toHaveBeenCalledWith('error')
+        expect(onClose).toHaveBeenCalled()
+    })
+
+    it('renders Codex and Claude new-session actions', async () => {
+        const onClose = vi.fn()
+        const onSpawnSessionFromConfig = vi.fn().mockResolvedValue(undefined)
+
+        render(
+            <SessionActionMenu
+                isOpen
+                onClose={onClose}
+                canSpawnSessionFromConfig
+                sessionActive={false}
+                sessionId="session-123"
+                markerColor={null}
+                onSelectMarkerColor={vi.fn()}
+                onRename={vi.fn()}
+                onArchive={vi.fn()}
+                onDelete={vi.fn()}
+                onSpawnSessionFromConfig={onSpawnSessionFromConfig}
+                anchorPoint={{ x: 100, y: 100 }}
+            />,
+        )
+
+        fireEvent.click(screen.getByRole('menuitem', { name: 'New session Cx' }))
+
+        await waitFor(() => {
+            expect(onSpawnSessionFromConfig).toHaveBeenCalledWith('codex')
+        })
+        expect(onClose).toHaveBeenCalled()
+
+        onClose.mockClear()
+        onSpawnSessionFromConfig.mockClear()
+        cleanup()
+
+        render(
+            <SessionActionMenu
+                isOpen
+                onClose={onClose}
+                canSpawnSessionFromConfig
+                sessionActive={false}
+                sessionId="session-456"
+                markerColor={null}
+                onSelectMarkerColor={vi.fn()}
+                onRename={vi.fn()}
+                onArchive={vi.fn()}
+                onDelete={vi.fn()}
+                onSpawnSessionFromConfig={onSpawnSessionFromConfig}
+                anchorPoint={{ x: 100, y: 100 }}
+            />,
+        )
+
+        fireEvent.click(screen.getByRole('menuitem', { name: 'New session Cl' }))
+
+        await waitFor(() => {
+            expect(onSpawnSessionFromConfig).toHaveBeenCalledWith('claude')
+        })
         expect(onClose).toHaveBeenCalled()
     })
 })

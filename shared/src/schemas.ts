@@ -36,6 +36,10 @@ export const MetadataSchema = z.object({
     geminiSessionId: z.string().optional(),
     opencodeSessionId: z.string().optional(),
     cursorSessionId: z.string().optional(),
+    agentId: z.string().optional(),
+    agentPrompt: z.string().optional(),
+    cronId: z.string().optional(),
+    cronRunId: z.string().optional(),
     tools: z.array(z.string()).optional(),
     slashCommands: z.array(z.string()).optional(),
     homeDir: z.string().optional(),
@@ -234,6 +238,19 @@ export const SyncEventSchema = z.discriminatedUnion('type', [
         data: z.unknown().optional()
     }),
     SessionEventBaseSchema.extend({
+        type: z.literal('project-tools-updated'),
+        machineId: z.string(),
+        projectPath: z.string(),
+        kind: z.enum(['agent', 'cron']).optional()
+    }),
+    SessionEventBaseSchema.extend({
+        type: z.literal('cron-run-updated'),
+        machineId: z.string().optional(),
+        projectPath: z.string().optional(),
+        cronId: z.string().optional(),
+        cronRunId: z.string().optional()
+    }),
+    SessionEventBaseSchema.extend({
         type: z.literal('toast'),
         data: z.object({
             title: z.string(),
@@ -268,7 +285,11 @@ export const SyncEventSchema = z.discriminatedUnion('type', [
     })
 ])
 
-export type SyncEvent = z.infer<typeof SyncEventSchema>
+type SyncEventFromSchema = z.infer<typeof SyncEventSchema>
+type CronRunUpdatedSyncEventBase = Omit<Extract<SyncEventFromSchema, { type: 'cron-run-updated' }>, 'machineId'>
+type CronRunUpdatedSyncEvent = CronRunUpdatedSyncEventBase | (CronRunUpdatedSyncEventBase & { machineId: string })
+
+export type SyncEvent = Exclude<SyncEventFromSchema, { type: 'cron-run-updated' }> | CronRunUpdatedSyncEvent
 
 export const CancelMessageResponseSchema = z.discriminatedUnion('status', [
     z.object({ status: z.literal('cancelled'), localId: z.string().nullable() }),

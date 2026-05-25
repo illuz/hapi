@@ -1,8 +1,8 @@
 /**
  * HAPI MCP STDIO Bridge
  *
- * Minimal STDIO MCP server exposing a single tool `change_title`.
- * On invocation it forwards the tool call to an existing HAPI HTTP MCP server
+ * Minimal STDIO MCP server exposing HAPI MCP tools.
+ * On invocation it forwards each tool call to an existing HAPI HTTP MCP server
  * using the StreamableHTTPClientTransport.
  *
  * Configure the target HTTP MCP URL via env var `HAPI_HTTP_MCP_URL` or
@@ -16,6 +16,16 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { z } from 'zod';
+import { projectToolsMcpToolDefinitions } from '@/claude/utils/projectToolsMcp';
+
+type BridgeHttpClient = Pick<Client, 'callTool'>;
+
+type BridgeToolResponse = {
+  content: Array<{ type: 'text'; text: string }>;
+  isError: boolean;
+} | unknown;
+
+type BridgeMcpServer = Pick<McpServer, 'registerTool'>;
 
 function parseArgs(argv: string[]): { url: string | null } {
   let url: string | null = null;
@@ -27,6 +37,61 @@ function parseArgs(argv: string[]): { url: string | null } {
     }
   }
   return { url };
+}
+
+export const HAPI_MCP_BRIDGE_TOOL_NAMES = [
+  'change_title',
+  ...projectToolsMcpToolDefinitions.map((definition) => definition.name)
+] as const;
+
+export function registerHappyMcpStdioBridgeTools(
+  server: BridgeMcpServer,
+  ensureHttpClient: () => Promise<BridgeHttpClient>
+): void {
+  const changeTitleInputSchema: z.ZodTypeAny = z.object({
+    title: z.string().describe('The new title for the chat session'),
+  });
+
+  const forwardTool = (name: string) => async (args: unknown) => {
+    try {
+      const client = await ensureHttpClient();
+      const response = await client.callTool({
+        name,
+        arguments: typeof args === 'object' && args !== null ? args as Record<string, unknown> : undefined
+      });
+      // Pass-through response from HTTP server
+      return response as any;
+    } catch (error) {
+      return {
+        content: [
+          { type: 'text' as const, text: `Failed to call ${name}: ${error instanceof Error ? error.message : String(error)}` },
+        ],
+        isError: true,
+      };
+    }
+  };
+
+  server.registerTool<any, any>(
+    'change_title',
+    {
+      description: 'Change the title of the current chat session',
+      title: 'Change Chat Title',
+      inputSchema: changeTitleInputSchema,
+    },
+    forwardTool('change_title')
+  );
+
+  for (const definition of projectToolsMcpToolDefinitions) {
+    server.registerTool<any, any>(
+      definition.name,
+      {
+        description: definition.description,
+        title: definition.title,
+        inputSchema: definition.inputSchema,
+      },
+      forwardTool(definition.name)
+    );
+  }
 }
 
 export async function runHappyMcpStdioBridge(argv: string[]): Promise<void> {
@@ -64,34 +129,7 @@ export async function runHappyMcpStdioBridge(argv: string[]): Promise<void> {
       version: '1.0.0',
     });
 
-    // Register the single tool and forward to HTTP MCP
-    const changeTitleInputSchema: z.ZodTypeAny = z.object({
-      title: z.string().describe('The new title for the chat session'),
-    });
-
-    server.registerTool<any, any>(
-      'change_title',
-      {
-        description: 'Change the title of the current chat session',
-        title: 'Change Chat Title',
-        inputSchema: changeTitleInputSchema,
-      },
-      async (args: Record<string, unknown>) => {
-        try {
-          const client = await ensureHttpClient();
-          const response = await client.callTool({ name: 'change_title', arguments: args });
-          // Pass-through response from HTTP server
-          return response as any;
-        } catch (error) {
-          return {
-            content: [
-              { type: 'text' as const, text: `Failed to change chat title: ${error instanceof Error ? error.message : String(error)}` },
-            ],
-            isError: true,
-          };
-        }
-      }
-    );
+    registerHappyMcpStdioBridgeTools(server, ensureHttpClient);
 
     // Start STDIO transport
     const stdio = new StdioServerTransport();

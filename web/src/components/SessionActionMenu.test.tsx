@@ -35,8 +35,8 @@ vi.mock('@/lib/use-translation', () => ({
                 'session.action.copyId': 'Copy ID',
                 'session.action.fork': 'Fork',
                 'session.action.newSession': 'New session',
-                'session.action.newSessionCx': 'New session Cx',
-                'session.action.newSessionCl': 'New session Cl',
+                'session.action.newSessionCx': 'New session',
+                'session.action.newSessionCl': 'New session',
                 'session.action.archive': 'Archive',
                 'session.action.delete': 'Delete',
                 'session.marker.red': 'Red',
@@ -137,7 +137,10 @@ describe('SessionActionMenu', () => {
             />,
         )
 
-        fireEvent.click(screen.getByRole('menuitem', { name: 'New session Cx' }))
+        const items = screen.getAllByRole('menuitem', { name: 'New session' })
+
+        // Cx is the first, Cl is the second
+        fireEvent.click(items[0])
 
         await waitFor(() => {
             expect(onSpawnSessionFromConfig).toHaveBeenCalledWith('codex')
@@ -165,7 +168,8 @@ describe('SessionActionMenu', () => {
             />,
         )
 
-        fireEvent.click(screen.getByRole('menuitem', { name: 'New session Cl' }))
+        const items2 = screen.getAllByRole('menuitem', { name: 'New session' })
+        fireEvent.click(items2[1])
 
         await waitFor(() => {
             expect(onSpawnSessionFromConfig).toHaveBeenCalledWith('claude')

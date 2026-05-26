@@ -424,7 +424,8 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                             ) : (
                                 <PlusIcon className="text-[var(--app-hint)]" />
                             )}
-                            <span>{t('session.action.newSessionCx')}</span>
+                            <span className="flex-1">{t('session.action.newSessionCx')}</span>
+                            <span aria-hidden="true" className="inline-flex items-center justify-center rounded-sm text-[8px] font-semibold leading-none bg-[#ef4444] text-white h-4 w-4 shrink-0">Cx</span>
                         </button>
                         <button
                             type="button"
@@ -438,7 +439,8 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                             ) : (
                                 <PlusIcon className="text-[var(--app-hint)]" />
                             )}
-                            <span>{t('session.action.newSessionCl')}</span>
+                            <span className="flex-1">{t('session.action.newSessionCl')}</span>
+                            <span aria-hidden="true" className="inline-flex items-center justify-center rounded-sm text-[8px] font-semibold leading-none bg-[#d97706] text-white h-4 w-4 shrink-0">Cl</span>
                         </button>
                     </>
                 ) : null}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { ThreadPrimitive } from '@assistant-ui/react'
 import type { ApiClient } from '@/api/client'
 import type { SessionMetadataSummary } from '@/types/api'
@@ -24,11 +24,16 @@ type PendingScrollRestore = {
     scrollHeight: number
 }
 
+export type ConversationNavigationDirection = 'previous' | 'next'
+
 const MESSAGE_ANCHOR_SELECTOR = '.happy-thread-messages > [id]'
 const AUTO_SCROLL_RESUME_THRESHOLD_PX = 120
 const MANUAL_SCROLL_EPSILON_PX = 1
 const INITIAL_SCROLL_SETTLE_MS = 1800
 const INITIAL_SCROLL_SETTLE_DELAYS_MS = [0, 16, 50, 120, 250, 500, 900, 1400, 1800] as const
+const CONVERSATION_NAVIGATION_EDGE_TOLERANCE_PX = 20
+const CONVERSATION_NAVIGATION_LOAD_ATTEMPTS = 20
+const CONVERSATION_NAVIGATION_SETTLE_DELAY_MS = 50
 
 type ScrollIntent = {
     distanceFromBottom: number
@@ -80,6 +85,149 @@ export function restoreScrollAnchor(viewport: HTMLElement, anchor: ScrollAnchor)
     const targetRect = target.getBoundingClientRect()
     viewport.scrollTop += targetRect.top - viewportRect.top - anchor.topOffset
     return true
+}
+
+export function findAdjacentConversationItem(params: {
+    items: readonly ConversationOutlineItem[]
+    direction: ConversationNavigationDirection
+    viewportTop: number
+    getTop: (item: ConversationOutlineItem) => number | null
+    tolerancePx?: number
+}): ConversationOutlineItem | null {
+    const tolerancePx = params.tolerancePx ?? CONVERSATION_NAVIGATION_EDGE_TOLERANCE_PX
+    if (params.direction === 'previous') {
+        const threshold = params.viewportTop - tolerancePx
+        for (let index = params.items.length - 1; index >= 0; index -= 1) {
+            const top = params.getTop(params.items[index])
+            if (top !== null && top < threshold) {
+                return params.items[index]
+            }
+        }
+        return null
+    }
+
+    const threshold = params.viewportTop + tolerancePx
+    for (const item of params.items) {
+        const top = params.getTop(item)
+        if (top !== null && top > threshold) {
+            return item
+        }
+    }
+    return null
+}
+
+function waitForConversationNavigationSettle(): Promise<void> {
+    return new Promise((resolve) => {
+        window.setTimeout(resolve, CONVERSATION_NAVIGATION_SETTLE_DELAY_MS)
+    })
+}
+
+function ChevronUpIcon(props: { className?: string }) {
+    return (
+        <svg
+            className={props.className ?? 'h-4 w-4'}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+        >
+            <path d="m6 15 6-6 6 6" />
+        </svg>
+    )
+}
+
+function ChevronDownIcon(props: { className?: string }) {
+    return (
+        <svg
+            className={props.className ?? 'h-4 w-4'}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+        >
+            <path d="m6 9 6 6 6-6" />
+        </svg>
+    )
+}
+
+function DoubleChevronDownIcon(props: { className?: string }) {
+    return (
+        <svg
+            className={props.className ?? 'h-4 w-4'}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+        >
+            <path d="m7 7 5 5 5-5" />
+            <path d="m7 13 5 5 5-5" />
+        </svg>
+    )
+}
+
+function ConversationScrollButton(props: {
+    label: string
+    disabled?: boolean
+    onClick: () => void
+    children: ReactNode
+}) {
+    return (
+        <button
+            type="button"
+            aria-label={props.label}
+            title={props.label}
+            disabled={props.disabled}
+            onClick={props.onClick}
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--app-border)] bg-[var(--app-bg)] text-[var(--app-fg)] shadow-md transition-colors hover:bg-[var(--app-secondary-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+            {props.children}
+        </button>
+    )
+}
+
+function ConversationScrollControls(props: {
+    disabled?: boolean
+    previousLabel: string
+    nextLabel: string
+    bottomLabel: string
+    onPrevious: () => void
+    onNext: () => void
+    onBottom: () => void
+}) {
+    return (
+        <div className="absolute bottom-4 right-3 z-10 flex flex-col gap-2">
+            <ConversationScrollButton
+                label={props.previousLabel}
+                disabled={props.disabled}
+                onClick={props.onPrevious}
+            >
+                <ChevronUpIcon />
+            </ConversationScrollButton>
+            <ConversationScrollButton
+                label={props.nextLabel}
+                disabled={props.disabled}
+                onClick={props.onNext}
+            >
+                <ChevronDownIcon />
+            </ConversationScrollButton>
+            <ConversationScrollButton
+                label={props.bottomLabel}
+                disabled={props.disabled}
+                onClick={props.onBottom}
+            >
+                <DoubleChevronDownIcon />
+            </ConversationScrollButton>
+        </div>
+    )
 }
 
 function NewMessagesIndicator(props: { count: number; onClick: () => void }) {
@@ -303,12 +451,19 @@ export function HappyThread(props: {
     const atBottomRef = useRef(true)
     const onAtBottomChangeRef = useRef(props.onAtBottomChange)
     const onFlushPendingRef = useRef(props.onFlushPending)
+    const onRefreshRef = useRef(props.onRefresh)
     const forceScrollTokenRef = useRef(props.forceScrollToken)
     const lastScrollTopRef = useRef(0)
+    const lastBottomRefreshAtRef = useRef(0)
+    const bottomRefreshTimerRef = useRef<number | null>(null)
     const sessionIdRef = useRef(props.sessionId)
+    const outlineItemsRef = useRef(props.outlineItems)
+    const messagesVersionRef = useRef(props.messagesVersion)
+    const conversationNavigationBusyRef = useRef(false)
     const initialScrollSessionRef = useRef<string | null>(null)
     const initialScrollDeadlineRef = useRef(0)
     const initialScrollTimersRef = useRef<number[]>([])
+    const [conversationNavigationPending, setConversationNavigationPending] = useState<ConversationNavigationDirection | null>(null)
 
     // Smart scroll state: enabled only while the user is intentionally at the bottom.
     const autoScrollEnabledRef = useRef(true)
@@ -319,6 +474,9 @@ export function HappyThread(props: {
         onFlushPendingRef.current = props.onFlushPending
     }, [props.onFlushPending])
     useEffect(() => {
+        onRefreshRef.current = props.onRefresh
+    }, [props.onRefresh])
+    useEffect(() => {
         hasMoreMessagesRef.current = props.hasMoreMessages
     }, [props.hasMoreMessages])
     useEffect(() => {
@@ -327,6 +485,12 @@ export function HappyThread(props: {
     useEffect(() => {
         onLoadMoreRef.current = props.onLoadMore
     }, [props.onLoadMore])
+    useEffect(() => {
+        outlineItemsRef.current = props.outlineItems
+    }, [props.outlineItems])
+    useEffect(() => {
+        messagesVersionRef.current = props.messagesVersion
+    }, [props.messagesVersion])
 
     useEffect(() => {
         sessionIdRef.current = props.sessionId
@@ -341,6 +505,34 @@ export function HappyThread(props: {
             window.clearTimeout(timer)
         }
         initialScrollTimersRef.current = []
+    }, [])
+
+    const requestLatestWhileAtBottom = useCallback((force = false) => {
+        const now = Date.now()
+        if (!force && now - lastBottomRefreshAtRef.current < 1000) {
+            return
+        }
+        if (bottomRefreshTimerRef.current !== null) {
+            if (!force) {
+                return
+            }
+            window.clearTimeout(bottomRefreshTimerRef.current)
+            bottomRefreshTimerRef.current = null
+        }
+        lastBottomRefreshAtRef.current = now
+        bottomRefreshTimerRef.current = window.setTimeout(() => {
+            bottomRefreshTimerRef.current = null
+            onRefreshRef.current()
+        }, 0)
+    }, [])
+
+    useEffect(() => {
+        return () => {
+            if (bottomRefreshTimerRef.current !== null) {
+                window.clearTimeout(bottomRefreshTimerRef.current)
+                bottomRefreshTimerRef.current = null
+            }
+        }
     }, [])
 
     // Track scroll position to toggle autoScroll (stable listener using refs)
@@ -365,6 +557,7 @@ export function HappyThread(props: {
             onAtBottomChangeRef.current(atBottom)
             if (atBottom) {
                 onFlushPendingRef.current()
+                requestLatestWhileAtBottom()
             }
         }
 
@@ -405,7 +598,7 @@ export function HappyThread(props: {
 
         viewport.addEventListener('scroll', handleScroll, { passive: true })
         return () => viewport.removeEventListener('scroll', handleScroll)
-    }, []) // Stable: no dependencies, reads from refs
+    }, [requestLatestWhileAtBottom]) // Stable: reads current props from refs
 
     const scrollToBottomInstant = useCallback(() => {
         const viewport = viewportRef.current
@@ -430,6 +623,69 @@ export function HappyThread(props: {
         onFlushPendingRef.current()
     }, [])
 
+    const markAwayFromBottom = useCallback(() => {
+        autoScrollEnabledRef.current = false
+        if (atBottomRef.current) {
+            atBottomRef.current = false
+            onAtBottomChangeRef.current(false)
+        }
+    }, [])
+
+    const scrollToConversationItem = useCallback((item: ConversationOutlineItem) => {
+        const target = document.getElementById(getConversationMessageAnchorId(item.targetMessageId))
+        const viewport = viewportRef.current
+        if (!target || !viewport || !viewport.contains(target)) {
+            return false
+        }
+        markAwayFromBottom()
+        target.scrollIntoView({ block: 'start', behavior: 'smooth' })
+        return true
+    }, [markAwayFromBottom])
+
+    const scrollToTop = useCallback(() => {
+        const viewport = viewportRef.current
+        if (!viewport) {
+            return
+        }
+        markAwayFromBottom()
+        viewport.scrollTo({ top: 0, behavior: 'smooth' })
+        lastScrollTopRef.current = viewport.scrollTop
+    }, [markAwayFromBottom])
+
+    const scrollToLatestAndRefresh = useCallback(() => {
+        scrollToBottom()
+        requestLatestWhileAtBottom(true)
+    }, [requestLatestWhileAtBottom, scrollToBottom])
+
+    const findLoadedConversationNavigationTarget = useCallback((direction: ConversationNavigationDirection) => {
+        const viewport = viewportRef.current
+        if (!viewport) {
+            return null
+        }
+        const viewportTop = viewport.getBoundingClientRect().top
+        return findAdjacentConversationItem({
+            items: outlineItemsRef.current,
+            direction,
+            viewportTop,
+            getTop: (item) => {
+                const element = document.getElementById(getConversationMessageAnchorId(item.targetMessageId))
+                if (!element || !viewport.contains(element)) {
+                    return null
+                }
+                return element.getBoundingClientRect().top
+            }
+        })
+    }, [])
+
+    const waitForMessageWindowUpdate = useCallback(async (previousVersion: number) => {
+        for (let attempt = 0; attempt < CONVERSATION_NAVIGATION_LOAD_ATTEMPTS; attempt += 1) {
+            await waitForConversationNavigationSettle()
+            if (messagesVersionRef.current !== previousVersion || (!isLoadingMoreRef.current && !loadLockRef.current)) {
+                return
+            }
+        }
+    }, [])
+
     // Reset state when session changes
     useLayoutEffect(() => {
         autoScrollEnabledRef.current = true
@@ -441,6 +697,10 @@ export function HappyThread(props: {
         initialScrollDeadlineRef.current = 0
         clearInitialScrollTimers()
     }, [props.sessionId, clearInitialScrollTimers])
+
+    useEffect(() => {
+        requestLatestWhileAtBottom()
+    }, [props.sessionId, requestLatestWhileAtBottom])
 
     useLayoutEffect(() => {
         if (
@@ -457,6 +717,7 @@ export function HappyThread(props: {
         atBottomRef.current = true
         onAtBottomChangeRef.current(true)
         scrollToBottomInstant()
+        requestLatestWhileAtBottom()
 
         initialScrollDeadlineRef.current = Date.now() + INITIAL_SCROLL_SETTLE_MS
         clearInitialScrollTimers()
@@ -476,6 +737,7 @@ export function HappyThread(props: {
         props.rawMessagesCount,
         props.messagesVersion,
         scrollToBottomInstant,
+        requestLatestWhileAtBottom,
         clearInitialScrollTimers
     ])
 
@@ -493,7 +755,7 @@ export function HappyThread(props: {
         scrollToBottom()
     }, [props.forceScrollToken, scrollToBottom])
 
-    const handleLoadMore = useCallback(() => {
+    const loadOlderMessages = useCallback(async () => {
         if (
             isInitialScrollSettling()
             || isLoadingMessagesRef.current
@@ -501,11 +763,11 @@ export function HappyThread(props: {
             || isLoadingMoreRef.current
             || loadLockRef.current
         ) {
-            return
+            return false
         }
         const viewport = viewportRef.current
         if (!viewport) {
-            return
+            return false
         }
         pendingScrollRef.current = {
             anchor: captureScrollAnchor(viewport),
@@ -521,12 +783,14 @@ export function HappyThread(props: {
         } catch (error) {
             pendingScrollRef.current = null
             loadLockRef.current = false
-            throw error
+            console.error('Failed to load older messages:', error)
+            return false
         }
-        void loadPromise.catch((error) => {
+        return loadPromise.then(() => true).catch((error) => {
             pendingScrollRef.current = null
             loadLockRef.current = false
             console.error('Failed to load older messages:', error)
+            return false
         }).finally(() => {
             if (!loadStartedRef.current && !isLoadingMoreRef.current && pendingScrollRef.current) {
                 pendingScrollRef.current = null
@@ -534,6 +798,82 @@ export function HappyThread(props: {
             }
         })
     }, [isInitialScrollSettling])
+
+    const handleLoadMore = useCallback(() => {
+        void loadOlderMessages()
+    }, [loadOlderMessages])
+
+    const handlePreviousConversation = useCallback(() => {
+        if (conversationNavigationBusyRef.current) {
+            return
+        }
+        conversationNavigationBusyRef.current = true
+        setConversationNavigationPending('previous')
+
+        void (async () => {
+            try {
+                const loadedTarget = findLoadedConversationNavigationTarget('previous')
+                if (loadedTarget && scrollToConversationItem(loadedTarget)) {
+                    return
+                }
+
+                let firstKnownItemId = outlineItemsRef.current[0]?.id ?? null
+                for (let attempt = 0; attempt < CONVERSATION_NAVIGATION_LOAD_ATTEMPTS; attempt += 1) {
+                    if (!hasMoreMessagesRef.current) {
+                        break
+                    }
+
+                    const previousVersion = messagesVersionRef.current
+                    const didStartLoad = await loadOlderMessages()
+                    await waitForMessageWindowUpdate(previousVersion)
+                    if (!didStartLoad && previousVersion === messagesVersionRef.current) {
+                        break
+                    }
+
+                    const items = outlineItemsRef.current
+                    let target: ConversationOutlineItem | null = null
+                    if (firstKnownItemId) {
+                        const firstKnownIndex = items.findIndex((item) => item.id === firstKnownItemId)
+                        if (firstKnownIndex > 0) {
+                            target = items[firstKnownIndex - 1]
+                        } else if (firstKnownIndex === -1 && items.length > 0) {
+                            target = items[items.length - 1]
+                        }
+                    } else if (items.length > 0) {
+                        target = items[items.length - 1]
+                    }
+
+                    target = target ?? findLoadedConversationNavigationTarget('previous')
+                    if (target && scrollToConversationItem(target)) {
+                        return
+                    }
+                    firstKnownItemId = items[0]?.id ?? firstKnownItemId
+                }
+
+                scrollToTop()
+            } finally {
+                conversationNavigationBusyRef.current = false
+                setConversationNavigationPending(null)
+            }
+        })()
+    }, [
+        findLoadedConversationNavigationTarget,
+        loadOlderMessages,
+        scrollToConversationItem,
+        scrollToTop,
+        waitForMessageWindowUpdate
+    ])
+
+    const handleNextConversation = useCallback(() => {
+        if (conversationNavigationBusyRef.current) {
+            return
+        }
+        const loadedTarget = findLoadedConversationNavigationTarget('next')
+        if (loadedTarget && scrollToConversationItem(loadedTarget)) {
+            return
+        }
+        scrollToLatestAndRefresh()
+    }, [findLoadedConversationNavigationTarget, scrollToConversationItem, scrollToLatestAndRefresh])
 
     const handleOutlineSelect = useCallback((item: ConversationOutlineItem) => {
         const target = document.getElementById(getConversationMessageAnchorId(item.targetMessageId))
@@ -701,6 +1041,15 @@ export function HappyThread(props: {
                         </div>
                     </div>
                 </ThreadPrimitive.Viewport>
+                <ConversationScrollControls
+                    disabled={conversationNavigationPending !== null || props.isLoadingMessages}
+                    previousLabel={t('session.scroll.previousUser')}
+                    nextLabel={t('session.scroll.nextUser')}
+                    bottomLabel={t('session.scroll.bottom')}
+                    onPrevious={handlePreviousConversation}
+                    onNext={handleNextConversation}
+                    onBottom={scrollToLatestAndRefresh}
+                />
                 <NewMessagesIndicator count={props.pendingCount} onClick={scrollToBottom} />
                 {props.outlineOpen ? (
                     <>

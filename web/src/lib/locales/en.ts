@@ -104,6 +104,9 @@ export default {
   'session.outline.empty': 'No outline items in loaded messages',
   'session.outline.forkFromHere': 'Fork from here',
   'session.outline.kind.user': 'User',
+  'session.scroll.previousUser': 'Previous user message',
+  'session.scroll.nextUser': 'Next user message',
+  'session.scroll.bottom': 'Jump to latest',
 
   // Session actions
   'session.action.marker': 'Marker',

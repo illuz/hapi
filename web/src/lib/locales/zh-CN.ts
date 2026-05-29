@@ -104,6 +104,9 @@ export default {
   'session.outline.empty': '已加载消息中暂无大纲项',
   'session.outline.forkFromHere': '从这里 Fork',
   'session.outline.kind.user': '用户',
+  'session.scroll.previousUser': '上一条用户消息',
+  'session.scroll.nextUser': '下一条用户消息',
+  'session.scroll.bottom': '跳到最新',
 
   // Session actions
   'session.action.marker': '标记颜色',

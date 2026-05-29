@@ -5,6 +5,7 @@ import { I18nProvider } from '@/lib/i18n-context'
 import {
     ConversationOutlinePanel,
     captureScrollAnchor,
+    findAdjacentConversationItem,
     getScrollIntent,
     restoreScrollAnchor,
     shouldCancelInitialScrollSettling,
@@ -181,5 +182,35 @@ describe('scroll anchor helpers', () => {
         expect(viewport.scrollTop).toBe(250)
 
         viewport.remove()
+    })
+})
+
+describe('conversation navigation helpers', () => {
+    it('finds the previous user item above the viewport edge', () => {
+        const topById = new Map([
+            ['outline:user:m1', -160],
+            ['outline:user:m2', 12]
+        ])
+
+        expect(findAdjacentConversationItem({
+            items: outlineItems,
+            direction: 'previous',
+            viewportTop: 0,
+            getTop: (item) => topById.get(item.id) ?? null
+        })).toBe(outlineItems[0])
+    })
+
+    it('finds the next user item below the viewport edge', () => {
+        const topById = new Map([
+            ['outline:user:m1', -160],
+            ['outline:user:m2', 48]
+        ])
+
+        expect(findAdjacentConversationItem({
+            items: outlineItems,
+            direction: 'next',
+            viewportTop: 0,
+            getTop: (item) => topById.get(item.id) ?? null
+        })).toBe(outlineItems[1])
     })
 })

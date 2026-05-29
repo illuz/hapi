@@ -187,7 +187,7 @@ function ConversationScrollButton(props: {
             title={props.label}
             disabled={props.disabled}
             onClick={props.onClick}
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--app-border)] bg-[var(--app-bg)] text-[var(--app-fg)] shadow-md transition-colors hover:bg-[var(--app-secondary-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--app-border)] bg-[var(--app-bg)] text-[var(--app-hint)] opacity-45 shadow-sm transition-[background-color,color,opacity] hover:bg-[var(--app-secondary-bg)] hover:text-[var(--app-fg)] hover:opacity-95 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] disabled:cursor-not-allowed disabled:opacity-25"
         >
             {props.children}
         </button>

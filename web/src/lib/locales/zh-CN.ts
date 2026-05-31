@@ -63,6 +63,7 @@ export default {
   'sessions.search.noResults': '没有匹配的会话。',
   'sessions.colorFilter.title': '过滤标记颜色',
   'sessions.colorFilter.all': '全部会话',
+  'sessions.colorFilter.clear': '清除颜色过滤',
   'sessions.filter.noResults': '没有匹配筛选条件的会话。',
   'sessions.group.showMore': '再显示 {n} 个',
   'sessions.group.showLess': '收起',

@@ -600,29 +600,45 @@ function SessionListSearch(props: {
                 </div>
 
                 <div className="relative shrink-0">
-                    <button
-                        ref={buttonRef}
-                        type="button"
-                        onClick={() => setMenuOpen(open => !open)}
-                        aria-haspopup="menu"
-                        aria-expanded={menuOpen}
-                        aria-label={activeMarkerLabel
-                            ? `${t('sessions.colorFilter.title')}: ${activeMarkerLabel}`
-                            : t('sessions.colorFilter.title')}
-                        title={activeMarkerLabel
-                            ? `${t('sessions.colorFilter.title')}: ${activeMarkerLabel}`
-                            : t('sessions.colorFilter.title')}
-                        className={`relative flex h-8 w-8 items-center justify-center rounded-lg border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] ${props.markerColorFilter ? 'border-[var(--app-link)] bg-[var(--app-subtle-bg)] text-[var(--app-link)]' : 'border-[var(--app-border)] text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]'}`}
-                    >
-                        <MarkerPaletteIcon className="h-4 w-4" />
+                    <div className="relative">
+                        <button
+                            ref={buttonRef}
+                            type="button"
+                            onClick={() => setMenuOpen(open => !open)}
+                            aria-haspopup="menu"
+                            aria-expanded={menuOpen}
+                            aria-label={activeMarkerLabel
+                                ? `${t('sessions.colorFilter.title')}: ${activeMarkerLabel}`
+                                : t('sessions.colorFilter.title')}
+                            title={activeMarkerLabel
+                                ? `${t('sessions.colorFilter.title')}: ${activeMarkerLabel}`
+                                : t('sessions.colorFilter.title')}
+                            className={`relative flex h-8 w-8 items-center justify-center rounded-lg border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] ${props.markerColorFilter ? 'border-[var(--app-link)] bg-[var(--app-subtle-bg)] text-[var(--app-link)]' : 'border-[var(--app-border)] text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]'}`}
+                        >
+                            <MarkerPaletteIcon className="h-4 w-4" />
+                            {props.markerColorFilter ? (
+                                <SessionMarkerDot
+                                    markerColor={props.markerColorFilter}
+                                    size={7}
+                                    className="absolute bottom-1.5 right-1.5"
+                                />
+                            ) : null}
+                        </button>
                         {props.markerColorFilter ? (
-                            <SessionMarkerDot
-                                markerColor={props.markerColorFilter}
-                                size={7}
-                                className="absolute right-1.5 top-1.5"
-                            />
+                            <button
+                                type="button"
+                                onClick={(event) => {
+                                    event.stopPropagation()
+                                    selectMarkerColor(null)
+                                }}
+                                className="absolute right-0.5 top-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-500 text-white shadow-sm ring-1 ring-[var(--app-bg)] transition-colors hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+                                aria-label={t('sessions.colorFilter.clear')}
+                                title={t('sessions.colorFilter.clear')}
+                            >
+                                <XIcon className="h-2 w-2" />
+                            </button>
                         ) : null}
-                    </button>
+                    </div>
 
                     {menuOpen ? (
                         <div

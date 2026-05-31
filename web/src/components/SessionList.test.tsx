@@ -55,6 +55,7 @@ vi.mock('@/lib/use-translation', () => ({
                 'sessions.search.placeholder': 'Search',
                 'sessions.colorFilter.title': 'Filter marker color',
                 'sessions.colorFilter.all': 'All sessions',
+                'sessions.colorFilter.clear': 'Clear marker color filter',
                 'sessions.group.showLess': 'Show less',
                 'machine.unknown': 'Unknown machine',
                 'session.time.justNow': 'just now',
@@ -170,5 +171,10 @@ describe('SessionList color filter', () => {
 
         expect(screen.getByText(/Blue Task/)).toBeInTheDocument()
         expect(screen.queryByText(/Red Task/)).not.toBeInTheDocument()
+
+        fireEvent.click(screen.getByRole('button', { name: 'Clear marker color filter' }))
+
+        expect(screen.getByText(/Blue Task/)).toBeInTheDocument()
+        expect(screen.getByText(/Red Task/)).toBeInTheDocument()
     })
 })

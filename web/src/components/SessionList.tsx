@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import type { AgentFlavor, ProjectToolCounts, SessionSummary } from '@/types/api'
+import type { AgentFlavor, ProjectToolCounts, SessionMarkerColor, SessionSummary } from '@/types/api'
 import type { ApiClient } from '@/api/client'
 import { useLongPress } from '@/hooks/useLongPress'
 import { usePlatform } from '@/hooks/usePlatform'
@@ -8,9 +8,10 @@ import { useSessionActions } from '@/hooks/mutations/useSessionActions'
 import { SessionActionMenu } from '@/components/SessionActionMenu'
 import { RenameSessionDialog } from '@/components/RenameSessionDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { SessionMarkerDot } from '@/components/SessionMarkerDot'
 import { useSessionAttentionTokens } from '@/lib/sessionAttention'
 import { canForkSession, canSpawnSessionFromConfig } from '@/lib/sessionBranching'
-import { getSessionMarkerColorHex } from '@/lib/sessionMarkers'
+import { SESSION_MARKER_COLORS, getSessionMarkerColorHex } from '@/lib/sessionMarkers'
 import { getDisplaySessionTitle, getSessionTitle as getBaseSessionTitle } from '@/lib/sessionTitle'
 import { useToast } from '@/lib/toast-context'
 import { CopyIcon, CheckIcon } from '@/components/icons'
@@ -340,6 +341,28 @@ function XIcon(props: { className?: string }) {
     )
 }
 
+function MarkerPaletteIcon(props: { className?: string }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={props.className}
+        >
+            <path d="M12 3a9 9 0 0 0 0 18h1.2a1.8 1.8 0 0 0 1.3-3.05 1.8 1.8 0 0 1 1.3-3.05H17a4 4 0 0 0 4-4A8 8 0 0 0 12 3Z" />
+            <circle cx="7.7" cy="10" r="0.8" fill="currentColor" stroke="none" />
+            <circle cx="10.5" cy="7.2" r="0.8" fill="currentColor" stroke="none" />
+            <circle cx="14.2" cy="7.8" r="0.8" fill="currentColor" stroke="none" />
+        </svg>
+    )
+}
+
 function PlusIcon(props: { className?: string }) {
     return (
         <svg
@@ -447,6 +470,29 @@ export function sessionMatchesQuery(session: SessionSummary, query: string, mach
     return searchable.includes(query)
 }
 
+export function sessionMatchesMarkerColor(
+    session: SessionSummary,
+    markerColor: SessionMarkerColor | null
+): boolean {
+    if (!markerColor) return true
+    return session.markerColor === markerColor
+}
+
+function getMarkerColorCounts(sessions: SessionSummary[]): Record<SessionMarkerColor, number> {
+    const counts = {} as Record<SessionMarkerColor, number>
+    for (const color of SESSION_MARKER_COLORS) {
+        counts[color] = 0
+    }
+
+    for (const session of sessions) {
+        if (session.markerColor) {
+            counts[session.markerColor] += 1
+        }
+    }
+
+    return counts
+}
+
 
 export function getVisibleSessionPreview(
     sessions: SessionSummary[],
@@ -483,30 +529,151 @@ export function getVisibleSessionPreview(
 function SessionListSearch(props: {
     value: string
     onChange: (value: string) => void
+    markerColorFilter: SessionMarkerColor | null
+    markerColorCounts: Record<SessionMarkerColor, number>
+    totalCount: number
+    onMarkerColorFilterChange: (markerColor: SessionMarkerColor | null) => void
 }) {
     const { t } = useTranslation()
+    const [menuOpen, setMenuOpen] = useState(false)
+    const buttonRef = useRef<HTMLButtonElement | null>(null)
+    const menuRef = useRef<HTMLDivElement | null>(null)
+
+    useEffect(() => {
+        if (!menuOpen) return
+
+        const handlePointerDown = (event: PointerEvent) => {
+            const target = event.target
+            if (!(target instanceof Node)) return
+            if (buttonRef.current?.contains(target) || menuRef.current?.contains(target)) return
+            setMenuOpen(false)
+        }
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                setMenuOpen(false)
+            }
+        }
+
+        document.addEventListener('pointerdown', handlePointerDown)
+        document.addEventListener('keydown', handleKeyDown)
+
+        return () => {
+            document.removeEventListener('pointerdown', handlePointerDown)
+            document.removeEventListener('keydown', handleKeyDown)
+        }
+    }, [menuOpen])
+
+    const selectMarkerColor = (markerColor: SessionMarkerColor | null) => {
+        props.onMarkerColorFilterChange(markerColor)
+        setMenuOpen(false)
+    }
+
+    const activeMarkerLabel = props.markerColorFilter
+        ? t(`session.marker.${props.markerColorFilter}`)
+        : null
+
     return (
         <div className="relative px-3 pb-2">
-            <div className="pointer-events-none absolute inset-y-0 left-5 flex items-center pb-2 text-[var(--app-hint)]">
-                <SearchIcon className="h-3.5 w-3.5" />
+            <div className="flex items-center gap-2">
+                <div className="relative min-w-0 flex-1">
+                    <div className="pointer-events-none absolute inset-y-0 left-2.5 flex items-center text-[var(--app-hint)]">
+                        <SearchIcon className="h-3.5 w-3.5" />
+                    </div>
+                    <input
+                        type="search"
+                        value={props.value}
+                        onChange={(event) => props.onChange(event.target.value)}
+                        placeholder={t('sessions.search.placeholder')}
+                        className="w-full appearance-none rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] py-1.5 pl-8 pr-8 text-sm text-[var(--app-fg)] outline-none transition-colors placeholder:text-[var(--app-hint)] focus:border-[var(--app-link)] [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-decoration]:hidden"
+                    />
+                    {props.value ? (
+                        <button
+                            type="button"
+                            onClick={() => props.onChange('')}
+                            className="absolute inset-y-0 right-2 flex items-center rounded p-0.5 text-[var(--app-hint)] hover:text-[var(--app-fg)]"
+                            title={t('sessions.search.clear')}
+                        >
+                            <XIcon className="h-3.5 w-3.5" />
+                        </button>
+                    ) : null}
+                </div>
+
+                <div className="relative shrink-0">
+                    <button
+                        ref={buttonRef}
+                        type="button"
+                        onClick={() => setMenuOpen(open => !open)}
+                        aria-haspopup="menu"
+                        aria-expanded={menuOpen}
+                        aria-label={activeMarkerLabel
+                            ? `${t('sessions.colorFilter.title')}: ${activeMarkerLabel}`
+                            : t('sessions.colorFilter.title')}
+                        title={activeMarkerLabel
+                            ? `${t('sessions.colorFilter.title')}: ${activeMarkerLabel}`
+                            : t('sessions.colorFilter.title')}
+                        className={`relative flex h-8 w-8 items-center justify-center rounded-lg border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] ${props.markerColorFilter ? 'border-[var(--app-link)] bg-[var(--app-subtle-bg)] text-[var(--app-link)]' : 'border-[var(--app-border)] text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]'}`}
+                    >
+                        <MarkerPaletteIcon className="h-4 w-4" />
+                        {props.markerColorFilter ? (
+                            <SessionMarkerDot
+                                markerColor={props.markerColorFilter}
+                                size={7}
+                                className="absolute right-1.5 top-1.5"
+                            />
+                        ) : null}
+                    </button>
+
+                    {menuOpen ? (
+                        <div
+                            ref={menuRef}
+                            className="absolute right-0 top-full z-50 mt-1 min-w-[190px] rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] p-1 shadow-lg animate-menu-pop"
+                            role="menu"
+                            aria-label={t('sessions.colorFilter.title')}
+                        >
+                            <button
+                                type="button"
+                                role="menuitemradio"
+                                aria-checked={props.markerColorFilter === null}
+                                onClick={() => selectMarkerColor(null)}
+                                className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] ${props.markerColorFilter === null ? 'bg-[var(--app-subtle-bg)] text-[var(--app-fg)]' : 'text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]'}`}
+                            >
+                                <MarkerPaletteIcon className="h-3.5 w-3.5" />
+                                <span>
+                                    {t('sessions.colorFilter.all')}
+                                    <span className="ml-1 text-[11px] tabular-nums text-[var(--app-hint)]">({props.totalCount})</span>
+                                </span>
+                            </button>
+
+                            <div className="my-1 border-t border-[var(--app-divider)]" />
+
+                            {SESSION_MARKER_COLORS.map((markerColor) => {
+                                const count = props.markerColorCounts[markerColor]
+                                const selected = props.markerColorFilter === markerColor
+                                const disabled = count === 0 && !selected
+
+                                return (
+                                    <button
+                                        key={markerColor}
+                                        type="button"
+                                        role="menuitemradio"
+                                        aria-checked={selected}
+                                        disabled={disabled}
+                                        onClick={() => selectMarkerColor(markerColor)}
+                                        className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] disabled:cursor-not-allowed disabled:opacity-40 ${selected ? 'bg-[var(--app-subtle-bg)] text-[var(--app-fg)]' : 'text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]'}`}
+                                    >
+                                        <SessionMarkerDot markerColor={markerColor} size={10} />
+                                        <span>
+                                            {t(`session.marker.${markerColor}`)}
+                                            <span className="ml-1 text-[11px] tabular-nums text-[var(--app-hint)]">({count})</span>
+                                        </span>
+                                    </button>
+                                )
+                            })}
+                        </div>
+                    ) : null}
+                </div>
             </div>
-            <input
-                type="search"
-                value={props.value}
-                onChange={(event) => props.onChange(event.target.value)}
-                placeholder={t('sessions.search.placeholder')}
-                className="w-full appearance-none rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] py-1.5 pl-8 pr-8 text-sm text-[var(--app-fg)] outline-none transition-colors placeholder:text-[var(--app-hint)] focus:border-[var(--app-link)] [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-decoration]:hidden"
-            />
-            {props.value ? (
-                <button
-                    type="button"
-                    onClick={() => props.onChange('')}
-                    className="absolute inset-y-0 right-5 flex items-center pb-2 rounded p-0.5 text-[var(--app-hint)] hover:text-[var(--app-fg)]"
-                    title={t('sessions.search.clear')}
-                >
-                    <XIcon className="h-3.5 w-3.5" />
-                </button>
-            ) : null}
         </div>
     )
 }
@@ -805,8 +972,11 @@ export function SessionList(props: {
     const { renderHeader = true, api, selectedSessionId, machineLabelsById = {} } = props
     const attentionTokens = useSessionAttentionTokens()
     const [searchQuery, setSearchQuery] = useState('')
+    const [markerColorFilter, setMarkerColorFilter] = useState<SessionMarkerColor | null>(null)
     const normalizedQuery = normalizeSearch(searchQuery)
     const isSearching = normalizedQuery.length > 0
+    const isFilteringByMarkerColor = markerColorFilter !== null
+    const isFilteringSessions = isSearching || isFilteringByMarkerColor
 
     const resolveMachineLabel = (machineId: string | null): string => {
         if (machineId && machineLabelsById[machineId]) {
@@ -822,15 +992,22 @@ export function SessionList(props: {
         () => props.sessions,
         [props.sessions]
     )
+    const markerColorCounts = useMemo(
+        () => getMarkerColorCounts(allSessions),
+        [allSessions]
+    )
     const visibleSessions = useMemo(
-        () => isSearching
-            ? allSessions.filter(session => sessionMatchesQuery(
-                session,
-                normalizedQuery,
-                resolveMachineLabel(session.metadata?.machineId ?? null)
-            ))
+        () => isFilteringSessions
+            ? allSessions.filter(session =>
+                sessionMatchesMarkerColor(session, markerColorFilter)
+                && sessionMatchesQuery(
+                    session,
+                    normalizedQuery,
+                    resolveMachineLabel(session.metadata?.machineId ?? null)
+                )
+            )
             : allSessions,
-        [allSessions, isSearching, normalizedQuery, machineLabelsById] // eslint-disable-line react-hooks/exhaustive-deps
+        [allSessions, isFilteringSessions, markerColorFilter, normalizedQuery, machineLabelsById] // eslint-disable-line react-hooks/exhaustive-deps
     )
     const allGroups = useMemo(
         () => groupSessionsByDirectory(allSessions),
@@ -954,7 +1131,7 @@ export function SessionList(props: {
             {renderHeader ? (
                 <div className="flex items-center justify-between px-3 py-1">
                     <div className="text-xs text-[var(--app-hint)]">
-                        {isSearching
+                        {isFilteringSessions
                             ? t('sessions.search.count', { n: visibleSessions.length, total: allSessions.length })
                             : t('sessions.count', { n: props.sessions.length, m: allGroups.length })}
                     </div>
@@ -970,7 +1147,14 @@ export function SessionList(props: {
             ) : null}
 
             {props.sessions.length > 0 ? (
-                <SessionListSearch value={searchQuery} onChange={setSearchQuery} />
+                <SessionListSearch
+                    value={searchQuery}
+                    onChange={setSearchQuery}
+                    markerColorFilter={markerColorFilter}
+                    markerColorCounts={markerColorCounts}
+                    totalCount={allSessions.length}
+                    onMarkerColorFilterChange={setMarkerColorFilter}
+                />
             ) : null}
 
             {props.sessions.length === 0 && (
@@ -980,9 +1164,11 @@ export function SessionList(props: {
                 />
             )}
 
-            {props.sessions.length > 0 && isSearching && visibleSessions.length === 0 ? (
+            {props.sessions.length > 0 && isFilteringSessions && visibleSessions.length === 0 ? (
                 <div className="px-4 py-8 text-center text-sm text-[var(--app-hint)]">
-                    {t('sessions.search.noResults')}
+                    {isFilteringByMarkerColor
+                        ? t('sessions.filter.noResults')
+                        : t('sessions.search.noResults')}
                 </div>
             ) : null}
 

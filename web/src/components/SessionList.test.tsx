@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SessionSummary } from '@/types/api'
 import { getProjectToolCountsKey, SessionList } from './SessionList'
 
@@ -53,14 +53,22 @@ vi.mock('@/lib/use-translation', () => ({
             const map: Record<string, string> = {
                 'sessions.count': `${params?.n ?? 0} sessions in ${params?.m ?? 0} projects`,
                 'sessions.search.placeholder': 'Search',
+                'sessions.colorFilter.title': 'Filter marker color',
+                'sessions.colorFilter.all': 'All sessions',
                 'sessions.group.showLess': 'Show less',
                 'machine.unknown': 'Unknown machine',
                 'session.time.justNow': 'just now',
+                'session.marker.red': 'Focus',
+                'session.marker.blue': 'In progress',
             }
             return map[key] ?? key
         },
     }),
 }))
+
+afterEach(() => {
+    cleanup()
+})
 
 function makeSession(overrides: Partial<SessionSummary> = {}): SessionSummary {
     return {
@@ -125,5 +133,42 @@ describe('SessionList project tools buttons', () => {
             tab: 'cron',
         })
         expect(sessionTitle).toBeInTheDocument()
+    })
+})
+
+describe('SessionList color filter', () => {
+    it('filters sessions by selected marker color from the search row dropdown', () => {
+        render(
+            <SessionList
+                sessions={[
+                    makeSession({
+                        id: 'blue-session',
+                        markerColor: 'blue',
+                        metadata: { path: '/repo', machineId: 'machine-1', flavor: 'codex', name: 'Blue Task' },
+                    }),
+                    makeSession({
+                        id: 'red-session',
+                        markerColor: 'red',
+                        metadata: { path: '/repo', machineId: 'machine-1', flavor: 'codex', name: 'Red Task' },
+                    }),
+                ]}
+                onSelect={vi.fn()}
+                onNewSession={vi.fn()}
+                onRefresh={vi.fn()}
+                isLoading={false}
+                renderHeader={false}
+                api={null}
+                machineLabelsById={{ 'machine-1': 'MacBook' }}
+            />
+        )
+
+        expect(screen.getByText(/Blue Task/)).toBeInTheDocument()
+        expect(screen.getByText(/Red Task/)).toBeInTheDocument()
+
+        fireEvent.click(screen.getByRole('button', { name: 'Filter marker color' }))
+        fireEvent.click(screen.getByRole('menuitemradio', { name: /In progress/ }))
+
+        expect(screen.getByText(/Blue Task/)).toBeInTheDocument()
+        expect(screen.queryByText(/Red Task/)).not.toBeInTheDocument()
     })
 })

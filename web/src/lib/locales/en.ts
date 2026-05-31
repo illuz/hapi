@@ -61,6 +61,9 @@ export default {
   'sessions.search.clear': 'Clear search',
   'sessions.search.count': '{n} of {total} sessions',
   'sessions.search.noResults': 'No sessions match your search.',
+  'sessions.colorFilter.title': 'Filter marker color',
+  'sessions.colorFilter.all': 'All sessions',
+  'sessions.filter.noResults': 'No sessions match your filters.',
   'sessions.group.showMore': 'Show {n} more',
   'sessions.group.showLess': 'Show less',
 

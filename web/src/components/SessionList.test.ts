@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionSummary } from '@/types/api'
-import { deduplicateSessionsByAgentId, expandSelectedSessionCollapseOverrides, getVisibleSessionPreview, normalizeSearch, sessionMatchesQuery } from './SessionList'
+import { deduplicateSessionsByAgentId, expandSelectedSessionCollapseOverrides, getVisibleSessionPreview, normalizeSearch, sessionMatchesMarkerColor, sessionMatchesQuery } from './SessionList'
 
 function makeSession(overrides: Partial<SessionSummary> & { id: string }): SessionSummary {
     return {
@@ -99,6 +99,14 @@ describe('session list search helpers', () => {
         expect(sessionMatchesQuery(session, normalizeSearch('bot review'), 'desktop')).toBe(true)
         expect(sessionMatchesQuery(session, normalizeSearch('desktop'), 'desktop')).toBe(true)
         expect(sessionMatchesQuery(session, normalizeSearch('missing'), 'desktop')).toBe(false)
+    })
+
+    it('matches sessions by marker color filter', () => {
+        const session = makeSession({ id: 'marked', markerColor: 'blue' })
+
+        expect(sessionMatchesMarkerColor(session, null)).toBe(true)
+        expect(sessionMatchesMarkerColor(session, 'blue')).toBe(true)
+        expect(sessionMatchesMarkerColor(session, 'red')).toBe(false)
     })
 })
 

@@ -9,6 +9,7 @@ import { SessionActionMenu } from '@/components/SessionActionMenu'
 import { RenameSessionDialog } from '@/components/RenameSessionDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { SessionMarkerDot } from '@/components/SessionMarkerDot'
+import { loadSessionColorFilterPreference, saveSessionColorFilterPreference } from '@/lib/sessionColorFilterPreference'
 import { useSessionAttentionTokens } from '@/lib/sessionAttention'
 import { canForkSession, canSpawnSessionFromConfig } from '@/lib/sessionBranching'
 import { SESSION_MARKER_COLORS, getSessionMarkerColorHex } from '@/lib/sessionMarkers'
@@ -771,9 +772,10 @@ function SessionItem(props: {
     api: ApiClient | null
     selected?: boolean
     attentionToken?: number
+    inheritedMarkerColor?: SessionMarkerColor | null
 }) {
     const { t } = useTranslation()
-    const { session: s, onSelect, showPath = true, api, selected = false, attentionToken } = props
+    const { session: s, onSelect, showPath = true, api, selected = false, attentionToken, inheritedMarkerColor = null } = props
     const { haptic } = usePlatform()
     const navigate = useNavigate()
     const { addToast } = useToast()
@@ -831,6 +833,9 @@ function SessionItem(props: {
     const handleForkSession = async () => {
         try {
             const result = await forkSession()
+            if (inheritedMarkerColor) {
+                await api?.setSessionMarkerColor(result.sessionId, inheritedMarkerColor)
+            }
             haptic.notification('success')
             onSelect(result.sessionId)
             await navigate({
@@ -846,6 +851,9 @@ function SessionItem(props: {
     const handleSpawnSessionFromConfig = async (agent: Extract<AgentFlavor, 'claude' | 'codex'>) => {
         try {
             const result = await spawnSessionFromConfig(agent)
+            if (inheritedMarkerColor) {
+                await api?.setSessionMarkerColor(result.sessionId, inheritedMarkerColor)
+            }
             haptic.notification('success')
             onSelect(result.sessionId)
             await navigate({
@@ -988,7 +996,7 @@ export function SessionList(props: {
     const { renderHeader = true, api, selectedSessionId, machineLabelsById = {} } = props
     const attentionTokens = useSessionAttentionTokens()
     const [searchQuery, setSearchQuery] = useState('')
-    const [markerColorFilter, setMarkerColorFilter] = useState<SessionMarkerColor | null>(null)
+    const [markerColorFilter, setMarkerColorFilter] = useState<SessionMarkerColor | null>(loadSessionColorFilterPreference)
     const normalizedQuery = normalizeSearch(searchQuery)
     const isSearching = normalizedQuery.length > 0
     const isFilteringByMarkerColor = markerColorFilter !== null
@@ -1012,6 +1020,9 @@ export function SessionList(props: {
         () => getMarkerColorCounts(allSessions),
         [allSessions]
     )
+    useEffect(() => {
+        saveSessionColorFilterPreference(markerColorFilter)
+    }, [markerColorFilter])
     const visibleSessions = useMemo(
         () => isFilteringSessions
             ? allSessions.filter(session =>
@@ -1277,6 +1288,7 @@ export function SessionList(props: {
                                                                 api={api}
                                                                 selected={s.id === selectedSessionId}
                                                                 attentionToken={attentionTokens[s.id]}
+                                                                inheritedMarkerColor={markerColorFilter}
                                                             />
                                                         ))}
                                                         {!isSearching && group.sessions.length > GROUP_SESSION_PREVIEW_LIMIT && (sessionGroupExpanded || hiddenSessionCount > 0) ? (

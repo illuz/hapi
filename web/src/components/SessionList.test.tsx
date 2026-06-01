@@ -69,6 +69,7 @@ vi.mock('@/lib/use-translation', () => ({
 
 afterEach(() => {
     cleanup()
+    localStorage.clear()
 })
 
 function makeSession(overrides: Partial<SessionSummary> = {}): SessionSummary {
@@ -165,16 +166,50 @@ describe('SessionList color filter', () => {
 
         expect(screen.getByText(/Blue Task/)).toBeInTheDocument()
         expect(screen.getByText(/Red Task/)).toBeInTheDocument()
+        expect(localStorage.getItem('hapi:sessionList:markerColorFilter')).toBeNull()
 
         fireEvent.click(screen.getByRole('button', { name: 'Filter marker color' }))
         fireEvent.click(screen.getByRole('menuitemradio', { name: /In progress/ }))
 
         expect(screen.getByText(/Blue Task/)).toBeInTheDocument()
         expect(screen.queryByText(/Red Task/)).not.toBeInTheDocument()
+        expect(localStorage.getItem('hapi:sessionList:markerColorFilter')).toBe('blue')
 
         fireEvent.click(screen.getByRole('button', { name: 'Clear marker color filter' }))
 
         expect(screen.getByText(/Blue Task/)).toBeInTheDocument()
+        expect(screen.getByText(/Red Task/)).toBeInTheDocument()
+        expect(localStorage.getItem('hapi:sessionList:markerColorFilter')).toBeNull()
+    })
+
+    it('restores the marker color filter from local storage', () => {
+        localStorage.setItem('hapi:sessionList:markerColorFilter', 'red')
+
+        render(
+            <SessionList
+                sessions={[
+                    makeSession({
+                        id: 'blue-session',
+                        markerColor: 'blue',
+                        metadata: { path: '/repo', machineId: 'machine-1', flavor: 'codex', name: 'Blue Task' },
+                    }),
+                    makeSession({
+                        id: 'red-session',
+                        markerColor: 'red',
+                        metadata: { path: '/repo', machineId: 'machine-1', flavor: 'codex', name: 'Red Task' },
+                    }),
+                ]}
+                onSelect={vi.fn()}
+                onNewSession={vi.fn()}
+                onRefresh={vi.fn()}
+                isLoading={false}
+                renderHeader={false}
+                api={null}
+                machineLabelsById={{ 'machine-1': 'MacBook' }}
+            />
+        )
+
+        expect(screen.queryByText(/Blue Task/)).not.toBeInTheDocument()
         expect(screen.getByText(/Red Task/)).toBeInTheDocument()
     })
 })

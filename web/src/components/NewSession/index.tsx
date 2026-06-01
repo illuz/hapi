@@ -1,6 +1,6 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { ApiClient } from '@/api/client'
-import type { Machine } from '@/types/api'
+import type { Machine, SessionMarkerColor } from '@/types/api'
 import { usePlatform } from '@/hooks/usePlatform'
 import { useMachinePathsExists } from '@/hooks/useMachinePathsExists'
 import { useSpawnSession } from '@/hooks/mutations/useSpawnSession'
@@ -40,6 +40,7 @@ export function NewSession(props: {
     onChooseFolder?: (args: { machineId: string | null; directory: string }) => void
     initialDirectory?: string
     initialMachineId?: string
+    inheritedMarkerColor?: SessionMarkerColor | null
 }) {
     const { haptic } = usePlatform()
     const { t } = useTranslation()
@@ -335,6 +336,9 @@ export function NewSession(props: {
             })
 
             if (result.type === 'success') {
+                if (props.inheritedMarkerColor) {
+                    await props.api.setSessionMarkerColor(result.sessionId, props.inheritedMarkerColor)
+                }
                 haptic.notification('success')
                 setLastUsedMachineId(machineId)
                 addRecentPath(machineId, trimmedDirectory)

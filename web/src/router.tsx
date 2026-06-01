@@ -39,6 +39,7 @@ import { clearMessageWindow, fetchLatestMessages, seedMessageWindowFromSession }
 import { clearDraftsAfterSend } from '@/lib/clearDraftsAfterSend'
 import { getMachineTitle } from '@/lib/machineTitle'
 import { filterSessionsByActivityOrMarker } from '@/lib/sessionFilters'
+import { loadSessionColorFilterPreference } from '@/lib/sessionColorFilterPreference'
 import FilesPage from '@/routes/sessions/files'
 import FilePage from '@/routes/sessions/file'
 import TerminalPage from '@/routes/sessions/terminal'
@@ -646,6 +647,7 @@ function NewSessionPage() {
     const { machines, isLoading: machinesLoading, error: machinesError } = useMachines(api, true)
     const { t } = useTranslation()
     const { directory: initialDirectory, machineId: initialMachineId } = newSessionRoute.useSearch()
+    const inheritedMarkerColor = loadSessionColorFilterPreference()
 
     const handleCancel = useCallback(() => {
         navigate({ to: '/sessions' })
@@ -709,6 +711,7 @@ function NewSessionPage() {
                     onChooseFolder={handleChooseFolder}
                     initialDirectory={initialDirectory}
                     initialMachineId={initialMachineId}
+                    inheritedMarkerColor={inheritedMarkerColor}
                 />
             </div>
         </div>

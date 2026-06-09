@@ -41,9 +41,12 @@ import {
     type RpcUploadFileResponse
 } from './rpcGateway'
 import { ProjectToolsService } from './projectToolsService'
+import { ConversationHistoryService } from './conversationHistoryService'
 import { SessionCache } from './sessionCache'
 import type { StoredCronRun } from '../store'
 import { triggerProjectCronRun } from './cronScheduler'
+
+const CONVERSATION_HISTORY_BACKFILL_MS = 2 * 24 * 60 * 60 * 1000
 
 export type { Session, SyncEvent } from '@hapi/protocol/types'
 export type { Machine } from './machineCache'
@@ -98,6 +101,7 @@ export class SyncEngine {
     private readonly autoContinueService: AutoContinueService
     private readonly rpcGateway: RpcGateway
     private readonly projectToolsService: ProjectToolsService
+    private readonly conversationHistoryService: ConversationHistoryService
     private inactivityTimer: NodeJS.Timeout | null = null
 
     constructor(
@@ -123,6 +127,7 @@ export class SyncEngine {
             updateSettings: (sessionId, settings) => this.sessionCache.updateAutoContinueSettings(sessionId, settings)
         })
         this.rpcGateway = new RpcGateway(io, rpcRegistry)
+        this.conversationHistoryService = new ConversationHistoryService(store, (sessionId) => this.getSession(sessionId))
         this.projectToolsService = new ProjectToolsService({
             store,
             rpcGateway: this.rpcGateway,
@@ -136,6 +141,7 @@ export class SyncEngine {
             waitForSessionEnd: (sessionId, timeoutMs) => this.waitForSessionEnd(sessionId, timeoutMs)
         })
         this.reloadAll()
+        this.backfillRecentConversationHistory()
         this.inactivityTimer = setInterval(() => this.expireInactive(), 5_000)
     }
 
@@ -148,6 +154,20 @@ export class SyncEngine {
 
     subscribe(listener: SyncEventListener): () => void {
         return this.eventPublisher.subscribe(listener)
+    }
+
+    private backfillRecentConversationHistory(): void {
+        try {
+            const sinceCreatedAt = Date.now() - CONVERSATION_HISTORY_BACKFILL_MS
+            const result = this.conversationHistoryService.backfillRecent(sinceCreatedAt)
+            if (result.entriesAttempted > 0) {
+                console.info(
+                    `Conversation history backfill scanned ${result.sessionsScanned} sessions and attempted ${result.entriesAttempted} entries`
+                )
+            }
+        } catch (error) {
+            console.error('Failed to backfill conversation history:', error)
+        }
     }
 
     private resolveNamespace(event: SyncEvent): string | undefined {
@@ -250,6 +270,10 @@ export class SyncEngine {
         return this.messageService.getMessagesAfter(sessionId, options)
     }
 
+    searchConversationHistory(options: Parameters<Store['history']['search']>[0]): ReturnType<Store['history']['search']> {
+        return this.store.history.search(options)
+    }
+
     handleRealtimeEvent(event: SyncEvent): void {
         if (event.type === 'session-updated' && event.sessionId) {
             // Snapshot agent session IDs before refresh — safe because JS is single-threaded
@@ -294,12 +318,14 @@ export class SyncEngine {
         const prevThinking = this.getSession(payload.sid)?.thinking === true
         this.sessionCache.handleSessionAlive(payload)
         if (prevThinking && payload.thinking === false) {
+            this.conversationHistoryService.recordCompletion(payload.sid)
             void this.autoContinueService.maybeHandleCompletion(payload.sid)
         }
         this.triggerDedupIfNeeded(payload.sid)
     }
 
     handleSessionEnd(payload: { sid: string; time: number; reason?: 'completed' | 'terminated' | 'error' }): void {
+        this.conversationHistoryService.recordCompletion(payload.sid)
         this.sessionCache.handleSessionEnd(payload)
         this.eventPublisher.emit({
             type: 'session-ended',

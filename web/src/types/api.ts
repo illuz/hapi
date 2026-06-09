@@ -2,6 +2,7 @@ import type {
     DecryptedMessage as ProtocolDecryptedMessage,
     Session,
     SessionSummary,
+    SessionMarkerColor,
     SyncEvent as ProtocolSyncEvent,
     WorktreeMetadata
 } from '@hapi/protocol/types'
@@ -105,6 +106,31 @@ export type AuthResponse = {
 
 export type SessionsResponse = { sessions: SessionSummary[] }
 export type SessionResponse = { session: Session }
+export type ConversationHistoryEntry = {
+    id: string
+    namespace: string
+    sessionId: string
+    userMessageId: string | null
+    assistantMessageId: string | null
+    createdAt: number
+    title: string
+    projectPath: string | null
+    projectHost: string | null
+    markerColor: SessionMarkerColor | null
+    userText: string
+    assistantExcerpt: string
+}
+
+export type ConversationHistoryResponse = {
+    entries: ConversationHistoryEntry[]
+    page: {
+        limit: number
+        nextBeforeCreatedAt: number | null
+        nextBeforeId: string | null
+        hasMore: boolean
+    }
+}
+
 export type MessagesResponse = {
     messages: DecryptedMessage[]
     page: {

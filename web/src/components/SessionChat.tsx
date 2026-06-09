@@ -25,6 +25,7 @@ import { useHappyRuntime } from '@/lib/assistant-runtime'
 import { createAttachmentAdapter } from '@/lib/attachmentAdapter'
 import { useTranslation } from '@/lib/use-translation'
 import { SessionHeader } from '@/components/SessionHeader'
+import { ConversationHistoryPanel } from '@/components/ConversationHistoryPanel'
 import { TeamPanel } from '@/components/TeamPanel'
 import { AutoContinueDialog } from '@/components/AutoContinueDialog'
 import { usePlatform } from '@/hooks/usePlatform'
@@ -89,6 +90,7 @@ export function SessionChat(props: {
     const [autoContinuePrompt, setAutoContinuePrompt] = useState(AUTO_CONTINUE_DEFAULT_PROMPT)
     const [autoContinueDialogOpen, setAutoContinueDialogOpen] = useState(false)
     const [outlineOpen, setOutlineOpen] = useState(false)
+    const [historyOpen, setHistoryOpen] = useState(false)
     const [outlineForkingItemIndex, setOutlineForkingItemIndex] = useState<number | null>(null)
     const agentFlavor = props.session.metadata?.flavor ?? null
     const controlledByUser = props.session.agentState?.controlledByUser === true
@@ -653,9 +655,21 @@ export function SessionChat(props: {
                 onBack={props.onBack}
                 onViewFiles={props.session.metadata?.path ? handleViewFiles : undefined}
                 onOpenOutline={() => setOutlineOpen(true)}
+                onOpenHistory={() => setHistoryOpen(true)}
                 api={props.api}
                 onSessionDeleted={props.onBack}
                 autoContinueButton={autoContinueButton}
+            />
+
+            <ConversationHistoryPanel
+                api={props.api}
+                session={props.session}
+                open={historyOpen}
+                onClose={() => setHistoryOpen(false)}
+                onOpenSession={(sessionId) => {
+                    setHistoryOpen(false)
+                    void navigate({ to: '/sessions/$sessionId', params: { sessionId } })
+                }}
             />
 
             {props.session.teamState && (

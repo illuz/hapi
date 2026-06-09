@@ -12,6 +12,7 @@ import type {
     MachinePathsExistsResponse,
     MachinesResponse,
     MessagesResponse,
+    ConversationHistoryResponse,
     CodexModelsResponse,
     CronRunsResponse,
     OpencodeModelsResponse,
@@ -203,6 +204,30 @@ export class ApiClient {
 
     async getSession(sessionId: string): Promise<SessionResponse> {
         return await this.request<SessionResponse>(`/api/sessions/${encodeURIComponent(sessionId)}`)
+    }
+
+    async getConversationHistory(options: {
+        scope: 'session' | 'project' | 'all'
+        sessionId?: string | null
+        projectPath?: string | null
+        query?: string | null
+        userOnly?: boolean
+        limit?: number
+        beforeCreatedAt?: number | null
+        beforeId?: string | null
+    }): Promise<ConversationHistoryResponse> {
+        const params = new URLSearchParams()
+        params.set('scope', options.scope)
+        if (options.sessionId) params.set('sessionId', options.sessionId)
+        if (options.projectPath) params.set('projectPath', options.projectPath)
+        if (options.query) params.set('q', options.query)
+        if (options.userOnly) params.set('userOnly', 'true')
+        if (options.limit !== undefined) params.set('limit', `${options.limit}`)
+        if (options.beforeCreatedAt !== undefined && options.beforeCreatedAt !== null) {
+            params.set('beforeCreatedAt', `${options.beforeCreatedAt}`)
+        }
+        if (options.beforeId) params.set('beforeId', options.beforeId)
+        return await this.request<ConversationHistoryResponse>(`/api/history?${params.toString()}`)
     }
 
     async getMessages(

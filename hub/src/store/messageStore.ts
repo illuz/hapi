@@ -1,7 +1,7 @@
 import type { Database } from 'bun:sqlite'
 
 import type { StoredMessage } from './types'
-import { addMessage, cancelQueuedMessage, copySessionMessages, deleteQueuedMessageById, lookupQueuedMessage, getMessages, getMessagesAfter, getMessagesByPosition, getUninvokedLocalMessages, markMessagesInvoked, mergeSessionMessages, type CancelQueuedMessageResult, type LookupQueuedMessageResult } from './messages'
+import { addMessage, cancelQueuedMessage, copySessionMessages, deleteQueuedMessageById, lookupQueuedMessage, getMessages, getMessagesAfter, getMessagesSince, getMessagesByPosition, getUninvokedLocalMessages, markMessagesInvoked, mergeSessionMessages, type CancelQueuedMessageResult, type LookupQueuedMessageResult } from './messages'
 
 export class MessageStore {
     private readonly db: Database
@@ -20,6 +20,10 @@ export class MessageStore {
 
     getMessagesAfter(sessionId: string, afterSeq: number, limit: number = 200): StoredMessage[] {
         return getMessagesAfter(this.db, sessionId, afterSeq, limit)
+    }
+
+    getMessagesSince(sessionId: string, sinceCreatedAt: number, limit: number = 5000): StoredMessage[] {
+        return getMessagesSince(this.db, sessionId, sinceCreatedAt, limit)
     }
 
     getMessagesByPosition(sessionId: string, limit: number, before?: { at: number; seq: number }): StoredMessage[] {

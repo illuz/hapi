@@ -115,6 +115,22 @@ export function getMessagesAfter(
     return rows.map(toStoredMessage)
 }
 
+export function getMessagesSince(
+    db: Database,
+    sessionId: string,
+    sinceCreatedAt: number,
+    limit: number = 5000
+): StoredMessage[] {
+    const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(5000, limit)) : 5000
+    const safeSince = Number.isFinite(sinceCreatedAt) ? sinceCreatedAt : 0
+
+    const rows = db.prepare(
+        'SELECT * FROM messages WHERE session_id = ? AND created_at >= ? ORDER BY seq ASC LIMIT ?'
+    ).all(sessionId, safeSince, safeLimit) as DbMessageRow[]
+
+    return rows.map(toStoredMessage)
+}
+
 /** Paginate messages by COALESCE(invoked_at, created_at) DESC, seq DESC.
  *  Used for V8 byPosition mode.  Results are returned in ascending display order. */
 export function getMessagesByPosition(

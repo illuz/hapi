@@ -3,6 +3,7 @@ import { chmodSync, closeSync, existsSync, mkdirSync, openSync } from 'node:fs'
 import { dirname } from 'node:path'
 
 import { CronRunsStore } from './cronRunsStore'
+import { HistoryStore } from './historyStore'
 import { MachineStore } from './machineStore'
 import { MessageStore } from './messageStore'
 import { PushStore } from './pushStore'
@@ -12,6 +13,7 @@ import { UserStore } from './userStore'
 export type {
     StoredCronProject,
     StoredCronRun,
+    StoredHistoryEntry,
     StoredMachine,
     StoredMessage,
     StoredPushSubscription,
@@ -21,13 +23,15 @@ export type {
 } from './types'
 export type { CancelQueuedMessageResult, LookupQueuedMessageResult } from './messages'
 export { CronRunsStore } from './cronRunsStore'
+export { HistoryStore } from './historyStore'
+export type { AddHistoryEntryInput, SearchHistoryOptions, SearchHistoryResult, HistorySearchScope } from './historyStore'
 export { MachineStore } from './machineStore'
 export { MessageStore } from './messageStore'
 export { PushStore } from './pushStore'
 export { SessionStore } from './sessionStore'
 export { UserStore } from './userStore'
 
-const SCHEMA_VERSION: number = 11
+const SCHEMA_VERSION: number = 13
 const REQUIRED_TABLES = [
     'sessions',
     'machines',
@@ -35,7 +39,8 @@ const REQUIRED_TABLES = [
     'users',
     'push_subscriptions',
     'cron_projects',
-    'cron_runs'
+    'cron_runs',
+    'conversation_history'
 ] as const
 
 export class Store {
@@ -48,6 +53,7 @@ export class Store {
     readonly users: UserStore
     readonly push: PushStore
     readonly cronRuns: CronRunsStore
+    readonly history: HistoryStore
 
     constructor(dbPath: string) {
         this.dbPath = dbPath
@@ -90,6 +96,7 @@ export class Store {
         this.users = new UserStore(this.db)
         this.push = new PushStore(this.db)
         this.cronRuns = new CronRunsStore(this.db)
+        this.history = new HistoryStore(this.db)
     }
 
     private initSchema(): void {
@@ -109,6 +116,8 @@ export class Store {
             8: () => this.migrateFromV8ToV9(),
             9: () => this.migrateFromV9ToV10(),
             10: () => this.migrateFromV10ToV11(),
+            11: () => this.migrateFromV11ToV12(),
+            12: () => this.migrateFromV12ToV13(),
         })
 
         if (currentVersion === 0) {
@@ -320,6 +329,28 @@ export class Store {
             CREATE INDEX IF NOT EXISTS idx_cron_runs_namespace_project ON cron_runs(namespace, machine_id, project_path);
             CREATE INDEX IF NOT EXISTS idx_cron_runs_status ON cron_runs(status, scheduled_at);
             CREATE INDEX IF NOT EXISTS idx_cron_runs_session ON cron_runs(session_id) WHERE session_id IS NOT NULL;
+
+            CREATE TABLE IF NOT EXISTS conversation_history (
+                id TEXT PRIMARY KEY,
+                namespace TEXT NOT NULL DEFAULT 'default',
+                session_id TEXT NOT NULL,
+                user_message_id TEXT,
+                assistant_message_id TEXT,
+                created_at INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                project_path TEXT,
+                project_host TEXT,
+                marker_color TEXT,
+                user_text TEXT NOT NULL,
+                assistant_excerpt TEXT NOT NULL,
+                FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_conversation_history_namespace_created ON conversation_history(namespace, created_at DESC, id DESC);
+            CREATE INDEX IF NOT EXISTS idx_conversation_history_session ON conversation_history(namespace, session_id, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_conversation_history_project ON conversation_history(namespace, project_path, created_at DESC);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_conversation_history_assistant_message
+                ON conversation_history(session_id, assistant_message_id)
+                WHERE assistant_message_id IS NOT NULL;
         `)
     }
 
@@ -533,6 +564,14 @@ export class Store {
         this.createCronSchema()
     }
 
+    private migrateFromV11ToV12(): void {
+        this.createHistorySchema()
+    }
+
+    private migrateFromV12ToV13(): void {
+        this.ensureHistoryProjectHostColumn()
+    }
+
     private getMessageColumnNames(): Set<string> {
         const rows = this.db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>
         return new Set(rows.map((row) => row.name))
@@ -556,6 +595,8 @@ export class Store {
         }
 
         this.createCronSchema()
+        this.createHistorySchema()
+        this.ensureHistoryProjectHostColumn()
 
         const messageColumns = this.getMessageColumnNames()
         if (messageColumns.size === 0) {
@@ -609,6 +650,40 @@ export class Store {
             CREATE INDEX IF NOT EXISTS idx_cron_runs_namespace_project ON cron_runs(namespace, machine_id, project_path);
             CREATE INDEX IF NOT EXISTS idx_cron_runs_status ON cron_runs(status, scheduled_at);
             CREATE INDEX IF NOT EXISTS idx_cron_runs_session ON cron_runs(session_id) WHERE session_id IS NOT NULL;
+        `)
+    }
+
+    private ensureHistoryProjectHostColumn(): void {
+        const rows = this.db.prepare('PRAGMA table_info(conversation_history)').all() as Array<{ name: string }>
+        if (rows.length === 0) return
+        if (!rows.some((row) => row.name === 'project_host')) {
+            this.db.exec('ALTER TABLE conversation_history ADD COLUMN project_host TEXT')
+        }
+    }
+
+    private createHistorySchema(): void {
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS conversation_history (
+                id TEXT PRIMARY KEY,
+                namespace TEXT NOT NULL DEFAULT 'default',
+                session_id TEXT NOT NULL,
+                user_message_id TEXT,
+                assistant_message_id TEXT,
+                created_at INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                project_path TEXT,
+                project_host TEXT,
+                marker_color TEXT,
+                user_text TEXT NOT NULL,
+                assistant_excerpt TEXT NOT NULL,
+                FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_conversation_history_namespace_created ON conversation_history(namespace, created_at DESC, id DESC);
+            CREATE INDEX IF NOT EXISTS idx_conversation_history_session ON conversation_history(namespace, session_id, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_conversation_history_project ON conversation_history(namespace, project_path, created_at DESC);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_conversation_history_assistant_message
+                ON conversation_history(session_id, assistant_message_id)
+                WHERE assistant_message_id IS NOT NULL;
         `)
     }
 

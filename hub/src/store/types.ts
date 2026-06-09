@@ -51,6 +51,21 @@ export type StoredMessage = {
     invokedAt: number | null
 }
 
+export type StoredHistoryEntry = {
+    id: string
+    namespace: string
+    sessionId: string
+    userMessageId: string | null
+    assistantMessageId: string | null
+    createdAt: number
+    title: string
+    projectPath: string | null
+    projectHost: string | null
+    markerColor: SessionMarkerColor | null
+    userText: string
+    assistantExcerpt: string
+}
+
 export type StoredUser = {
     id: number
     platform: string

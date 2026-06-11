@@ -13,7 +13,6 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { canForkSession, canSpawnSessionFromConfig } from '@/lib/sessionBranching'
 import { getSessionModelLabel } from '@/lib/sessionModelLabel'
 import { getSessionMarkerColorHex } from '@/lib/sessionMarkers'
-import { loadSessionColorFilterPreference } from '@/lib/sessionColorFilterPreference'
 import { getDisplaySessionTitle, getSessionTitle } from '@/lib/sessionTitle'
 import { useToast } from '@/lib/toast-context'
 import { useTranslation } from '@/lib/use-translation'
@@ -167,10 +166,6 @@ export function SessionHeader(props: {
     const handleForkSession = async () => {
         try {
             const result = await forkSession()
-            const inheritedMarkerColor = loadSessionColorFilterPreference()
-            if (inheritedMarkerColor) {
-                await api?.setSessionMarkerColor(result.sessionId, inheritedMarkerColor)
-            }
             haptic.notification('success')
             await navigate({
                 to: '/sessions/$sessionId',
@@ -185,10 +180,6 @@ export function SessionHeader(props: {
     const handleSpawnSessionFromConfig = async (agent: Extract<AgentFlavor, 'claude' | 'codex'>) => {
         try {
             const result = await spawnSessionFromConfig(agent)
-            const inheritedMarkerColor = loadSessionColorFilterPreference()
-            if (inheritedMarkerColor) {
-                await api?.setSessionMarkerColor(result.sessionId, inheritedMarkerColor)
-            }
             haptic.notification('success')
             await navigate({
                 to: '/sessions/$sessionId',

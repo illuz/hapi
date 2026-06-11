@@ -1034,6 +1034,7 @@ describe('session model', () => {
                 permissionMode: 'safe-yolo',
                 time: Date.now()
             })
+            await engine.setSessionMarkerColor(session.id, 'blue')
 
             let captured: {
                 machineId?: string
@@ -1100,6 +1101,7 @@ describe('session model', () => {
             const clonedSession = engine.getSession((result as { sessionId: string }).sessionId)
             expect(clonedSession?.metadata?.summary?.text).toBe('Codex新建会话')
             expect(clonedSession?.permissionMode).toBe('safe-yolo')
+            expect(clonedSession?.markerColor).toBe('blue')
         } finally {
             engine.stop()
         }
@@ -1142,6 +1144,7 @@ describe('session model', () => {
                 permissionMode: 'safe-yolo',
                 time: Date.now()
             })
+            await engine.setSessionMarkerColor(session.id, 'purple')
 
             let captured: {
                 machineId?: string
@@ -1211,6 +1214,7 @@ describe('session model', () => {
             const clonedSession = engine.getSession((result as { sessionId: string }).sessionId)
             expect(clonedSession?.metadata?.summary?.text).toBe('Claude新建会话')
             expect(clonedSession?.permissionMode).toBeUndefined()
+            expect(clonedSession?.markerColor).toBe('purple')
         } finally {
             engine.stop()
         }
@@ -1255,6 +1259,7 @@ describe('session model', () => {
                 permissionMode: 'safe-yolo',
                 time: Date.now()
             })
+            await engine.setSessionMarkerColor(session.id, 'green')
             store.messages.addMessage(session.id, {
                 role: 'user',
                 content: {
@@ -1340,6 +1345,7 @@ describe('session model', () => {
             const forkedSession = engine.getSession(forkedSessionId)
             expect(forkedSession?.metadata?.summary?.text).toBe('Original Title (fork)')
             expect(forkedSession?.permissionMode).toBe('safe-yolo')
+            expect(forkedSession?.markerColor).toBe('green')
             expect(store.messages.getMessages(forkedSessionId, 100).map((message) => {
                 const content = message.content as { role?: string; content?: { text?: string } }
                 return content.content?.text ?? null

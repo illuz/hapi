@@ -875,6 +875,8 @@ export class SyncEngine {
             })
         }
 
+        await this.copySpawnedSessionMarkerColor(sourceSession, spawnedSessionId)
+
         this.seedSpawnedSessionSummary(sourceSession, spawnedSessionId, {
             forkLabel: options?.forkLabel === true,
             defaultTitle: options?.defaultTitle === true,
@@ -884,6 +886,18 @@ export class SyncEngine {
         if (options?.copyHistory) {
             this.copySpawnedSessionHistory(sourceSession, spawnedSessionId, options.rollbackTurns)
         }
+    }
+
+    private async copySpawnedSessionMarkerColor(
+        sourceSession: Session,
+        spawnedSessionId: string
+    ): Promise<void> {
+        const spawnedSession = this.sessionCache.getSession(spawnedSessionId) ?? this.sessionCache.refreshSession(spawnedSessionId)
+        if (!spawnedSession || spawnedSession.markerColor === sourceSession.markerColor) {
+            return
+        }
+
+        await this.sessionCache.setSessionMarkerColor(spawnedSessionId, sourceSession.markerColor)
     }
 
     private seedSpawnedSessionSummary(

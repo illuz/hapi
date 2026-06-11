@@ -772,10 +772,9 @@ function SessionItem(props: {
     api: ApiClient | null
     selected?: boolean
     attentionToken?: number
-    inheritedMarkerColor?: SessionMarkerColor | null
 }) {
     const { t } = useTranslation()
-    const { session: s, onSelect, showPath = true, api, selected = false, attentionToken, inheritedMarkerColor = null } = props
+    const { session: s, onSelect, showPath = true, api, selected = false, attentionToken } = props
     const { haptic } = usePlatform()
     const navigate = useNavigate()
     const { addToast } = useToast()
@@ -833,9 +832,6 @@ function SessionItem(props: {
     const handleForkSession = async () => {
         try {
             const result = await forkSession()
-            if (inheritedMarkerColor) {
-                await api?.setSessionMarkerColor(result.sessionId, inheritedMarkerColor)
-            }
             haptic.notification('success')
             onSelect(result.sessionId)
             await navigate({
@@ -851,9 +847,6 @@ function SessionItem(props: {
     const handleSpawnSessionFromConfig = async (agent: Extract<AgentFlavor, 'claude' | 'codex'>) => {
         try {
             const result = await spawnSessionFromConfig(agent)
-            if (inheritedMarkerColor) {
-                await api?.setSessionMarkerColor(result.sessionId, inheritedMarkerColor)
-            }
             haptic.notification('success')
             onSelect(result.sessionId)
             await navigate({
@@ -1288,7 +1281,6 @@ export function SessionList(props: {
                                                                 api={api}
                                                                 selected={s.id === selectedSessionId}
                                                                 attentionToken={attentionTokens[s.id]}
-                                                                inheritedMarkerColor={markerColorFilter}
                                                             />
                                                         ))}
                                                         {!isSearching && group.sessions.length > GROUP_SESSION_PREVIEW_LIMIT && (sessionGroupExpanded || hiddenSessionCount > 0) ? (

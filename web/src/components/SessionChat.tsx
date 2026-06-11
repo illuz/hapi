@@ -30,7 +30,6 @@ import { TeamPanel } from '@/components/TeamPanel'
 import { AutoContinueDialog } from '@/components/AutoContinueDialog'
 import { usePlatform } from '@/hooks/usePlatform'
 import { useSessionActions } from '@/hooks/mutations/useSessionActions'
-import { loadSessionColorFilterPreference } from '@/lib/sessionColorFilterPreference'
 import { useCodexModels } from '@/hooks/queries/useCodexModels'
 import { useOpencodeModels } from '@/hooks/queries/useOpencodeModels'
 import { useVoiceOptional } from '@/lib/voice-context'
@@ -584,10 +583,6 @@ export function SessionChat(props: {
         try {
             const rollbackTurns = getRollbackTurnsFromOutlineIndex(index, outlineItems.length)
             const result = await forkSession(rollbackTurns)
-            const inheritedMarkerColor = loadSessionColorFilterPreference()
-            if (inheritedMarkerColor) {
-                await props.api.setSessionMarkerColor(result.sessionId, inheritedMarkerColor)
-            }
             haptic.notification('success')
             await navigate({
                 to: '/sessions/$sessionId',
@@ -605,7 +600,7 @@ export function SessionChat(props: {
         } finally {
             setOutlineForkingItemIndex(null)
         }
-    }, [addToast, forkSession, haptic, navigate, outlineForkingItemIndex, outlineItems.length, props.api, props.session.id, t])
+    }, [addToast, forkSession, haptic, navigate, outlineForkingItemIndex, outlineItems.length, props.session.id, t])
 
     const autoContinueButton = (
         <div className="flex items-center gap-1">

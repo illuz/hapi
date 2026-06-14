@@ -18,6 +18,7 @@ import { buildThreadStartParams, buildTurnStartParams } from './utils/appServerC
 import { shouldIgnoreTerminalEvent } from './utils/terminalEventGuard';
 import { parseCodexSpecialCommand } from './codexSpecialCommands';
 import type { ThreadGoal } from './appServerTypes';
+import { getNonOriginatingCodexClientInfo } from './utils/appServerClientInfo';
 import {
     RemoteLauncherBase,
     type RemoteLauncherDisplayContext,
@@ -873,10 +874,7 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
 
         await appServerClient.connect();
         await appServerClient.initialize({
-            clientInfo: {
-                name: 'hapi-codex-client',
-                version: '1.0.0'
-            },
+            clientInfo: getNonOriginatingCodexClientInfo(),
             capabilities: {
                 experimentalApi: true
             }

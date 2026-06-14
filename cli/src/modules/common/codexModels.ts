@@ -1,5 +1,6 @@
 import { CodexAppServerClient } from '@/codex/codexAppServerClient';
 import { getErrorMessage } from './rpcResponses';
+import { getNonOriginatingCodexClientInfo } from '@/codex/utils/appServerClientInfo';
 
 export interface CodexModelSummary {
     id: string;
@@ -67,10 +68,7 @@ export async function listCodexModels(includeHidden: boolean = false): Promise<C
     try {
         await client.connect();
         await client.initialize({
-            clientInfo: {
-                name: 'hapi-codex-models',
-                version: '1.0.0'
-            },
+            clientInfo: getNonOriginatingCodexClientInfo(),
             capabilities: {
                 experimentalApi: true
             }

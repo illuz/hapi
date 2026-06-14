@@ -359,7 +359,7 @@ describe('codexRemoteLauncher', () => {
         expect(getModel()).toBe('gpt-5.4');
         expect(harness.initializeCalls).toEqual([{
             clientInfo: {
-                name: 'hapi-codex-client',
+                name: 'codex-backend',
                 version: '1.0.0'
             },
             capabilities: {

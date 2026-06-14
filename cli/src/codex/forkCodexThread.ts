@@ -1,4 +1,5 @@
 import { CodexAppServerClient } from '@/codex/codexAppServerClient'
+import { getNonOriginatingCodexClientInfo } from './utils/appServerClientInfo'
 
 type ForkCodexThreadOptions = {
     threadId: string
@@ -19,10 +20,7 @@ export async function forkCodexThread(options: ForkCodexThreadOptions): Promise<
     try {
         await client.connect()
         await client.initialize({
-            clientInfo: {
-                name: 'hapi-codex-fork-client',
-                version: '1.0.0'
-            },
+            clientInfo: getNonOriginatingCodexClientInfo(),
             capabilities: {
                 experimentalApi: true
             }

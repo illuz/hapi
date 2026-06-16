@@ -70,6 +70,7 @@ export default {
   'sessions.timeFilter.10m': '最近 10 分钟',
   'sessions.timeFilter.30m': '最近 30 分钟',
   'sessions.timeFilter.1h': '最近 1 小时',
+  'sessions.timeFilter.6h': '最近 6 小时',
   'sessions.timeFilter.12h': '最近 12 小时',
   'sessions.timeFilter.1d': '最近 1 天',
   'sessions.timeFilter.10d': '最近 10 天',

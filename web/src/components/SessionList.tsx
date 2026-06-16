@@ -409,6 +409,7 @@ const UPDATE_WINDOW_OPTIONS = [
     { key: '10m', minutes: 10 },
     { key: '30m', minutes: 30 },
     { key: '1h', minutes: 60 },
+    { key: '6h', minutes: 360 },
     { key: '12h', minutes: 720 },
     { key: '1d', minutes: 1440 },
     { key: '10d', minutes: 14400 },

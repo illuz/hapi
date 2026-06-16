@@ -56,6 +56,15 @@ vi.mock('@/lib/use-translation', () => ({
                 'sessions.colorFilter.title': 'Filter marker color',
                 'sessions.colorFilter.all': 'All sessions',
                 'sessions.colorFilter.clear': 'Clear marker color filter',
+                'sessions.timeFilter.title': 'Filter by last updated',
+                'sessions.timeFilter.all': 'Any time',
+                'sessions.timeFilter.clear': 'Clear last updated filter',
+                'sessions.timeFilter.10m': 'Last 10 minutes',
+                'sessions.timeFilter.30m': 'Last 30 minutes',
+                'sessions.timeFilter.1h': 'Last hour',
+                'sessions.timeFilter.12h': 'Last 12 hours',
+                'sessions.timeFilter.1d': 'Last day',
+                'sessions.timeFilter.10d': 'Last 10 days',
                 'sessions.group.showLess': 'Show less',
                 'machine.unknown': 'Unknown machine',
                 'session.time.justNow': 'just now',
@@ -213,3 +222,49 @@ describe('SessionList color filter', () => {
         expect(screen.getByText(/Red Task/)).toBeInTheDocument()
     })
 })
+
+describe('SessionList update-window filter', () => {
+    it('filters sessions by last-updated window and clears the filter', () => {
+        const HOUR = 60 * 60 * 1000
+        render(
+            <SessionList
+                sessions={[
+                    makeSession({
+                        id: 'recent',
+                        updatedAt: Date.now() - 5 * 60 * 1000, // 5 分钟前
+                        metadata: { path: '/repo', machineId: 'machine-1', flavor: 'codex', name: 'Recent Task' },
+                    }),
+                    makeSession({
+                        id: 'old',
+                        updatedAt: Date.now() - 48 * HOUR, // 2 天前
+                        metadata: { path: '/repo', machineId: 'machine-1', flavor: 'codex', name: 'Old Task' },
+                    }),
+                ]}
+                onSelect={vi.fn()}
+                onNewSession={vi.fn()}
+                onRefresh={vi.fn()}
+                isLoading={false}
+                renderHeader={false}
+                api={null}
+                machineLabelsById={{ 'machine-1': 'MacBook' }}
+            />
+        )
+
+        expect(screen.getByText(/Recent Task/)).toBeInTheDocument()
+        expect(screen.getByText(/Old Task/)).toBeInTheDocument()
+
+        // 选择「最近 10 分钟」：仅保留 Recent Task
+        fireEvent.click(screen.getByRole('button', { name: 'Filter by last updated' }))
+        fireEvent.click(screen.getByRole('menuitemradio', { name: /Last 10 minutes/ }))
+
+        expect(screen.getByText(/Recent Task/)).toBeInTheDocument()
+        expect(screen.queryByText(/Old Task/)).not.toBeInTheDocument()
+
+        // 清除筛选：两个会话都回来
+        fireEvent.click(screen.getByRole('button', { name: 'Clear last updated filter' }))
+
+        expect(screen.getByText(/Recent Task/)).toBeInTheDocument()
+        expect(screen.getByText(/Old Task/)).toBeInTheDocument()
+    })
+})
+

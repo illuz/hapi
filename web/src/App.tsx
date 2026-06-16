@@ -37,6 +37,31 @@ type ToastEvent = Extract<SyncEvent, { type: 'toast' }>
 
 const REQUIRE_SERVER_URL = requireHubUrlForLogin()
 
+// 优先级：当前页面/面板内的筛选框优先于常驻侧边栏的筛选框
+const FILTER_INPUT_PRIORITY: Record<string, number> = { primary: 1, sidebar: 0 }
+
+// Cmd/Ctrl+Shift+F 时，按优先级选第一个可见的筛选输入框并聚焦
+function pickVisibleFilterInput(): HTMLElement | null {
+    const candidates = Array.from(
+        document.querySelectorAll<HTMLElement>('[data-filter-input]'),
+    )
+    const visible = candidates.filter((el) => {
+        const style = window.getComputedStyle(el)
+        if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) {
+            return false
+        }
+        const rect = el.getBoundingClientRect()
+        return rect.width > 0 && rect.height > 0
+    })
+    if (visible.length === 0) return null
+    visible.sort(
+        (a, b) =>
+            (FILTER_INPUT_PRIORITY[b.dataset.filterInput ?? ''] ?? -1) -
+            (FILTER_INPUT_PRIORITY[a.dataset.filterInput ?? ''] ?? -1),
+    )
+    return visible[0]
+}
+
 export function App() {
     return (
         <ToastProvider>
@@ -80,6 +105,14 @@ function AppInner() {
         const onKeyDown = (event: KeyboardEvent) => {
             const modifier = event.ctrlKey || event.metaKey
             if (!modifier) return
+            if (event.key.toLowerCase() === 'k') {
+                const target = pickVisibleFilterInput()
+                if (target) {
+                    target.focus()
+                    event.preventDefault()
+                }
+                return
+            }
             if (event.key === '+' || event.key === '-' || event.key === '=' || event.key === '0') {
                 event.preventDefault()
             }

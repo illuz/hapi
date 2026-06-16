@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import type { AgentFlavor, ProjectToolCounts, SessionMarkerColor, SessionSummary } from '@/types/api'
 import type { ApiClient } from '@/api/client'
@@ -384,6 +384,38 @@ function PlusIcon(props: { className?: string }) {
     )
 }
 
+function ClockIcon(props: { className?: string }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={props.className}
+        >
+            <circle cx="12" cy="12" r="9" />
+            <polyline points="12 7 12 12 16 14" />
+        </svg>
+    )
+}
+
+// 最近更新时间筛选窗口（分钟）
+const UPDATE_WINDOW_OPTIONS = [
+    { key: '10m', minutes: 10 },
+    { key: '30m', minutes: 30 },
+    { key: '1h', minutes: 60 },
+    { key: '12h', minutes: 720 },
+    { key: '1d', minutes: 1440 },
+    { key: '10d', minutes: 14400 },
+] as const
+type UpdateWindowKey = (typeof UPDATE_WINDOW_OPTIONS)[number]['key']
+
+
 function LoaderIcon(props: { className?: string }) {
     return (
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={props.className}>
@@ -479,6 +511,16 @@ export function sessionMatchesMarkerColor(
     return session.markerColor === markerColor
 }
 
+export function sessionMatchesUpdateWindow(
+    session: SessionSummary,
+    window: UpdateWindowKey | null
+): boolean {
+    if (!window) return true
+    const option = UPDATE_WINDOW_OPTIONS.find(item => item.key === window)
+    if (!option) return true
+    return Date.now() - session.updatedAt <= option.minutes * 60_000
+}
+
 function getMarkerColorCounts(sessions: SessionSummary[]): Record<SessionMarkerColor, number> {
     const counts = {} as Record<SessionMarkerColor, number>
     for (const color of SESSION_MARKER_COLORS) {
@@ -534,25 +576,35 @@ function SessionListSearch(props: {
     markerColorCounts: Record<SessionMarkerColor, number>
     totalCount: number
     onMarkerColorFilterChange: (markerColor: SessionMarkerColor | null) => void
+    updateWindow: UpdateWindowKey | null
+    updateWindowCounts: Record<UpdateWindowKey, number>
+    onUpdateWindowChange: (window: UpdateWindowKey | null) => void
 }) {
     const { t } = useTranslation()
     const [menuOpen, setMenuOpen] = useState(false)
     const buttonRef = useRef<HTMLButtonElement | null>(null)
     const menuRef = useRef<HTMLDivElement | null>(null)
+    const [timeMenuOpen, setTimeMenuOpen] = useState(false)
+    const timeButtonRef = useRef<HTMLButtonElement | null>(null)
+    const timeMenuRef = useRef<HTMLDivElement | null>(null)
+    const anyMenuOpen = menuOpen || timeMenuOpen
 
     useEffect(() => {
-        if (!menuOpen) return
+        if (!anyMenuOpen) return
 
         const handlePointerDown = (event: PointerEvent) => {
             const target = event.target
             if (!(target instanceof Node)) return
             if (buttonRef.current?.contains(target) || menuRef.current?.contains(target)) return
+            if (timeButtonRef.current?.contains(target) || timeMenuRef.current?.contains(target)) return
             setMenuOpen(false)
+            setTimeMenuOpen(false)
         }
 
         const handleKeyDown = (event: KeyboardEvent) => {
             if (event.key === 'Escape') {
                 setMenuOpen(false)
+                setTimeMenuOpen(false)
             }
         }
 
@@ -563,15 +615,24 @@ function SessionListSearch(props: {
             document.removeEventListener('pointerdown', handlePointerDown)
             document.removeEventListener('keydown', handleKeyDown)
         }
-    }, [menuOpen])
+    }, [anyMenuOpen])
 
     const selectMarkerColor = (markerColor: SessionMarkerColor | null) => {
         props.onMarkerColorFilterChange(markerColor)
         setMenuOpen(false)
     }
 
+    const selectUpdateWindow = (window: UpdateWindowKey | null) => {
+        props.onUpdateWindowChange(window)
+        setTimeMenuOpen(false)
+    }
+
     const activeMarkerLabel = props.markerColorFilter
         ? t(`session.marker.${props.markerColorFilter}`)
+        : null
+
+    const activeWindowOption = props.updateWindow
+        ? UPDATE_WINDOW_OPTIONS.find(option => option.key === props.updateWindow) ?? null
         : null
 
     return (
@@ -586,6 +647,7 @@ function SessionListSearch(props: {
                         value={props.value}
                         onChange={(event) => props.onChange(event.target.value)}
                         placeholder={t('sessions.search.placeholder')}
+                        data-filter-input="sidebar"
                         className="w-full appearance-none rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] py-1.5 pl-8 pr-8 text-sm text-[var(--app-fg)] outline-none transition-colors placeholder:text-[var(--app-hint)] focus:border-[var(--app-link)] [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-decoration]:hidden"
                     />
                     {props.value ? (
@@ -682,6 +744,93 @@ function SessionListSearch(props: {
                                         <SessionMarkerDot markerColor={markerColor} size={10} />
                                         <span>
                                             {t(`session.marker.${markerColor}`)}
+                                            <span className="ml-1 text-[11px] tabular-nums text-[var(--app-hint)]">({count})</span>
+                                        </span>
+                                    </button>
+                                )
+                            })}
+                        </div>
+                    ) : null}
+                </div>
+
+                <div className="relative shrink-0">
+                    <div className="relative">
+                        <button
+                            ref={timeButtonRef}
+                            type="button"
+                            onClick={() => {
+                                setMenuOpen(false)
+                                setTimeMenuOpen(open => !open)
+                            }}
+                            aria-haspopup="menu"
+                            aria-expanded={timeMenuOpen}
+                            aria-label={activeWindowOption
+                                ? `${t('sessions.timeFilter.title')}: ${t(`sessions.timeFilter.${activeWindowOption.key}`)}`
+                                : t('sessions.timeFilter.title')}
+                            title={activeWindowOption
+                                ? `${t('sessions.timeFilter.title')}: ${t(`sessions.timeFilter.${activeWindowOption.key}`)}`
+                                : t('sessions.timeFilter.title')}
+                            className={`relative flex h-8 w-8 items-center justify-center rounded-lg border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] ${props.updateWindow ? 'border-[var(--app-link)] bg-[var(--app-subtle-bg)] text-[var(--app-link)]' : 'border-[var(--app-border)] text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]'}`}
+                        >
+                            <ClockIcon className="h-4 w-4" />
+                        </button>
+                        {props.updateWindow ? (
+                            <button
+                                type="button"
+                                onClick={(event) => {
+                                    event.stopPropagation()
+                                    selectUpdateWindow(null)
+                                }}
+                                className="absolute right-0.5 top-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-500 text-white shadow-sm ring-1 ring-[var(--app-bg)] transition-colors hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+                                aria-label={t('sessions.timeFilter.clear')}
+                                title={t('sessions.timeFilter.clear')}
+                            >
+                                <XIcon className="h-2 w-2" />
+                            </button>
+                        ) : null}
+                    </div>
+
+                    {timeMenuOpen ? (
+                        <div
+                            ref={timeMenuRef}
+                            className="absolute right-0 top-full z-50 mt-1 min-w-[190px] rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] p-1 shadow-lg animate-menu-pop"
+                            role="menu"
+                            aria-label={t('sessions.timeFilter.title')}
+                        >
+                            <button
+                                type="button"
+                                role="menuitemradio"
+                                aria-checked={props.updateWindow === null}
+                                onClick={() => selectUpdateWindow(null)}
+                                className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] ${props.updateWindow === null ? 'bg-[var(--app-subtle-bg)] text-[var(--app-fg)]' : 'text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]'}`}
+                            >
+                                <ClockIcon className="h-3.5 w-3.5" />
+                                <span>
+                                    {t('sessions.timeFilter.all')}
+                                    <span className="ml-1 text-[11px] tabular-nums text-[var(--app-hint)]">({props.totalCount})</span>
+                                </span>
+                            </button>
+
+                            <div className="my-1 border-t border-[var(--app-divider)]" />
+
+                            {UPDATE_WINDOW_OPTIONS.map((option) => {
+                                const count = props.updateWindowCounts[option.key]
+                                const selected = props.updateWindow === option.key
+                                const disabled = count === 0 && !selected
+
+                                return (
+                                    <button
+                                        key={option.key}
+                                        type="button"
+                                        role="menuitemradio"
+                                        aria-checked={selected}
+                                        disabled={disabled}
+                                        onClick={() => selectUpdateWindow(option.key)}
+                                        className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] disabled:cursor-not-allowed disabled:opacity-40 ${selected ? 'bg-[var(--app-subtle-bg)] text-[var(--app-fg)]' : 'text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]'}`}
+                                    >
+                                        <ClockIcon className="h-3.5 w-3.5" />
+                                        <span>
+                                            {t(`sessions.timeFilter.${option.key}`)}
                                             <span className="ml-1 text-[11px] tabular-nums text-[var(--app-hint)]">({count})</span>
                                         </span>
                                     </button>
@@ -867,6 +1016,7 @@ function SessionItem(props: {
                 className={`session-list-item relative flex w-full flex-col gap-1 overflow-hidden rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] select-none ${selected ? 'bg-[var(--app-secondary-bg)]' : ''}`}
                 style={{ WebkitTouchCallout: 'none' }}
                 aria-current={selected ? 'page' : undefined}
+                data-session-id={s.id}
                 onContextMenu={(event) => {
                     event.preventDefault()
                     setMenuAnchorPoint({ x: event.clientX, y: event.clientY })
@@ -990,10 +1140,43 @@ export function SessionList(props: {
     const attentionTokens = useSessionAttentionTokens()
     const [searchQuery, setSearchQuery] = useState('')
     const [markerColorFilter, setMarkerColorFilter] = useState<SessionMarkerColor | null>(loadSessionColorFilterPreference)
+    const [updateWindow, setUpdateWindow] = useState<UpdateWindowKey | null>(null)
     const normalizedQuery = normalizeSearch(searchQuery)
     const isSearching = normalizedQuery.length > 0
     const isFilteringByMarkerColor = markerColorFilter !== null
-    const isFilteringSessions = isSearching || isFilteringByMarkerColor
+    const isFilteringByUpdateWindow = updateWindow !== null
+    const isFilteringSessions = isSearching || isFilteringByMarkerColor || isFilteringByUpdateWindow
+
+    const listRef = useRef<HTMLDivElement | null>(null)
+
+    // 在会话列表区域（含搜索框）内按上下方向键切换会话；
+    // 仅当焦点位于本列表容器内时才生效（事件从容器内元素冒泡而来）
+    const handleListKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+        if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
+        const root = listRef.current
+        if (!root) return
+        const items = Array.from(root.querySelectorAll<HTMLElement>('[data-session-id]'))
+        if (items.length === 0) return
+        const ids = items.map(el => el.dataset.sessionId ?? '')
+        // 当前位置：优先取当前聚焦的会话项，其次取选中会话
+        let currentIndex = -1
+        const active = document.activeElement
+        if (active instanceof HTMLElement && active.dataset.sessionId) {
+            currentIndex = ids.indexOf(active.dataset.sessionId)
+        }
+        if (currentIndex === -1 && selectedSessionId) {
+            currentIndex = ids.indexOf(selectedSessionId)
+        }
+        const delta = event.key === 'ArrowDown' ? 1 : -1
+        const nextIndex = currentIndex === -1
+            ? (event.key === 'ArrowDown' ? 0 : ids.length - 1)
+            : Math.max(0, Math.min(ids.length - 1, currentIndex + delta))
+        const nextId = ids[nextIndex]
+        if (nextId) {
+            props.onSelect(nextId)
+            event.preventDefault()
+        }
+    }, [props.onSelect, selectedSessionId])
 
     const resolveMachineLabel = (machineId: string | null): string => {
         if (machineId && machineLabelsById[machineId]) {
@@ -1016,10 +1199,28 @@ export function SessionList(props: {
     useEffect(() => {
         saveSessionColorFilterPreference(markerColorFilter)
     }, [markerColorFilter])
+    // 各时间窗口内的会话计数（用于菜单展示）
+    const updateWindowCounts = useMemo(() => {
+        const now = Date.now()
+        const counts = {} as Record<UpdateWindowKey, number>
+        for (const option of UPDATE_WINDOW_OPTIONS) {
+            counts[option.key] = 0
+        }
+        for (const session of allSessions) {
+            const ageMs = now - session.updatedAt
+            for (const option of UPDATE_WINDOW_OPTIONS) {
+                if (ageMs <= option.minutes * 60_000) {
+                    counts[option.key] += 1
+                }
+            }
+        }
+        return counts
+    }, [allSessions])
     const visibleSessions = useMemo(
         () => isFilteringSessions
             ? allSessions.filter(session =>
                 sessionMatchesMarkerColor(session, markerColorFilter)
+                && sessionMatchesUpdateWindow(session, updateWindow)
                 && sessionMatchesQuery(
                     session,
                     normalizedQuery,
@@ -1027,7 +1228,7 @@ export function SessionList(props: {
                 )
             )
             : allSessions,
-        [allSessions, isFilteringSessions, markerColorFilter, normalizedQuery, machineLabelsById] // eslint-disable-line react-hooks/exhaustive-deps
+        [allSessions, isFilteringSessions, markerColorFilter, updateWindow, normalizedQuery, machineLabelsById] // eslint-disable-line react-hooks/exhaustive-deps
     )
     const allGroups = useMemo(
         () => groupSessionsByDirectory(allSessions),
@@ -1147,7 +1348,7 @@ export function SessionList(props: {
     }, [allGroups])
 
     return (
-        <div className="mx-auto w-full max-w-content flex flex-col">
+        <div ref={listRef} onKeyDown={handleListKeyDown} className="mx-auto w-full max-w-content flex flex-col">
             {renderHeader ? (
                 <div className="flex items-center justify-between px-3 py-1">
                     <div className="text-xs text-[var(--app-hint)]">
@@ -1174,6 +1375,9 @@ export function SessionList(props: {
                     markerColorCounts={markerColorCounts}
                     totalCount={allSessions.length}
                     onMarkerColorFilterChange={setMarkerColorFilter}
+                    updateWindow={updateWindow}
+                    updateWindowCounts={updateWindowCounts}
+                    onUpdateWindowChange={setUpdateWindow}
                 />
             ) : null}
 

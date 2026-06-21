@@ -57,6 +57,27 @@ function SettingsIcon(props: { className?: string }) {
     )
 }
 
+function LayoutIcon(props: { className?: string }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={props.className}
+        >
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <path d="M9 3v18" />
+            <path d="M9 12h12" />
+        </svg>
+    )
+}
+
 function TrashIcon(props: { className?: string }) {
     return (
         <svg
@@ -103,6 +124,7 @@ function PlusIcon(props: { className?: string }) {
 export function SessionSidebarMoreMenu(props: {
     isDeleteDisabled: boolean
     onBrowse: () => void
+    onManageSessions: () => void
     onSettings: () => void
     onCleanupInactive: () => void
     onNewSession: () => void
@@ -180,6 +202,15 @@ export function SessionSidebarMoreMenu(props: {
                     >
                         <SettingsIcon className="h-4 w-4 shrink-0 text-[var(--app-hint)]" />
                         {t('settings.title')}
+                    </button>
+                    <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => handleAction(props.onManageSessions)}
+                        className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)]"
+                    >
+                        <LayoutIcon className="h-4 w-4 shrink-0 text-[var(--app-hint)]" />
+                        {t('sessions.manage')}
                     </button>
                     <button
                         type="button"

@@ -34,7 +34,8 @@ import type {
     UploadFileResponse,
     VisibilityPayload,
     SessionResponse,
-    SessionsResponse
+    SessionsResponse,
+    BulkSessionActionResponse
 } from '@/types/api'
 import type { CancelMessageResponse } from '@hapi/protocol/schemas'
 
@@ -389,6 +390,13 @@ export class ApiClient {
         })
     }
 
+    async archiveSessions(sessionIds: string[]): Promise<BulkSessionActionResponse> {
+        return await this.request<BulkSessionActionResponse>('/api/sessions/bulk/archive', {
+            method: 'POST',
+            body: JSON.stringify({ sessionIds })
+        })
+    }
+
     async switchSession(sessionId: string): Promise<void> {
         await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/switch`, {
             method: 'POST',
@@ -678,6 +686,13 @@ export class ApiClient {
     async deleteSession(sessionId: string): Promise<void> {
         await this.request(`/api/sessions/${encodeURIComponent(sessionId)}`, {
             method: 'DELETE'
+        })
+    }
+
+    async deleteSessions(sessionIds: string[]): Promise<BulkSessionActionResponse> {
+        return await this.request<BulkSessionActionResponse>('/api/sessions/bulk/delete', {
+            method: 'POST',
+            body: JSON.stringify({ sessionIds })
         })
     }
 

@@ -64,8 +64,9 @@ vi.mock('@/lib/use-translation', () => ({
                 'sessions.timeFilter.1h': 'Last hour',
                 'sessions.timeFilter.6h': 'Last 6 hours',
                 'sessions.timeFilter.12h': 'Last 12 hours',
-                'sessions.timeFilter.1d': 'Last day',
-                'sessions.timeFilter.10d': 'Last 10 days',
+                'sessions.timeFilter.1d': 'Older than 1 day',
+                'sessions.timeFilter.3d': 'Older than 3 days',
+                'sessions.timeFilter.10d': 'Older than 10 days',
                 'sessions.group.showLess': 'Show less',
                 'machine.unknown': 'Unknown machine',
                 'session.time.justNow': 'just now',
@@ -267,5 +268,112 @@ describe('SessionList update-window filter', () => {
         expect(screen.getByText(/Recent Task/)).toBeInTheDocument()
         expect(screen.getByText(/Old Task/)).toBeInTheDocument()
     })
-})
 
+    it('filters sessions older than 10 days when the 10d window is selected', () => {
+        const DAY = 24 * 60 * 60 * 1000
+        render(
+            <SessionList
+                sessions={[
+                    makeSession({
+                        id: 'recent',
+                        updatedAt: Date.now() - 5 * 60 * 1000,
+                        metadata: { path: '/repo', machineId: 'machine-1', flavor: 'codex', name: 'Recent Task' },
+                    }),
+                    makeSession({
+                        id: 'old',
+                        updatedAt: Date.now() - 11 * DAY,
+                        metadata: { path: '/repo', machineId: 'machine-1', flavor: 'codex', name: 'Old Task' },
+                    }),
+                ]}
+                onSelect={vi.fn()}
+                onNewSession={vi.fn()}
+                onRefresh={vi.fn()}
+                isLoading={false}
+                renderHeader={false}
+                api={null}
+                machineLabelsById={{ 'machine-1': 'MacBook' }}
+            />
+        )
+
+        expect(screen.getByText(/Recent Task/)).toBeInTheDocument()
+        expect(screen.getByText(/Old Task/)).toBeInTheDocument()
+
+        fireEvent.click(screen.getByRole('button', { name: 'Filter by last updated' }))
+        fireEvent.click(screen.getByRole('menuitemradio', { name: /Older than 10 days/ }))
+
+        expect(screen.queryByText(/Recent Task/)).not.toBeInTheDocument()
+        expect(screen.getByText(/Old Task/)).toBeInTheDocument()
+    })
+
+    it('filters sessions older than 3 days when the 3d window is selected', () => {
+        const DAY = 24 * 60 * 60 * 1000
+        render(
+            <SessionList
+                sessions={[
+                    makeSession({
+                        id: 'recent',
+                        updatedAt: Date.now() - 2 * DAY,
+                        metadata: { path: '/repo', machineId: 'machine-1', flavor: 'codex', name: 'Recent Task' },
+                    }),
+                    makeSession({
+                        id: 'old',
+                        updatedAt: Date.now() - 4 * DAY,
+                        metadata: { path: '/repo', machineId: 'machine-1', flavor: 'codex', name: 'Old Task' },
+                    }),
+                ]}
+                onSelect={vi.fn()}
+                onNewSession={vi.fn()}
+                onRefresh={vi.fn()}
+                isLoading={false}
+                renderHeader={false}
+                api={null}
+                machineLabelsById={{ 'machine-1': 'MacBook' }}
+            />
+        )
+
+        expect(screen.getByText(/Recent Task/)).toBeInTheDocument()
+        expect(screen.getByText(/Old Task/)).toBeInTheDocument()
+
+        fireEvent.click(screen.getByRole('button', { name: 'Filter by last updated' }))
+        fireEvent.click(screen.getByRole('menuitemradio', { name: /Older than 3 days/ }))
+
+        expect(screen.queryByText(/Recent Task/)).not.toBeInTheDocument()
+        expect(screen.getByText(/Old Task/)).toBeInTheDocument()
+    })
+
+    it('filters sessions older than 1 day when the 1d window is selected', () => {
+        const DAY = 24 * 60 * 60 * 1000
+        render(
+            <SessionList
+                sessions={[
+                    makeSession({
+                        id: 'recent',
+                        updatedAt: Date.now() - 12 * 60 * 60 * 1000,
+                        metadata: { path: '/repo', machineId: 'machine-1', flavor: 'codex', name: 'Recent Task' },
+                    }),
+                    makeSession({
+                        id: 'old',
+                        updatedAt: Date.now() - 2 * DAY,
+                        metadata: { path: '/repo', machineId: 'machine-1', flavor: 'codex', name: 'Old Task' },
+                    }),
+                ]}
+                onSelect={vi.fn()}
+                onNewSession={vi.fn()}
+                onRefresh={vi.fn()}
+                isLoading={false}
+                renderHeader={false}
+                api={null}
+                machineLabelsById={{ 'machine-1': 'MacBook' }}
+            />
+        )
+
+        expect(screen.getByText(/Recent Task/)).toBeInTheDocument()
+        expect(screen.getByText(/Old Task/)).toBeInTheDocument()
+
+        fireEvent.click(screen.getByRole('button', { name: 'Filter by last updated' }))
+        fireEvent.click(screen.getByRole('menuitemradio', { name: /Older than 1 day/ }))
+
+        expect(screen.queryByText(/Recent Task/)).not.toBeInTheDocument()
+        expect(screen.getByText(/Old Task/)).toBeInTheDocument()
+    })
+})

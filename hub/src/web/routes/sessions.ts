@@ -58,7 +58,23 @@ const uploadDeleteSchema = z.object({
     path: z.string().min(1)
 })
 
+const bulkSessionIdsSchema = z.object({
+    sessionIds: z.array(z.string().trim().min(1))
+})
+
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+
+type BulkSessionActionResponse = {
+    successIds: string[]
+    skipped: Array<{
+        sessionId: string
+        reason: 'session_inactive' | 'session_active'
+    }>
+    failed: Array<{
+        sessionId: string
+        error: string
+    }>
+}
 
 
 type SlashCommand = {
@@ -98,6 +114,71 @@ function estimateBase64Bytes(base64: string): number {
     if (len === 0) return 0
     const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0
     return Math.floor((len * 3) / 4) - padding
+}
+
+async function runBulkSessionAction(args: {
+    engine: SyncEngine
+    namespace: string
+    sessionIds: string[]
+    action: 'archive' | 'delete'
+}): Promise<BulkSessionActionResponse> {
+    const result: BulkSessionActionResponse = {
+        successIds: [],
+        skipped: [],
+        failed: []
+    }
+
+    for (const sessionId of args.sessionIds) {
+        const access = args.engine.resolveSessionAccess(sessionId, args.namespace)
+        if (!access.ok) {
+            result.failed.push({
+                sessionId,
+                error: access.reason === 'access-denied' ? 'Session access denied' : 'Session not found'
+            })
+            continue
+        }
+
+        if (args.action === 'archive') {
+            if (!access.session.active) {
+                result.skipped.push({
+                    sessionId: access.sessionId,
+                    reason: 'session_inactive'
+                })
+                continue
+            }
+
+            try {
+                await args.engine.archiveSession(access.sessionId)
+                result.successIds.push(access.sessionId)
+            } catch (error) {
+                result.failed.push({
+                    sessionId: access.sessionId,
+                    error: error instanceof Error ? error.message : 'Failed to archive session'
+                })
+            }
+            continue
+        }
+
+        if (access.session.active) {
+            result.skipped.push({
+                sessionId: access.sessionId,
+                reason: 'session_active'
+            })
+            continue
+        }
+
+        try {
+            await args.engine.deleteSession(access.sessionId)
+            result.successIds.push(access.sessionId)
+        } catch (error) {
+            result.failed.push({
+                sessionId: access.sessionId,
+                error: error instanceof Error ? error.message : 'Failed to delete session'
+            })
+        }
+    }
+
+    return result
 }
 
 export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Hono<WebAppEnv> {
@@ -334,6 +415,28 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
 
         await engine.abortSession(sessionResult.sessionId)
         return c.json({ ok: true })
+    })
+
+    app.post('/sessions/bulk/archive', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) {
+            return engine
+        }
+
+        const body = await c.req.json().catch(() => null)
+        const parsed = bulkSessionIdsSchema.safeParse(body)
+        if (!parsed.success) {
+            return c.json({ error: 'Invalid body' }, 400)
+        }
+
+        const sessionIds = Array.from(new Set(parsed.data.sessionIds))
+        const result = await runBulkSessionAction({
+            engine,
+            namespace: c.get('namespace'),
+            sessionIds,
+            action: 'archive'
+        })
+        return c.json(result)
     })
 
     app.post('/sessions/:id/archive', async (c) => {
@@ -598,6 +701,28 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
             const message = error instanceof Error ? error.message : 'Failed to update auto-continue settings'
             return c.json({ error: message }, 409)
         }
+    })
+
+    app.post('/sessions/bulk/delete', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) {
+            return engine
+        }
+
+        const body = await c.req.json().catch(() => null)
+        const parsed = bulkSessionIdsSchema.safeParse(body)
+        if (!parsed.success) {
+            return c.json({ error: 'Invalid body' }, 400)
+        }
+
+        const sessionIds = Array.from(new Set(parsed.data.sessionIds))
+        const result = await runBulkSessionAction({
+            engine,
+            namespace: c.get('namespace'),
+            sessionIds,
+            action: 'delete'
+        })
+        return c.json(result)
     })
 
     app.delete('/sessions/:id', async (c) => {

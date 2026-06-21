@@ -55,11 +55,16 @@ function createApp(session: Session, opts?: {
     resumeSession?: (sessionId: string, namespace: string, resumeOpts?: { permissionMode?: string }) => Promise<{ type: string; sessionId?: string; message?: string; code?: string }>
     spawnSessionFromConfig?: (sessionId: string, namespace: string, options?: { agent?: 'claude' | 'codex' }) => Promise<{ type: string; sessionId?: string; message?: string; code?: string }>
     forkSession?: (sessionId: string, namespace: string, options?: { rollbackTurns?: number }) => Promise<{ type: string; sessionId?: string; message?: string; code?: string }>
+    resolveSessionAccess?: SyncEngine['resolveSessionAccess']
+    archiveSession?: (sessionId: string) => Promise<void>
+    deleteSession?: (sessionId: string) => Promise<void>
     listSlashCommands?: SyncEngine['listSlashCommands']
 }) {
     const applySessionConfigCalls: Array<[string, Record<string, unknown>]> = []
     const renameSessionCalls: Array<[string, string]> = []
     const setSessionMarkerColorCalls: Array<[string, Session['markerColor']]> = []
+    const archiveSessionCalls: string[] = []
+    const deleteSessionCalls: string[] = []
     const applySessionConfig = async (sessionId: string, config: Record<string, unknown>) => {
         applySessionConfigCalls.push([sessionId, config])
     }
@@ -86,8 +91,14 @@ function createApp(session: Session, opts?: {
     const resumeSession = opts?.resumeSession ?? (async (sessionId: string) => ({ type: 'success', sessionId }))
     const spawnSessionFromConfig = opts?.spawnSessionFromConfig ?? (async (sessionId: string) => ({ type: 'success', sessionId }))
     const forkSession = opts?.forkSession ?? (async (sessionId: string) => ({ type: 'success', sessionId }))
+    const archiveSession = opts?.archiveSession ?? (async (sessionId: string) => {
+        archiveSessionCalls.push(sessionId)
+    })
+    const deleteSession = opts?.deleteSession ?? (async (sessionId: string) => {
+        deleteSessionCalls.push(sessionId)
+    })
     const engine = {
-        resolveSessionAccess: () => ({ ok: true, sessionId: session.id, session }),
+        resolveSessionAccess: opts?.resolveSessionAccess ?? (() => ({ ok: true, sessionId: session.id, session })),
         applySessionConfig,
         renameSession,
         setSessionMarkerColor,
@@ -96,6 +107,8 @@ function createApp(session: Session, opts?: {
         resumeSession,
         spawnSessionFromConfig,
         forkSession,
+        archiveSession,
+        deleteSession,
         listSlashCommands: opts?.listSlashCommands ?? (async () => ({
             success: true,
             commands: []
@@ -109,7 +122,14 @@ function createApp(session: Session, opts?: {
     })
     app.route('/api', createSessionsRoutes(() => engine as SyncEngine))
 
-    return { app, applySessionConfigCalls, renameSessionCalls, setSessionMarkerColorCalls }
+    return {
+        app,
+        applySessionConfigCalls,
+        renameSessionCalls,
+        setSessionMarkerColorCalls,
+        archiveSessionCalls,
+        deleteSessionCalls
+    }
 }
 
 describe('sessions routes', () => {
@@ -470,6 +490,195 @@ describe('sessions routes', () => {
         expect(applySessionConfigCalls).toEqual([
             ['session-1', { effort: 'max' }]
         ])
+    })
+
+    it('archives active sessions in bulk and skips inactive ones', async () => {
+        const activeSession = createSession({ id: 'active-session', active: true })
+        const inactiveSession = createSession({ id: 'inactive-session', active: false })
+        const { app, archiveSessionCalls } = createApp(activeSession, {
+            resolveSessionAccess: (sessionId, namespace) => {
+                if (namespace !== 'default') {
+                    return { ok: false, reason: 'access-denied' }
+                }
+                if (sessionId === activeSession.id) {
+                    return { ok: true, sessionId, session: activeSession }
+                }
+                if (sessionId === inactiveSession.id) {
+                    return { ok: true, sessionId, session: inactiveSession }
+                }
+                return { ok: false, reason: 'not-found' }
+            }
+        })
+
+        const response = await app.request('/api/sessions/bulk/archive', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+                sessionIds: [activeSession.id, inactiveSession.id]
+            })
+        })
+
+        expect(response.status).toBe(200)
+        expect(archiveSessionCalls).toEqual([activeSession.id])
+        expect(await response.json()).toEqual({
+            successIds: [activeSession.id],
+            skipped: [
+                {
+                    sessionId: inactiveSession.id,
+                    reason: 'session_inactive'
+                }
+            ],
+            failed: []
+        })
+    })
+
+    it('reports bulk archive failures and missing sessions', async () => {
+        const activeSession = createSession({ id: 'active-session', active: true })
+        const { app, archiveSessionCalls } = createApp(activeSession, {
+            resolveSessionAccess: (sessionId, namespace) => {
+                if (namespace !== 'default') {
+                    return { ok: false, reason: 'access-denied' }
+                }
+                if (sessionId === activeSession.id) {
+                    return { ok: true, sessionId, session: activeSession }
+                }
+                return { ok: false, reason: 'not-found' }
+            },
+            archiveSession: async (sessionId) => {
+                archiveSessionCalls.push(sessionId)
+                throw new Error('RPC unavailable')
+            }
+        })
+
+        const response = await app.request('/api/sessions/bulk/archive', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+                sessionIds: [activeSession.id, 'missing-session']
+            })
+        })
+
+        expect(response.status).toBe(200)
+        expect(await response.json()).toEqual({
+            successIds: [],
+            skipped: [],
+            failed: [
+                {
+                    sessionId: activeSession.id,
+                    error: 'RPC unavailable'
+                },
+                {
+                    sessionId: 'missing-session',
+                    error: 'Session not found'
+                }
+            ]
+        })
+    })
+
+    it('rejects invalid bulk archive body', async () => {
+        const { app } = createApp(createSession())
+
+        const response = await app.request('/api/sessions/bulk/archive', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ sessionIds: [''] })
+        })
+
+        expect(response.status).toBe(400)
+        expect(await response.json()).toEqual({ error: 'Invalid body' })
+    })
+
+    it('deletes inactive sessions in bulk and skips active ones', async () => {
+        const activeSession = createSession({ id: 'active-session', active: true })
+        const inactiveSession = createSession({ id: 'inactive-session', active: false })
+        const { app, deleteSessionCalls } = createApp(inactiveSession, {
+            resolveSessionAccess: (sessionId, namespace) => {
+                if (namespace !== 'default') {
+                    return { ok: false, reason: 'access-denied' }
+                }
+                if (sessionId === activeSession.id) {
+                    return { ok: true, sessionId, session: activeSession }
+                }
+                if (sessionId === inactiveSession.id) {
+                    return { ok: true, sessionId, session: inactiveSession }
+                }
+                return { ok: false, reason: 'not-found' }
+            }
+        })
+
+        const response = await app.request('/api/sessions/bulk/delete', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+                sessionIds: [inactiveSession.id, activeSession.id]
+            })
+        })
+
+        expect(response.status).toBe(200)
+        expect(deleteSessionCalls).toEqual([inactiveSession.id])
+        expect(await response.json()).toEqual({
+            successIds: [inactiveSession.id],
+            skipped: [
+                {
+                    sessionId: activeSession.id,
+                    reason: 'session_active'
+                }
+            ],
+            failed: []
+        })
+    })
+
+    it('reports bulk delete failures and access denied sessions', async () => {
+        const inactiveSession = createSession({ id: 'inactive-session', active: false })
+        const { app, deleteSessionCalls } = createApp(inactiveSession, {
+            resolveSessionAccess: (sessionId, namespace) => {
+                if (sessionId === inactiveSession.id && namespace === 'default') {
+                    return { ok: true, sessionId, session: inactiveSession }
+                }
+                return { ok: false, reason: 'access-denied' }
+            },
+            deleteSession: async (sessionId) => {
+                deleteSessionCalls.push(sessionId)
+                throw new Error('Delete failed')
+            }
+        })
+
+        const response = await app.request('/api/sessions/bulk/delete', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+                sessionIds: [inactiveSession.id, 'forbidden-session']
+            })
+        })
+
+        expect(response.status).toBe(200)
+        expect(await response.json()).toEqual({
+            successIds: [],
+            skipped: [],
+            failed: [
+                {
+                    sessionId: inactiveSession.id,
+                    error: 'Delete failed'
+                },
+                {
+                    sessionId: 'forbidden-session',
+                    error: 'Session access denied'
+                }
+            ]
+        })
+    })
+
+    it('rejects invalid bulk delete body', async () => {
+        const { app } = createApp(createSession())
+
+        const response = await app.request('/api/sessions/bulk/delete', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({})
+        })
+
+        expect(response.status).toBe(400)
+        expect(await response.json()).toEqual({ error: 'Invalid body' })
     })
 
     it('updates marker color through patch session route', async () => {

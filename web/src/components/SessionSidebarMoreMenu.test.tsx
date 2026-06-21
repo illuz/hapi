@@ -8,6 +8,7 @@ vi.mock('@/lib/use-translation', () => ({
             const map: Record<string, string> = {
                 'session.more': 'More actions',
                 'browse.nav': 'Browse',
+                'sessions.manage': 'Manage sessions',
                 'settings.title': 'Settings',
                 'sessions.cleanupInactive': 'Clear inactive sessions',
                 'sessions.new': 'New Session',
@@ -21,6 +22,7 @@ function renderMenu(overrides: Partial<Parameters<typeof SessionSidebarMoreMenu>
     const props = {
         isDeleteDisabled: false,
         onBrowse: vi.fn(),
+        onManageSessions: vi.fn(),
         onSettings: vi.fn(),
         onCleanupInactive: vi.fn(),
         onNewSession: vi.fn(),
@@ -42,6 +44,7 @@ describe('SessionSidebarMoreMenu', () => {
         fireEvent.click(screen.getByRole('button', { name: 'More actions' }))
 
         expect(screen.getByRole('menuitem', { name: 'Browse' })).toBeInTheDocument()
+        expect(screen.getByRole('menuitem', { name: 'Manage sessions' })).toBeInTheDocument()
         expect(screen.getByRole('menuitem', { name: 'Settings' })).toBeInTheDocument()
         expect(screen.getByRole('menuitem', { name: 'Clear inactive sessions' })).toBeInTheDocument()
         expect(screen.getByRole('menuitem', { name: 'New Session' })).toBeInTheDocument()

@@ -106,6 +106,17 @@ export type AuthResponse = {
 
 export type SessionsResponse = { sessions: SessionSummary[] }
 export type SessionResponse = { session: Session }
+export type BulkSessionActionResponse = {
+    successIds: string[]
+    skipped: Array<{
+        sessionId: string
+        reason: 'session_inactive' | 'session_active'
+    }>
+    failed: Array<{
+        sessionId: string
+        error: string
+    }>
+}
 export type ConversationHistoryEntry = {
     id: string
     namespace: string

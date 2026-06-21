@@ -10,6 +10,13 @@ import { RenameSessionDialog } from '@/components/RenameSessionDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { SessionMarkerDot } from '@/components/SessionMarkerDot'
 import { loadSessionColorFilterPreference, saveSessionColorFilterPreference } from '@/lib/sessionColorFilterPreference'
+import {
+    normalizeSessionManagementSearch,
+    SESSION_MANAGEMENT_UPDATE_WINDOW_OPTIONS,
+    sessionMatchesManagementMarkerColor,
+    sessionMatchesManagementQuery,
+    sessionMatchesManagementUpdateWindow
+} from '@/lib/sessionManagementFilters'
 import { useSessionAttentionTokens } from '@/lib/sessionAttention'
 import { canForkSession, canSpawnSessionFromConfig } from '@/lib/sessionBranching'
 import { SESSION_MARKER_COLORS, getSessionMarkerColorHex } from '@/lib/sessionMarkers'
@@ -404,16 +411,7 @@ function ClockIcon(props: { className?: string }) {
     )
 }
 
-// 最近更新时间筛选窗口（分钟）
-const UPDATE_WINDOW_OPTIONS = [
-    { key: '10m', minutes: 10 },
-    { key: '30m', minutes: 30 },
-    { key: '1h', minutes: 60 },
-    { key: '6h', minutes: 360 },
-    { key: '12h', minutes: 720 },
-    { key: '1d', minutes: 1440 },
-    { key: '10d', minutes: 14400 },
-] as const
+const UPDATE_WINDOW_OPTIONS = SESSION_MANAGEMENT_UPDATE_WINDOW_OPTIONS
 type UpdateWindowKey = (typeof UPDATE_WINDOW_OPTIONS)[number]['key']
 
 
@@ -483,43 +481,25 @@ function getTodoProgress(session: SessionSummary): { completed: number; total: n
 }
 
 export function normalizeSearch(value: string | null | undefined): string {
-    return (value ?? '').trim().toLowerCase()
+    return normalizeSessionManagementSearch(value)
 }
 
 export function sessionMatchesQuery(session: SessionSummary, query: string, machineLabel: string): boolean {
-    if (!query) return true
-    const searchable = [
-        getSessionTitle(session),
-        session.id,
-        session.metadata?.path,
-        session.metadata?.worktree?.basePath,
-        session.metadata?.name,
-        session.metadata?.summary?.text,
-        session.metadata?.flavor,
-        machineLabel,
-    ]
-        .filter((part): part is string => typeof part === 'string' && part.length > 0)
-        .join('\n')
-        .toLowerCase()
-    return searchable.includes(query)
+    return sessionMatchesManagementQuery(session, query, machineLabel)
 }
 
 export function sessionMatchesMarkerColor(
     session: SessionSummary,
     markerColor: SessionMarkerColor | null
 ): boolean {
-    if (!markerColor) return true
-    return session.markerColor === markerColor
+    return sessionMatchesManagementMarkerColor(session, markerColor)
 }
 
 export function sessionMatchesUpdateWindow(
     session: SessionSummary,
     window: UpdateWindowKey | null
 ): boolean {
-    if (!window) return true
-    const option = UPDATE_WINDOW_OPTIONS.find(item => item.key === window)
-    if (!option) return true
-    return Date.now() - session.updatedAt <= option.minutes * 60_000
+    return sessionMatchesManagementUpdateWindow(session, window)
 }
 
 function getMarkerColorCounts(sessions: SessionSummary[]): Record<SessionMarkerColor, number> {
@@ -1200,17 +1180,15 @@ export function SessionList(props: {
     useEffect(() => {
         saveSessionColorFilterPreference(markerColorFilter)
     }, [markerColorFilter])
-    // 各时间窗口内的会话计数（用于菜单展示）
+    // 各时间窗口的会话计数（用于菜单展示）
     const updateWindowCounts = useMemo(() => {
-        const now = Date.now()
         const counts = {} as Record<UpdateWindowKey, number>
         for (const option of UPDATE_WINDOW_OPTIONS) {
             counts[option.key] = 0
         }
         for (const session of allSessions) {
-            const ageMs = now - session.updatedAt
             for (const option of UPDATE_WINDOW_OPTIONS) {
-                if (ageMs <= option.minutes * 60_000) {
+                if (sessionMatchesManagementUpdateWindow(session, option.key)) {
                     counts[option.key] += 1
                 }
             }

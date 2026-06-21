@@ -16,6 +16,7 @@ import { SessionChat } from '@/components/SessionChat'
 import { SessionUnavailableState } from '@/components/SessionUnavailableState'
 import { SessionList } from '@/components/SessionList'
 import { SessionSidebarMoreMenu } from '@/components/SessionSidebarMoreMenu'
+import { SessionManagementPanel } from '@/components/SessionManagementPanel'
 import { ProjectToolsPanel } from '@/components/ProjectToolsPanel'
 import { NewSession } from '@/components/NewSession'
 import { WorkspaceBrowser } from '@/components/WorkspaceBrowser'
@@ -252,6 +253,7 @@ function SessionsPage() {
                             <SessionSidebarMoreMenu
                                 isDeleteDisabled={inactiveSessions.length === 0 || isCleaningInactive}
                                 onBrowse={() => navigate({ to: '/browse' })}
+                                onManageSessions={() => navigate({ to: '/sessions/manage' })}
                                 onSettings={() => navigate({ to: '/settings' })}
                                 onCleanupInactive={() => setCleanupDialogOpen(true)}
                                 onNewSession={() => navigate({ to: '/sessions/new' })}
@@ -347,6 +349,31 @@ function ProjectToolsRoutePage() {
                 to: '/sessions/$sessionId',
                 params: { sessionId }
             })}
+        />
+    )
+}
+
+function SessionManageRoutePage() {
+    const { api } = useAppContext()
+    const goBack = useAppGoBack()
+    const { sessions, isLoading } = useSessions(api)
+    const { machines } = useMachines(api, true)
+
+    const machineLabelsById = useMemo(() => {
+        const labels: Record<string, string> = {}
+        for (const machine of machines) {
+            labels[machine.id] = getMachineTitle(machine)
+        }
+        return labels
+    }, [machines])
+
+    return (
+        <SessionManagementPanel
+            api={api}
+            sessions={sessions}
+            machineLabelsById={machineLabelsById}
+            isLoading={isLoading}
+            onClose={goBack}
         />
     )
 }
@@ -689,6 +716,12 @@ const projectToolsRoute = createRoute({
     component: ProjectToolsRoutePage,
 })
 
+const sessionManageRoute = createRoute({
+    getParentRoute: () => sessionsRoute,
+    path: 'manage',
+    component: SessionManageRoutePage,
+})
+
 const sessionDetailRoute = createRoute({
     getParentRoute: () => sessionsRoute,
     path: '$sessionId',
@@ -797,6 +830,7 @@ export const routeTree = rootRoute.addChildren([
     sessionsRoute.addChildren([
         sessionsIndexRoute,
         newSessionRoute,
+        sessionManageRoute,
         projectToolsRoute,
         sessionDetailRoute.addChildren([
             sessionTerminalRoute,

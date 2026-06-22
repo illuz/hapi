@@ -6,6 +6,7 @@ import { useLongPress } from '@/hooks/useLongPress'
 import { usePlatform } from '@/hooks/usePlatform'
 import { useSessionActions } from '@/hooks/mutations/useSessionActions'
 import { SessionActionMenu } from '@/components/SessionActionMenu'
+import { ShareSessionDialog } from '@/components/ShareSessionDialog'
 import { RenameSessionDialog } from '@/components/RenameSessionDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { SessionMarkerDot } from '@/components/SessionMarkerDot'
@@ -22,7 +23,7 @@ import { canForkSession, canSpawnSessionFromConfig } from '@/lib/sessionBranchin
 import { SESSION_MARKER_COLORS, getSessionMarkerColorHex } from '@/lib/sessionMarkers'
 import { getDisplaySessionTitle, getSessionTitle as getBaseSessionTitle } from '@/lib/sessionTitle'
 import { useToast } from '@/lib/toast-context'
-import { CopyIcon, CheckIcon } from '@/components/icons'
+import { CopyIcon, CheckIcon, ShareIcon } from '@/components/icons'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/lib/use-translation'
 
@@ -911,6 +912,7 @@ function SessionItem(props: {
     const [menuOpen, setMenuOpen] = useState(false)
     const [menuAnchorPoint, setMenuAnchorPoint] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
     const [renameOpen, setRenameOpen] = useState(false)
+    const [shareOpen, setShareOpen] = useState(false)
     const [archiveOpen, setArchiveOpen] = useState(false)
     const [deleteOpen, setDeleteOpen] = useState(false)
 
@@ -1024,6 +1026,15 @@ function SessionItem(props: {
                             {s.active && s.thinking ? (
                                 <LoaderIcon className="h-3.5 w-3.5 shrink-0 text-[var(--app-hint)] animate-spin-slow" />
                             ) : null}
+                            {s.shareCount && s.shareCount > 0 ? (
+                                <span
+                                    className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-[var(--app-subtle-bg)] px-1.5 py-0.5 text-[10px] text-[var(--app-link)]"
+                                    title={t('share.badge', { n: s.shareCount })}
+                                >
+                                    <ShareIcon className="h-3 w-3" />
+                                    {s.shareCount}
+                                </span>
+                            ) : null}
                         </div>
                         <div className="flex items-center gap-2 shrink-0 text-xs">
                             {todoProgress ? (
@@ -1060,6 +1071,7 @@ function SessionItem(props: {
                 markerColor={s.markerColor}
                 onSelectMarkerColor={(markerColor) => { void setSessionMarkerColor(markerColor) }}
                 onRename={() => setRenameOpen(true)}
+                onShare={() => setShareOpen(true)}
                 onArchive={() => setArchiveOpen(true)}
                 onDelete={() => setDeleteOpen(true)}
                 onForkSession={handleForkSession}
@@ -1073,6 +1085,14 @@ function SessionItem(props: {
                 currentName={sessionName}
                 onRename={renameSession}
                 isPending={isPending}
+            />
+
+            <ShareSessionDialog
+                isOpen={shareOpen}
+                onClose={() => setShareOpen(false)}
+                api={api}
+                sessionId={s.id}
+                sessionTitle={sessionName}
             />
 
             <ConfirmDialog

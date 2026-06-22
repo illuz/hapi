@@ -46,6 +46,9 @@ import FilePage from '@/routes/sessions/file'
 import TerminalPage from '@/routes/sessions/terminal'
 import SettingsPage from '@/routes/settings'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { ShareClient } from '@/api/shareClient'
+import { SharePasswordGate } from '@/components/share/SharePasswordGate'
+import { SharedSessionChat } from '@/components/share/SharedSessionChat'
 
 function BackIcon(props: { className?: string }) {
     return (
@@ -669,6 +672,71 @@ function BrowsePage() {
     )
 }
 
+
+function getStoredShareToken(routeToken: string): string | null {
+    if (typeof window === 'undefined') return null
+    return window.sessionStorage.getItem(`hapi-share-token:${routeToken}`)
+}
+
+function setStoredShareToken(routeToken: string, guestToken: string | null): void {
+    if (typeof window === 'undefined') return
+    const key = `hapi-share-token:${routeToken}`
+    if (guestToken) {
+        window.sessionStorage.setItem(key, guestToken)
+    } else {
+        window.sessionStorage.removeItem(key)
+    }
+}
+
+function SharedRoutePage() {
+    const { token } = useParams({ from: '/share/$token' })
+    const { t } = useTranslation()
+    const client = useMemo(() => new ShareClient(token), [token])
+    const [guestToken, setGuestToken] = useState<string | null>(() => getStoredShareToken(token))
+    const [authError, setAuthError] = useState<string | null>(null)
+    const [authPending, setAuthPending] = useState(false)
+
+    const handleAuthenticate = async (password: string) => {
+        setAuthPending(true)
+        setAuthError(null)
+        try {
+            const response = await client.authenticate(password)
+            setStoredShareToken(token, response.token)
+            setGuestToken(response.token)
+        } catch {
+            setStoredShareToken(token, null)
+            setGuestToken(null)
+            setAuthError(t('share.guest.authFailed'))
+        } finally {
+            setAuthPending(false)
+        }
+    }
+
+    const handleUnauthorized = () => {
+        setStoredShareToken(token, null)
+        setGuestToken(null)
+        setAuthError(t('share.guest.authFailed'))
+    }
+
+    if (!guestToken) {
+        return (
+            <SharePasswordGate
+                onSubmit={handleAuthenticate}
+                isPending={authPending}
+                error={authError}
+            />
+        )
+    }
+
+    return (
+        <SharedSessionChat
+            client={client}
+            guestToken={guestToken}
+            onUnauthorized={handleUnauthorized}
+        />
+    )
+}
+
 const rootRoute = createRootRoute({
     component: App,
 })
@@ -825,6 +893,12 @@ const settingsRoute = createRoute({
     component: SettingsPage,
 })
 
+const shareRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/share/$token',
+    component: SharedRoutePage,
+})
+
 export const routeTree = rootRoute.addChildren([
     indexRoute,
     sessionsRoute.addChildren([
@@ -839,6 +913,7 @@ export const routeTree = rootRoute.addChildren([
         ]),
     ]),
     browseRoute,
+    shareRoute,
     settingsRoute,
 ])
 

@@ -51,6 +51,22 @@ export type StoredMessage = {
     invokedAt: number | null
 }
 
+export type StoredSessionShare = {
+    id: string
+    namespace: string
+    sessionId: string
+    tokenHash: string
+    tokenEncrypted: string
+    passwordHash: string
+    label: string | null
+    visibleFromSeq: number
+    expiresAt: number | null
+    revokedAt: number | null
+    createdAt: number
+    updatedAt: number
+    lastUsedAt: number | null
+}
+
 export type StoredHistoryEntry = {
     id: string
     namespace: string

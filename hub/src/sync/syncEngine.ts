@@ -78,6 +78,16 @@ export type SpawnSessionFromConfigResult =
 
 type SpawnSessionFromConfigAgent = 'claude' | 'codex'
 
+type SendMessageMeta = {
+    appendSystemPrompt?: string | null
+    customSystemPrompt?: string | null
+    fallbackModel?: string | null
+    allowedTools?: string[] | null
+    disallowedTools?: string[] | null
+    shareId?: string | null
+    shareLabel?: string | null
+}
+
 export type ForkSessionResult =
     | { type: 'success'; sessionId: string }
     | {
@@ -189,6 +199,31 @@ export class SyncEngine {
 
     getSessionsByNamespace(namespace: string): Session[] {
         return this.sessionCache.getSessionsByNamespace(namespace)
+    }
+
+    getActiveShareCounts(namespace: string, sessionIds: string[]): Record<string, number> {
+        return this.store.sessionShares.countActiveBySessionIds(namespace, sessionIds)
+    }
+
+    emitShareUpdated(sessionId: string, namespace: string): void {
+        this.eventPublisher.emit({
+            type: 'session-updated',
+            sessionId,
+            namespace,
+            data: { shareUpdatedAt: Date.now() }
+        })
+    }
+
+    emitShareCompleted(sessionId: string, namespace: string, shareLabel: string | null): void {
+        this.eventPublisher.emit({
+            type: 'session-updated',
+            sessionId,
+            namespace,
+            data: {
+                shareConfirmedAt: Date.now(),
+                shareLabel
+            }
+        })
     }
 
     getSession(sessionId: string): Session | undefined {
@@ -399,13 +434,7 @@ export class SyncEngine {
                 previewUrl?: string
             }>
             sentFrom?: MessageSentFrom
-            meta?: {
-                appendSystemPrompt?: string | null
-                customSystemPrompt?: string | null
-                fallbackModel?: string | null
-                allowedTools?: string[] | null
-                disallowedTools?: string[] | null
-            }
+            meta?: SendMessageMeta
         }
     ): Promise<void> {
         await this.messageService.sendMessage(sessionId, this.withProjectAgentContext(sessionId, payload))
@@ -414,13 +443,7 @@ export class SyncEngine {
 
     private withProjectAgentContext<T extends {
         sentFrom?: MessageSentFrom
-        meta?: {
-            appendSystemPrompt?: string | null
-            customSystemPrompt?: string | null
-            fallbackModel?: string | null
-            allowedTools?: string[] | null
-            disallowedTools?: string[] | null
-        }
+        meta?: SendMessageMeta
     }>(sessionId: string, payload: T): T {
         if (payload.sentFrom === 'project-agent' || payload.sentFrom === 'cron') {
             return payload

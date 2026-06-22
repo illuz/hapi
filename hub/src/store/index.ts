@@ -7,6 +7,7 @@ import { HistoryStore } from './historyStore'
 import { MachineStore } from './machineStore'
 import { MessageStore } from './messageStore'
 import { PushStore } from './pushStore'
+import { SessionShareStore } from './sessionShareStore'
 import { SessionStore } from './sessionStore'
 import { UserStore } from './userStore'
 
@@ -18,6 +19,7 @@ export type {
     StoredMessage,
     StoredPushSubscription,
     StoredSession,
+    StoredSessionShare,
     StoredUser,
     VersionedUpdateResult
 } from './types'
@@ -28,10 +30,11 @@ export type { AddHistoryEntryInput, SearchHistoryOptions, SearchHistoryResult, H
 export { MachineStore } from './machineStore'
 export { MessageStore } from './messageStore'
 export { PushStore } from './pushStore'
+export { SessionShareStore } from './sessionShareStore'
 export { SessionStore } from './sessionStore'
 export { UserStore } from './userStore'
 
-const SCHEMA_VERSION: number = 13
+const SCHEMA_VERSION: number = 14
 const REQUIRED_TABLES = [
     'sessions',
     'machines',
@@ -40,7 +43,8 @@ const REQUIRED_TABLES = [
     'push_subscriptions',
     'cron_projects',
     'cron_runs',
-    'conversation_history'
+    'conversation_history',
+    'session_shares'
 ] as const
 
 export class Store {
@@ -52,6 +56,7 @@ export class Store {
     readonly messages: MessageStore
     readonly users: UserStore
     readonly push: PushStore
+    readonly sessionShares: SessionShareStore
     readonly cronRuns: CronRunsStore
     readonly history: HistoryStore
 
@@ -95,6 +100,7 @@ export class Store {
         this.messages = new MessageStore(this.db)
         this.users = new UserStore(this.db)
         this.push = new PushStore(this.db)
+        this.sessionShares = new SessionShareStore(this.db)
         this.cronRuns = new CronRunsStore(this.db)
         this.history = new HistoryStore(this.db)
     }
@@ -118,6 +124,7 @@ export class Store {
             10: () => this.migrateFromV10ToV11(),
             11: () => this.migrateFromV11ToV12(),
             12: () => this.migrateFromV12ToV13(),
+            13: () => this.migrateFromV13ToV14(),
         })
 
         if (currentVersion === 0) {
@@ -351,6 +358,27 @@ export class Store {
             CREATE UNIQUE INDEX IF NOT EXISTS idx_conversation_history_assistant_message
                 ON conversation_history(session_id, assistant_message_id)
                 WHERE assistant_message_id IS NOT NULL;
+
+            CREATE TABLE IF NOT EXISTS session_shares (
+                id TEXT PRIMARY KEY,
+                namespace TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                token_hash TEXT NOT NULL UNIQUE,
+                token_encrypted TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                label TEXT,
+                visible_from_seq INTEGER NOT NULL DEFAULT 0,
+                expires_at INTEGER,
+                revoked_at INTEGER,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                last_used_at INTEGER,
+                FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_session_shares_session
+                ON session_shares(namespace, session_id, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_session_shares_active
+                ON session_shares(namespace, session_id, revoked_at, expires_at);
         `)
     }
 
@@ -572,6 +600,10 @@ export class Store {
         this.ensureHistoryProjectHostColumn()
     }
 
+    private migrateFromV13ToV14(): void {
+        this.createSessionShareSchema()
+    }
+
     private getMessageColumnNames(): Set<string> {
         const rows = this.db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>
         return new Set(rows.map((row) => row.name))
@@ -597,6 +629,7 @@ export class Store {
         this.createCronSchema()
         this.createHistorySchema()
         this.ensureHistoryProjectHostColumn()
+        this.createSessionShareSchema()
 
         const messageColumns = this.getMessageColumnNames()
         if (messageColumns.size === 0) {
@@ -684,6 +717,31 @@ export class Store {
             CREATE UNIQUE INDEX IF NOT EXISTS idx_conversation_history_assistant_message
                 ON conversation_history(session_id, assistant_message_id)
                 WHERE assistant_message_id IS NOT NULL;
+        `)
+    }
+
+    private createSessionShareSchema(): void {
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS session_shares (
+                id TEXT PRIMARY KEY,
+                namespace TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                token_hash TEXT NOT NULL UNIQUE,
+                token_encrypted TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                label TEXT,
+                visible_from_seq INTEGER NOT NULL DEFAULT 0,
+                expires_at INTEGER,
+                revoked_at INTEGER,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                last_used_at INTEGER,
+                FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_session_shares_session
+                ON session_shares(namespace, session_id, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_session_shares_active
+                ON session_shares(namespace, session_id, revoked_at, expires_at);
         `)
     }
 

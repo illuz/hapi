@@ -116,6 +116,36 @@ export type BulkSessionActionResponse = {
         sessionId: string
         error: string
     }>
+export type SessionShareStatus = 'active' | 'expired' | 'revoked'
+
+export type SessionShare = {
+    id: string
+    sessionId: string
+    label: string | null
+    url?: string
+    expiresAt: number | null
+    revokedAt: number | null
+    createdAt: number
+    updatedAt: number
+    lastUsedAt: number | null
+    visibleFromSeq: number
+    status: SessionShareStatus
+}
+
+export type SessionSharesResponse = { shares: SessionShare[] }
+export type SessionShareResponse = { share: SessionShare }
+
+export type CreateSessionSharePayload = {
+    password: string
+    label?: string | null
+    expiresAt?: number | null
+    includeHistory?: boolean
+}
+
+export type UpdateSessionSharePayload = {
+    password?: string
+    label?: string | null
+    expiresAt?: number | null
 }
 export type ConversationHistoryEntry = {
     id: string

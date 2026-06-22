@@ -25,9 +25,10 @@ export type SessionSummary = {
     markerColor: Session['markerColor']
     model: string | null
     effort: string | null
+    shareCount?: number
 }
 
-export function toSessionSummary(session: Session): SessionSummary {
+export function toSessionSummary(session: Session, options?: { shareCount?: number }): SessionSummary {
     const pendingRequestsCount = session.agentState?.requests ? Object.keys(session.agentState.requests).length : 0
 
     const metadata: SessionSummaryMetadata | null = session.metadata ? {
@@ -64,6 +65,7 @@ export function toSessionSummary(session: Session): SessionSummary {
         pendingRequestsCount,
         markerColor: session.markerColor,
         model: session.model,
-        effort: session.effort
+        effort: session.effort,
+        shareCount: options?.shareCount
     }
 }

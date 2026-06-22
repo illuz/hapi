@@ -11,6 +11,7 @@ import type {
     SyncEvent
 } from '@/types/api'
 import { queryKeys } from '@/lib/query-keys'
+import { triggerSessionAttention } from '@/lib/sessionAttention'
 import { clearMessageWindow, getMessageWindowState, ingestIncomingMessages, markMessagesConsumed, removeOptimisticMessage, updateMessageStatus } from '@/lib/message-window-store'
 
 type SSESubscription = {
@@ -31,6 +32,7 @@ const RECONNECT_JITTER_MS = 500
 const INVALIDATION_BATCH_MS = 16
 
 type SessionPatch = Partial<Pick<Session, 'active' | 'thinking' | 'activeAt' | 'updatedAt' | 'markerColor' | 'model' | 'modelReasoningEffort' | 'serviceTier' | 'effort' | 'permissionMode' | 'collaborationMode'>>
+type SessionPatchWithAttention = SessionPatch & { shareConfirmedAt?: number; shareLabel?: string | null }
 
 function sortSessionSummaries(left: SessionSummary, right: SessionSummary): number {
     if (left.active !== right.active) {
@@ -62,7 +64,7 @@ function getSessionPatch(value: unknown): SessionPatch | null {
         return null
     }
 
-    const patch: SessionPatch = {}
+    const patch: SessionPatchWithAttention = {}
     let hasKnownPatch = false
 
     if (typeof value.active === 'boolean') {
@@ -109,6 +111,14 @@ function getSessionPatch(value: unknown): SessionPatch | null {
         patch.collaborationMode = value.collaborationMode as Session['collaborationMode']
         hasKnownPatch = true
     }
+    if (typeof value.shareConfirmedAt === 'number') {
+        patch.shareConfirmedAt = value.shareConfirmedAt
+        hasKnownPatch = true
+    }
+    if (value.shareLabel === null || typeof value.shareLabel === 'string') {
+        patch.shareLabel = value.shareLabel
+        hasKnownPatch = true
+    }
 
     return hasKnownPatch ? patch : null
 }
@@ -117,7 +127,7 @@ function hasUnknownSessionPatchKeys(value: unknown): boolean {
     if (!hasRecordShape(value)) {
         return false
     }
-    const knownKeys = new Set(['active', 'thinking', 'activeAt', 'updatedAt', 'markerColor', 'model', 'modelReasoningEffort', 'serviceTier', 'effort', 'permissionMode', 'collaborationMode'])
+    const knownKeys = new Set(['active', 'thinking', 'activeAt', 'updatedAt', 'markerColor', 'model', 'modelReasoningEffort', 'serviceTier', 'effort', 'permissionMode', 'collaborationMode', 'shareConfirmedAt', 'shareLabel'])
     return Object.keys(value).some((key) => !knownKeys.has(key))
 }
 
@@ -602,6 +612,12 @@ export function useSSE(options: {
                     removeSessionSummary(event.sessionId)
                     void queryClient.removeQueries({ queryKey: queryKeys.session(event.sessionId) })
                     clearMessageWindow(event.sessionId)
+                } else if (hasRecordShape(event.data) && typeof event.data.shareConfirmedAt === 'number') {
+                    triggerSessionAttention(event.sessionId)
+                    queueSessionListInvalidation()
+                    queueSessionDetailInvalidation(event.sessionId)
+                    patchSessionDetail(event.sessionId, { updatedAt: event.data.shareConfirmedAt })
+                    patchSessionSummary(event.sessionId, { updatedAt: event.data.shareConfirmedAt })
                 } else if (isSessionRecord(event.data) && event.data.id === event.sessionId) {
                     queryClient.setQueryData<SessionResponse>(queryKeys.session(event.sessionId), { session: event.data })
                     upsertSessionSummary(event.data)

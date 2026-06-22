@@ -80,6 +80,7 @@ function AppInner() {
     const matchRoute = useMatchRoute()
     const router = useRouter()
     const { addToast } = useToast()
+    const isPublicShareRoute = pathname.startsWith('/share/')
 
     useEffect(() => {
         const tg = getTelegramWebApp()
@@ -193,6 +194,9 @@ function AppInner() {
     }, [token, api, router])
 
     useEffect(() => {
+        if (isPublicShareRoute) {
+            return
+        }
         if (!api || !token) {
             pushPromptedRef.current = false
             return
@@ -219,7 +223,7 @@ function AppInner() {
         }
 
         void run()
-    }, [api, isPushSupported, pushPermission, requestPermission, subscribe, token])
+    }, [api, isPublicShareRoute, isPushSupported, pushPermission, requestPermission, subscribe, token])
 
     const handleSseConnect = useCallback(() => {
         // Clear disconnected state on successful connection
@@ -326,6 +330,13 @@ function AppInner() {
             }
         }
 
+        if (normalizedTitle === 'Requirements confirmed' || normalizedTitle === 'Shared requirements confirmed') {
+            return {
+                title: t('share.guest.complete'),
+                body: normalizedBody
+            }
+        }
+
         return { title, body }
     }, [t])
 
@@ -372,7 +383,7 @@ function AppInner() {
     }, [selectedSessionId])
 
     const { subscriptionId } = useSSE({
-        enabled: Boolean(api && token),
+        enabled: Boolean(api && token && !isPublicShareRoute),
         token: token ?? '',
         baseUrl,
         subscription: eventSubscription,
@@ -385,8 +396,19 @@ function AppInner() {
     useVisibilityReporter({
         api,
         subscriptionId,
-        enabled: Boolean(api && token)
+        enabled: Boolean(api && token && !isPublicShareRoute)
     })
+
+    if (isPublicShareRoute) {
+        return (
+            <VoiceProvider>
+                <div className="h-full min-h-0">
+                    <Outlet />
+                </div>
+                <ToastContainer />
+            </VoiceProvider>
+        )
+    }
 
     // Loading auth source
     if (isAuthSourceLoading) {

@@ -152,7 +152,9 @@ export const MessageMetaSchema = z.object({
     customSystemPrompt: z.string().nullable().optional(),
     appendSystemPrompt: z.string().nullable().optional(),
     allowedTools: z.array(z.string()).nullable().optional(),
-    disallowedTools: z.array(z.string()).nullable().optional()
+    disallowedTools: z.array(z.string()).nullable().optional(),
+    shareId: z.string().nullable().optional(),
+    shareLabel: z.string().nullable().optional()
 })
 
 export type MessageMeta = z.infer<typeof MessageMetaSchema>

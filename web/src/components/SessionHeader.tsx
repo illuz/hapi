@@ -9,7 +9,10 @@ import { SessionActionMenu } from '@/components/SessionActionMenu'
 import { SessionMarkerDot } from '@/components/SessionMarkerDot'
 import { SessionMarkerMenu } from '@/components/SessionMarkerMenu'
 import { RenameSessionDialog } from '@/components/RenameSessionDialog'
+import { ShareSessionDialog } from '@/components/ShareSessionDialog'
+import { SessionShareListPopover } from '@/components/SessionShareListPopover'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { ShareIcon } from '@/components/icons'
 import { canForkSession, canSpawnSessionFromConfig } from '@/lib/sessionBranching'
 import { getSessionModelLabel } from '@/lib/sessionModelLabel'
 import { getSessionMarkerColorHex } from '@/lib/sessionMarkers'
@@ -121,6 +124,10 @@ export function SessionHeader(props: {
     const markerTextColor = getSessionMarkerColorHex(session.markerColor)
     const forkSupported = canForkSession(session)
     const spawnFromConfigSupported = canSpawnSessionFromConfig(session)
+    const sessionShareCount = (session as unknown as { shareCount?: unknown }).shareCount
+    const activeShareCount = typeof sessionShareCount === 'number'
+        ? sessionShareCount
+        : 0
 
     const [menuOpen, setMenuOpen] = useState(false)
     const [menuAnchorPoint, setMenuAnchorPoint] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
@@ -131,6 +138,8 @@ export function SessionHeader(props: {
     const menuAnchorRef = useRef<HTMLButtonElement | null>(null)
     const markerAnchorRef = useRef<HTMLButtonElement | null>(null)
     const [renameOpen, setRenameOpen] = useState(false)
+    const [shareOpen, setShareOpen] = useState(false)
+    const [shareListOpen, setShareListOpen] = useState(false)
     const [archiveOpen, setArchiveOpen] = useState(false)
     const [deleteOpen, setDeleteOpen] = useState(false)
 
@@ -207,6 +216,11 @@ export function SessionHeader(props: {
         }
         setMarkerMenuOpen((open) => !open)
         setMenuOpen(false)
+    }
+
+    const openShareDialog = () => {
+        setShareListOpen(false)
+        setShareOpen(true)
     }
 
     if (isTelegramApp()) {
@@ -314,6 +328,34 @@ export function SessionHeader(props: {
                         </button>
                     ) : null}
 
+                    <div className="relative">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setShareListOpen((open) => !open)
+                                setMenuOpen(false)
+                                setMarkerMenuOpen(false)
+                            }}
+                            className="relative flex h-8 w-8 items-center justify-center rounded-full text-[var(--app-hint)] transition-colors hover:bg-[var(--app-secondary-bg)] hover:text-[var(--app-fg)]"
+                            title={t('share.list.title')}
+                            aria-label={t('share.list.title')}
+                        >
+                            <ShareIcon className="h-[18px] w-[18px]" />
+                            {activeShareCount > 0 ? (
+                                <span className="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-[var(--app-link)] px-1 text-[10px] leading-4 text-white">
+                                    {activeShareCount}
+                                </span>
+                            ) : null}
+                        </button>
+                        <SessionShareListPopover
+                            isOpen={shareListOpen}
+                            onClose={() => setShareListOpen(false)}
+                            api={api}
+                            sessionId={session.id}
+                            onCreate={openShareDialog}
+                        />
+                    </div>
+
                     <button
                         type="button"
                         onClick={handleMenuToggle}
@@ -349,6 +391,7 @@ export function SessionHeader(props: {
                 markerColor={session.markerColor}
                 onSelectMarkerColor={(markerColor) => { void setSessionMarkerColor(markerColor) }}
                 onRename={() => setRenameOpen(true)}
+                onShare={openShareDialog}
                 onArchive={() => setArchiveOpen(true)}
                 onDelete={() => setDeleteOpen(true)}
                 onForkSession={handleForkSession}
@@ -363,6 +406,14 @@ export function SessionHeader(props: {
                 currentName={title}
                 onRename={renameSession}
                 isPending={isPending}
+            />
+
+            <ShareSessionDialog
+                isOpen={shareOpen}
+                onClose={() => setShareOpen(false)}
+                api={api}
+                sessionId={session.id}
+                sessionTitle={title}
             />
 
             <ConfirmDialog

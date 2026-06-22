@@ -9,7 +9,7 @@ import {
 } from 'react'
 import { SessionMarkerDot } from '@/components/SessionMarkerDot'
 import { Spinner } from '@/components/Spinner'
-import { CopyIcon } from '@/components/icons'
+import { CopyIcon, ShareIcon } from '@/components/icons'
 import { safeCopyToClipboard } from '@/lib/clipboard'
 import { SESSION_MARKER_COLORS } from '@/lib/sessionMarkers'
 import { useTranslation } from '@/lib/use-translation'
@@ -26,6 +26,7 @@ type SessionActionMenuProps = {
     markerColor: SessionMarkerColor | null
     onSelectMarkerColor: (markerColor: SessionMarkerColor | null) => void
     onRename: () => void
+    onShare?: () => void
     onArchive: () => void
     onDelete: () => void
     onForkSession?: () => void | Promise<void>
@@ -160,6 +161,7 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
         markerColor,
         onSelectMarkerColor,
         onRename,
+        onShare,
         onArchive,
         onDelete,
         onForkSession,
@@ -183,6 +185,11 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
     const handleArchive = () => {
         onClose()
         onArchive()
+    }
+
+    const handleShare = () => {
+        onClose()
+        onShare?.()
     }
 
     const handleDelete = () => {
@@ -392,6 +399,19 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                     <CopyIcon className="h-[18px] w-[18px] text-[var(--app-hint)]" />
                     {t('session.action.copyId')}
                 </button>
+
+                {onShare ? (
+                    <button
+                        type="button"
+                        role="menuitem"
+                        disabled={pendingAction !== null}
+                        className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
+                        onClick={handleShare}
+                    >
+                        <ShareIcon className="h-[18px] w-[18px] text-[var(--app-hint)]" />
+                        {t('session.action.share')}
+                    </button>
+                ) : null}
 
                 {canForkSession ? (
                     <button

@@ -35,7 +35,10 @@ import type {
     VisibilityPayload,
     SessionResponse,
     SessionsResponse,
-    BulkSessionActionResponse
+    SessionSharesResponse,
+    SessionShareResponse,
+    CreateSessionSharePayload,
+    UpdateSessionSharePayload
 } from '@/types/api'
 import type { CancelMessageResponse } from '@hapi/protocol/schemas'
 
@@ -205,6 +208,31 @@ export class ApiClient {
 
     async getSession(sessionId: string): Promise<SessionResponse> {
         return await this.request<SessionResponse>(`/api/sessions/${encodeURIComponent(sessionId)}`)
+    }
+
+    async getSessionShares(sessionId: string): Promise<SessionSharesResponse> {
+        return await this.request<SessionSharesResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/shares`)
+    }
+
+    async createSessionShare(sessionId: string, payload: CreateSessionSharePayload): Promise<SessionShareResponse> {
+        return await this.request<SessionShareResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/shares`, {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        })
+    }
+
+    async updateSessionShare(sessionId: string, shareId: string, payload: UpdateSessionSharePayload): Promise<SessionShareResponse> {
+        return await this.request<SessionShareResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/shares/${encodeURIComponent(shareId)}`, {
+            method: 'PATCH',
+            body: JSON.stringify(payload)
+        })
+    }
+
+    async revokeSessionShare(sessionId: string, shareId: string): Promise<SessionShareResponse> {
+        return await this.request<SessionShareResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/shares/${encodeURIComponent(shareId)}/revoke`, {
+            method: 'POST',
+            body: JSON.stringify({})
+        })
     }
 
     async getConversationHistory(options: {

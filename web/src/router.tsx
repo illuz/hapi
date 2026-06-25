@@ -36,11 +36,12 @@ import { useSendMessage } from '@/hooks/mutations/useSendMessage'
 import { queryKeys } from '@/lib/query-keys'
 import { useToast } from '@/lib/toast-context'
 import { useTranslation } from '@/lib/use-translation'
-import { clearMessageWindow, fetchLatestMessages, seedMessageWindowFromSession } from '@/lib/message-window-store'
+import { fetchLatestMessages, seedMessageWindowFromSession } from '@/lib/message-window-store'
 import { clearDraftsAfterSend } from '@/lib/clearDraftsAfterSend'
 import { getMachineTitle } from '@/lib/machineTitle'
 import { filterSessionsByActivityOrMarker } from '@/lib/sessionFilters'
 import { loadSessionColorFilterPreference } from '@/lib/sessionColorFilterPreference'
+import { cleanupInactiveSessions } from '@/lib/sessionCleanup'
 import FilesPage from '@/routes/sessions/files'
 import FilePage from '@/routes/sessions/file'
 import TerminalPage from '@/routes/sessions/terminal'
@@ -180,28 +181,17 @@ function SessionsPage() {
     }, [routeSessionId])
 
     const handleCleanupInactive = useCallback(async () => {
-        if (!api) {
-            throw new Error('API unavailable')
-        }
-        if (inactiveSessions.length === 0) {
-            return
-        }
-
         setIsCleaningInactive(true)
         try {
-            const deletedSessionIds: string[] = []
-            for (const session of inactiveSessions) {
-                await api.deleteSession(session.id)
-                deletedSessionIds.push(session.id)
-                queryClient.removeQueries({ queryKey: queryKeys.session(session.id) })
-                clearMessageWindow(session.id)
-            }
-
-            if (selectedSessionId && deletedSessionIds.includes(selectedSessionId)) {
-                navigate({ to: '/sessions', replace: true })
-            }
-
-            await queryClient.invalidateQueries({ queryKey: queryKeys.sessions })
+            await cleanupInactiveSessions({
+                api,
+                queryClient,
+                inactiveSessions,
+                selectedSessionId,
+                navigateToSessions: () => {
+                    navigate({ to: '/sessions', replace: true })
+                }
+            })
         } finally {
             setIsCleaningInactive(false)
         }

@@ -74,10 +74,13 @@ vi.mock('@/lib/use-translation', () => ({
                 'sessions.manage.clearSelection': 'Clear selection',
                 'sessions.manage.bulkArchive': 'Archive selected',
                 'sessions.manage.bulkDelete': 'Delete selected',
+                'sessions.manage.bulkSetMarkerColor': 'Set color for selected',
                 'sessions.manage.bulkArchive.noneApplicable': 'No active sessions selected for archiving.',
                 'sessions.manage.bulkDelete.noneApplicable': 'No inactive sessions selected for deletion.',
+                'sessions.manage.bulkSetMarkerColor.noneApplicable': 'No sessions selected for color changes.',
                 'sessions.manage.bulkArchive.result': `Archived ${params?.success ?? 0}, skipped ${params?.skipped ?? 0}, failed ${params?.failed ?? 0}.`,
                 'sessions.manage.bulkDelete.result': `Deleted ${params?.success ?? 0}, skipped ${params?.skipped ?? 0}, failed ${params?.failed ?? 0}.`,
+                'sessions.manage.bulkSetMarkerColor.result': `Updated ${params?.success ?? 0}, failed ${params?.failed ?? 0}.`,
                 'sessions.manage.column.select': 'Select',
                 'sessions.manage.column.session': 'Session',
                 'sessions.manage.column.path': 'Path',
@@ -96,7 +99,13 @@ vi.mock('@/lib/use-translation', () => ({
                 'sessions.timeFilter.1d': 'Older than 1 day',
                 'sessions.timeFilter.3d': 'Older than 3 days',
                 'sessions.timeFilter.10d': 'Older than 10 days',
+                'session.action.marker': 'Marker color',
+                'session.action.clearMarker': 'Clear marker',
+                'session.marker.orange': 'Planning',
+                'session.marker.yellow': 'Continue later',
+                'session.marker.green': 'Wrapping up',
                 'session.marker.blue': 'In progress',
+                'session.marker.purple': 'Reference',
                 'session.marker.red': 'Focus',
                 'session.item.pending': 'pending',
                 'session.item.thinking': 'thinking',
@@ -244,6 +253,76 @@ describe('SessionManagementPanel', () => {
 
         expect(deleteSessions).toHaveBeenCalledTimes(1)
         expect(removeQueries).toHaveBeenCalled()
+        expect(invalidateQueries).toHaveBeenCalled()
+    })
+
+    it('sets marker color for selected sessions in bulk', async () => {
+        const setSessionsMarkerColor = vi.fn().mockResolvedValue({
+            successIds: ['active-session', 'inactive-session'],
+            failed: []
+        })
+        const api = { setSessionsMarkerColor } as unknown as {
+            setSessionsMarkerColor: (ids: string[], markerColor: string | null) => Promise<unknown>
+        }
+
+        render(
+            <SessionManagementPanel
+                api={api as never}
+                sessions={[
+                    makeSession({ id: 'active-session', active: true, markerColor: 'blue' }),
+                    makeSession({ id: 'inactive-session', active: false, markerColor: 'blue' }),
+                ]}
+                machineLabelsById={{ 'machine-1': 'MacBook' }}
+                isLoading={false}
+                onClose={vi.fn()}
+            />
+        )
+
+        const checkboxes = screen.getAllByRole('checkbox')
+        fireEvent.click(checkboxes[0])
+        fireEvent.click(checkboxes[1])
+        fireEvent.click(screen.getByRole('button', { name: /Set color for selected/ }))
+        fireEvent.click(screen.getByRole('menuitemradio', { name: 'Focus' }))
+
+        await waitFor(() => {
+            expect(setSessionsMarkerColor).toHaveBeenCalledWith(['active-session', 'inactive-session'], 'red')
+        })
+
+        expect(invalidateQueries).toHaveBeenCalled()
+        await waitFor(() => {
+            expect(addToast).toHaveBeenCalled()
+        })
+    })
+
+    it('clears marker color for selected sessions in bulk', async () => {
+        const setSessionsMarkerColor = vi.fn().mockResolvedValue({
+            successIds: ['inactive-session'],
+            failed: []
+        })
+        const api = { setSessionsMarkerColor } as unknown as {
+            setSessionsMarkerColor: (ids: string[], markerColor: string | null) => Promise<unknown>
+        }
+
+        render(
+            <SessionManagementPanel
+                api={api as never}
+                sessions={[
+                    makeSession({ id: 'inactive-session', active: false, markerColor: 'green' }),
+                ]}
+                machineLabelsById={{ 'machine-1': 'MacBook' }}
+                isLoading={false}
+                onClose={vi.fn()}
+            />
+        )
+
+        fireEvent.click(screen.getAllByRole('checkbox')[0])
+        fireEvent.click(screen.getByRole('button', { name: /Set color for selected/ }))
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Clear marker' }))
+
+        await waitFor(() => {
+            expect(setSessionsMarkerColor).toHaveBeenCalledWith(['inactive-session'], null)
+        })
+
         expect(invalidateQueries).toHaveBeenCalled()
     })
 })

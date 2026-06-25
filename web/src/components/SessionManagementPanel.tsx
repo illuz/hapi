@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import type { ApiClient } from '@/api/client'
 import type { SessionMarkerColor, SessionSummary } from '@/types/api'
 import { SESSION_MARKER_COLORS } from '@/lib/sessionMarkers'
 import { SessionMarkerDot } from '@/components/SessionMarkerDot'
+import { SessionMarkerMenu } from '@/components/SessionMarkerMenu'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useToast } from '@/lib/toast-context'
 import { useTranslation } from '@/lib/use-translation'
@@ -21,7 +22,7 @@ import { queryKeys } from '@/lib/query-keys'
 import { getDisplaySessionTitle } from '@/lib/sessionTitle'
 
 type SessionManagementStatusFilter = 'all' | 'active' | 'inactive'
-type BulkActionKind = 'archive' | 'delete' | null
+type BulkActionKind = 'archive' | 'delete' | 'markerColor' | null
 
 function BackIcon(props: { className?: string }) {
     return (
@@ -75,6 +76,9 @@ export function SessionManagementPanel(props: {
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
     const [pendingAction, setPendingAction] = useState<BulkActionKind>(null)
     const [confirmAction, setConfirmAction] = useState<BulkActionKind>(null)
+    const [markerMenuOpen, setMarkerMenuOpen] = useState(false)
+    const [markerMenuAnchorPoint, setMarkerMenuAnchorPoint] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
+    const markerMenuId = useId()
     const actionToastRef = useRef<{ title: string; body: string; kind?: 'failure' | 'ready' } | null>(null)
 
     const normalizedQuery = useMemo(
@@ -118,6 +122,14 @@ export function SessionManagementPanel(props: {
         () => props.sessions.filter((session) => selectedIds.has(session.id)),
         [props.sessions, selectedIds]
     )
+
+    const selectedMarkerColor = useMemo(() => {
+        if (selectedSessions.length === 0) return null
+        const candidate = selectedSessions[0].markerColor ?? null
+        return selectedSessions.every((session) => (session.markerColor ?? null) === candidate)
+            ? candidate
+            : null
+    }, [selectedSessions])
 
     const visibleSessionIds = useMemo(
         () => visibleSessions.map((session) => session.id),
@@ -295,6 +307,44 @@ export function SessionManagementPanel(props: {
         }
     }
 
+    const runBulkSetMarkerColor = async (markerColor: SessionMarkerColor | null) => {
+        if (!props.api) {
+            throw new Error('API unavailable')
+        }
+        if (selectedSessions.length === 0) {
+            showSummaryToast(
+                t('sessions.manage.bulkSetMarkerColor'),
+                t('sessions.manage.bulkSetMarkerColor.noneApplicable'),
+                'failure'
+            )
+            return
+        }
+
+        setPendingAction('markerColor')
+        try {
+            const result = await props.api.setSessionsMarkerColor(
+                selectedSessions.map((session) => session.id),
+                markerColor
+            )
+            const failedCount = result.failed.length
+
+            if (failedCount < selectedSessions.length) {
+                await queryClient.invalidateQueries({ queryKey: queryKeys.sessions })
+            }
+
+            showSummaryToast(
+                t('sessions.manage.bulkSetMarkerColor'),
+                t('sessions.manage.bulkSetMarkerColor.result', {
+                    success: result.successIds.length,
+                    failed: failedCount
+                }),
+                failedCount > 0 ? 'failure' : 'ready'
+            )
+        } finally {
+            setPendingAction(null)
+        }
+    }
+
     const confirmCount = confirmAction === 'archive'
         ? activeSelectedCount
         : confirmAction === 'delete'
@@ -396,6 +446,24 @@ export function SessionManagementPanel(props: {
                             {t('sessions.manage.clearSelection')}
                         </button>
                         <div className="ml-auto flex flex-wrap items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={(event) => {
+                                    const rect = event.currentTarget.getBoundingClientRect()
+                                    setMarkerMenuAnchorPoint({
+                                        x: rect.left + (rect.width / 2),
+                                        y: rect.bottom
+                                    })
+                                    setMarkerMenuOpen((open) => !open)
+                                }}
+                                disabled={!hasSelection || pendingAction !== null}
+                                aria-haspopup="menu"
+                                aria-expanded={markerMenuOpen}
+                                aria-controls={markerMenuOpen ? markerMenuId : undefined}
+                                className="rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-1.5 text-sm text-[var(--app-fg)] transition-colors hover:bg-[var(--app-secondary-bg)] disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                {t('sessions.manage.bulkSetMarkerColor')} ({selectedIds.size})
+                            </button>
                             <button
                                 type="button"
                                 onClick={() => setConfirmAction('archive')}
@@ -536,6 +604,17 @@ export function SessionManagementPanel(props: {
                 onConfirm={runBulkDelete}
                 isPending={pendingAction === 'delete'}
                 destructive
+            />
+
+            <SessionMarkerMenu
+                isOpen={markerMenuOpen}
+                onClose={() => setMarkerMenuOpen(false)}
+                anchorPoint={markerMenuAnchorPoint}
+                markerColor={selectedMarkerColor}
+                onSelectMarkerColor={(markerColor) => {
+                    void runBulkSetMarkerColor(markerColor)
+                }}
+                menuId={markerMenuId}
             />
         </div>
     )

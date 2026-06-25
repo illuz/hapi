@@ -37,6 +37,7 @@ import type {
     SessionsResponse,
     ForkSessionOptions,
     BulkSessionActionResponse,
+    BulkSessionMarkerColorResponse,
     SessionSharesResponse,
     SessionShareResponse,
     CreateSessionSharePayload,
@@ -431,6 +432,13 @@ export class ApiClient {
         return await this.request<BulkSessionActionResponse>('/api/sessions/bulk/archive', {
             method: 'POST',
             body: JSON.stringify({ sessionIds })
+        })
+    }
+
+    async setSessionsMarkerColor(sessionIds: string[], markerColor: SessionMarkerColor | null): Promise<BulkSessionMarkerColorResponse> {
+        return await this.request<BulkSessionMarkerColorResponse>('/api/sessions/bulk/marker-color', {
+            method: 'POST',
+            body: JSON.stringify({ sessionIds, markerColor })
         })
     }
 

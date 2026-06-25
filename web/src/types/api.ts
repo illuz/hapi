@@ -121,6 +121,14 @@ export type BulkSessionActionResponse = {
         error: string
     }>
 }
+
+export type BulkSessionMarkerColorResponse = {
+    successIds: string[]
+    failed: Array<{
+        sessionId: string
+        error: string
+    }>
+}
 export type SessionShareStatus = 'active' | 'expired' | 'revoked'
 
 export type SessionShare = {

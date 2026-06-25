@@ -63,6 +63,10 @@ const bulkSessionIdsSchema = z.object({
     sessionIds: z.array(z.string().trim().min(1))
 })
 
+const bulkMarkerColorSchema = bulkSessionIdsSchema.extend({
+    markerColor: SessionMarkerColorSchema.nullable()
+})
+
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 type BulkSessionActionResponse = {
@@ -71,6 +75,14 @@ type BulkSessionActionResponse = {
         sessionId: string
         reason: 'session_inactive' | 'session_active'
     }>
+    failed: Array<{
+        sessionId: string
+        error: string
+    }>
+}
+
+type BulkSessionMarkerColorResponse = {
+    successIds: string[]
     failed: Array<{
         sessionId: string
         error: string
@@ -174,6 +186,41 @@ async function runBulkSessionAction(args: {
             result.failed.push({
                 sessionId: access.sessionId,
                 error: error instanceof Error ? error.message : 'Failed to delete session'
+            })
+        }
+    }
+
+    return result
+}
+
+async function runBulkSessionMarkerColor(args: {
+    engine: SyncEngine
+    namespace: string
+    sessionIds: string[]
+    markerColor: z.infer<typeof SessionMarkerColorSchema> | null
+}): Promise<BulkSessionMarkerColorResponse> {
+    const result: BulkSessionMarkerColorResponse = {
+        successIds: [],
+        failed: []
+    }
+
+    for (const sessionId of args.sessionIds) {
+        const access = args.engine.resolveSessionAccess(sessionId, args.namespace)
+        if (!access.ok) {
+            result.failed.push({
+                sessionId,
+                error: access.reason === 'access-denied' ? 'Session access denied' : 'Session not found'
+            })
+            continue
+        }
+
+        try {
+            await args.engine.setSessionMarkerColor(access.sessionId, args.markerColor)
+            result.successIds.push(access.sessionId)
+        } catch (error) {
+            result.failed.push({
+                sessionId: access.sessionId,
+                error: error instanceof Error ? error.message : 'Failed to update session marker color'
             })
         }
     }
@@ -725,6 +772,27 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
             namespace: c.get('namespace'),
             sessionIds,
             action: 'delete'
+        })
+        return c.json(result)
+    })
+
+    app.post('/sessions/bulk/marker-color', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) {
+            return engine
+        }
+
+        const body = await c.req.json().catch(() => null)
+        const parsed = bulkMarkerColorSchema.safeParse(body)
+        if (!parsed.success) {
+            return c.json({ error: 'Invalid body' }, 400)
+        }
+
+        const result = await runBulkSessionMarkerColor({
+            engine,
+            namespace: c.get('namespace'),
+            sessionIds: Array.from(new Set(parsed.data.sessionIds)),
+            markerColor: parsed.data.markerColor
         })
         return c.json(result)
     })

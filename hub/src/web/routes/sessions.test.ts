@@ -716,6 +716,90 @@ describe('sessions routes', () => {
         expect(await response.json()).toEqual({ error: 'Invalid body' })
     })
 
+    it('sets marker color in bulk and skips missing sessions', async () => {
+        const coloredSession = createSession({ id: 'colored-session', markerColor: 'red' })
+        const { app, setSessionMarkerColorCalls } = createApp(coloredSession, {
+            resolveSessionAccess: (sessionId, namespace) => {
+                if (namespace !== 'default') {
+                    return { ok: false, reason: 'access-denied' }
+                }
+                if (sessionId === coloredSession.id) {
+                    return { ok: true, sessionId, session: coloredSession }
+                }
+                return { ok: false, reason: 'not-found' }
+            }
+        })
+
+        const response = await app.request('/api/sessions/bulk/marker-color', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+                sessionIds: [coloredSession.id, 'missing-session'],
+                markerColor: 'yellow'
+            })
+        })
+
+        expect(response.status).toBe(200)
+        expect(setSessionMarkerColorCalls).toEqual([
+            ['colored-session', 'yellow']
+        ])
+        expect(await response.json()).toEqual({
+            successIds: [coloredSession.id],
+            failed: [
+                {
+                    sessionId: 'missing-session',
+                    error: 'Session not found'
+                }
+            ]
+        })
+    })
+
+    it('clears marker color in bulk', async () => {
+        const session = createSession({ id: 'session-1', markerColor: 'blue' })
+        const { app, setSessionMarkerColorCalls } = createApp(session, {
+            resolveSessionAccess: (sessionId, namespace) => {
+                if (namespace !== 'default') {
+                    return { ok: false, reason: 'access-denied' }
+                }
+                if (sessionId === session.id) {
+                    return { ok: true, sessionId, session }
+                }
+                return { ok: false, reason: 'not-found' }
+            }
+        })
+
+        const response = await app.request('/api/sessions/bulk/marker-color', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+                sessionIds: [session.id],
+                markerColor: null
+            })
+        })
+
+        expect(response.status).toBe(200)
+        expect(setSessionMarkerColorCalls).toEqual([
+            ['session-1', null]
+        ])
+        expect(await response.json()).toEqual({
+            successIds: [session.id],
+            failed: []
+        })
+    })
+
+    it('rejects invalid bulk marker color body', async () => {
+        const { app } = createApp(createSession())
+
+        const response = await app.request('/api/sessions/bulk/marker-color', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ sessionIds: ['session-1'] })
+        })
+
+        expect(response.status).toBe(400)
+        expect(await response.json()).toEqual({ error: 'Invalid body' })
+    })
+
     it('updates marker color through patch session route', async () => {
         const { app, setSessionMarkerColorCalls } = createApp(createSession())
 

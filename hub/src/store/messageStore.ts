@@ -61,7 +61,7 @@ export class MessageStore {
     copySessionMessages(
         fromSessionId: string,
         toSessionId: string,
-        options?: { keepUserTurns?: number; dropLastUserTurns?: number }
+        options?: { keepUserTurns?: number; dropLastUserTurns?: number; upToClaudeMessageUuid?: string }
     ): { copied: number } {
         return copySessionMessages(this.db, fromSessionId, toSessionId, options)
     }

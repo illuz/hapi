@@ -117,12 +117,22 @@ describe('listSlashCommands', () => {
             'clear',
             'compact',
             'fast',
+            'goal',
             'plan',
             'status',
             'model',
             'reasoning',
             'permissions',
         ]))
+    })
+
+    it('exposes Claude /goal as a supported built-in', async () => {
+        const commands = await listSlashCommands('claude', projectDir)
+
+        expect(commands.find((command) => command.name === 'goal')).toMatchObject({
+            source: 'builtin',
+            description: 'Show or set current Claude Code goal; use /goal clear to remove it',
+        })
     })
 
     it('lets project codex prompts override same-name built-ins', async () => {

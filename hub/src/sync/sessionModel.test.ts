@@ -1116,6 +1116,8 @@ describe('session model', () => {
             { broadcast() {} } as never
         )
 
+        const previousRoot = process.env.HAPI_ASSUME_ROOT
+        process.env.HAPI_ASSUME_ROOT = '0'
         try {
             const session = engine.getOrCreateSession(
                 'session-spawn-default-agent',
@@ -1209,13 +1211,168 @@ describe('session model', () => {
                 serviceTier: undefined,
                 resumeSessionId: undefined,
                 effort: undefined,
-                permissionMode: undefined
+                permissionMode: 'acceptEdits'
             })
             const clonedSession = engine.getSession((result as { sessionId: string }).sessionId)
             expect(clonedSession?.metadata?.summary?.text).toBe('Claude新建会话')
-            expect(clonedSession?.permissionMode).toBeUndefined()
+            expect(clonedSession?.permissionMode).toBe('acceptEdits')
             expect(clonedSession?.markerColor).toBe('purple')
         } finally {
+            if (previousRoot === undefined) {
+                delete process.env.HAPI_ASSUME_ROOT
+            } else {
+                process.env.HAPI_ASSUME_ROOT = previousRoot
+            }
+            engine.stop()
+        }
+    })
+
+    it('spawns a codex session from a claude source with yolo permission mode', async () => {
+        const store = new Store(':memory:')
+        const engine = new SyncEngine(
+            store,
+            {} as never,
+            new RpcRegistry(),
+            { broadcast() {} } as never
+        )
+
+        try {
+            const session = engine.getOrCreateSession(
+                'session-spawn-codex-from-claude',
+                {
+                    path: '/tmp/project',
+                    host: 'localhost',
+                    machineId: 'machine-1',
+                    flavor: 'claude'
+                },
+                null,
+                'default',
+                'claude-sonnet-4'
+            )
+            engine.getOrCreateMachine(
+                'machine-1',
+                { host: 'localhost', platform: 'linux', happyCliVersion: '0.1.0' },
+                null,
+                'default'
+            )
+            engine.handleMachineAlive({ machineId: 'machine-1', time: Date.now() })
+            // Source claude session is acceptEdits — the derived codex session must
+            // NOT copy it; it always uses the rule-based yolo default instead.
+            engine.handleSessionAlive({
+                sid: session.id,
+                permissionMode: 'acceptEdits',
+                time: Date.now()
+            })
+            await engine.setSessionMarkerColor(session.id, 'green')
+
+            let captured: { agent?: string; permissionMode?: string } | null = null
+
+            ;(engine as any).rpcGateway.spawnSession = async (
+                _machineId: string,
+                _directory: string,
+                agent: string,
+                _model?: string,
+                _modelReasoningEffort?: string,
+                _yolo?: boolean,
+                _sessionType?: string,
+                _worktreeName?: string,
+                _resumeSessionId?: string,
+                _effort?: string,
+                permissionMode?: string,
+                _serviceTier?: string
+            ) => {
+                captured = { agent, permissionMode }
+                const cloned = engine.getOrCreateSession(
+                    'session-spawn-codex-from-claude-cloned',
+                    { path: _directory, host: 'localhost', machineId: _machineId, flavor: agent },
+                    null,
+                    'default'
+                )
+                return { type: 'success', sessionId: cloned.id }
+            }
+
+            const result = await engine.spawnSessionFromConfig(session.id, 'default', { agent: 'codex' })
+
+            expect(result.type).toBe('success')
+            expect(captured!).toEqual({ agent: 'codex', permissionMode: 'yolo' })
+            const clonedSession = engine.getSession((result as { sessionId: string }).sessionId)
+            expect(clonedSession?.permissionMode).toBe('yolo')
+            expect(clonedSession?.markerColor).toBe('green')
+        } finally {
+            engine.stop()
+        }
+    })
+
+    it('spawns a claude session as root with bypassPermissions permission mode', async () => {
+        const store = new Store(':memory:')
+        const engine = new SyncEngine(
+            store,
+            {} as never,
+            new RpcRegistry(),
+            { broadcast() {} } as never
+        )
+
+        const previousRoot = process.env.HAPI_ASSUME_ROOT
+        process.env.HAPI_ASSUME_ROOT = '1'
+        try {
+            const session = engine.getOrCreateSession(
+                'session-spawn-claude-as-root',
+                {
+                    path: '/tmp/project',
+                    host: 'localhost',
+                    machineId: 'machine-1',
+                    flavor: 'codex',
+                    codexSessionId: 'codex-thread-1'
+                },
+                null,
+                'default'
+            )
+            engine.getOrCreateMachine(
+                'machine-1',
+                { host: 'localhost', platform: 'linux', happyCliVersion: '0.1.0' },
+                null,
+                'default'
+            )
+            engine.handleMachineAlive({ machineId: 'machine-1', time: Date.now() })
+
+            let captured: { agent?: string; permissionMode?: string } | null = null
+
+            ;(engine as any).rpcGateway.spawnSession = async (
+                _machineId: string,
+                _directory: string,
+                agent: string,
+                _model?: string,
+                _modelReasoningEffort?: string,
+                _yolo?: boolean,
+                _sessionType?: string,
+                _worktreeName?: string,
+                _resumeSessionId?: string,
+                _effort?: string,
+                permissionMode?: string,
+                _serviceTier?: string
+            ) => {
+                captured = { agent, permissionMode }
+                const cloned = engine.getOrCreateSession(
+                    'session-spawn-claude-as-root-cloned',
+                    { path: _directory, host: 'localhost', machineId: _machineId, flavor: agent },
+                    null,
+                    'default'
+                )
+                return { type: 'success', sessionId: cloned.id }
+            }
+
+            const result = await engine.spawnSessionFromConfig(session.id, 'default', { agent: 'claude' })
+
+            expect(result.type).toBe('success')
+            expect(captured!).toEqual({ agent: 'claude', permissionMode: 'bypassPermissions' })
+            const clonedSession = engine.getSession((result as { sessionId: string }).sessionId)
+            expect(clonedSession?.permissionMode).toBe('bypassPermissions')
+        } finally {
+            if (previousRoot === undefined) {
+                delete process.env.HAPI_ASSUME_ROOT
+            } else {
+                process.env.HAPI_ASSUME_ROOT = previousRoot
+            }
             engine.stop()
         }
     })
@@ -1349,6 +1506,148 @@ describe('session model', () => {
             expect(store.messages.getMessages(forkedSessionId, 100).map((message) => {
                 const content = message.content as { role?: string; content?: { text?: string } }
                 return content.content?.text ?? null
+            })).toEqual(['turn 1', 'reply 1'])
+        } finally {
+            engine.stop()
+        }
+    })
+
+    it('forks a Claude session by spawning with fork-session flags', async () => {
+        const store = new Store(':memory:')
+        const engine = new SyncEngine(
+            store,
+            {} as never,
+            new RpcRegistry(),
+            { broadcast() {} } as never
+        )
+
+        try {
+            const session = engine.getOrCreateSession(
+                'session-claude-fork',
+                {
+                    path: '/tmp/project',
+                    host: 'localhost',
+                    machineId: 'machine-1',
+                    flavor: 'claude',
+                    claudeSessionId: '11111111-1111-4111-8111-111111111111',
+                    summary: {
+                        text: 'Claude Original',
+                        updatedAt: 1
+                    }
+                },
+                null,
+                'default',
+                'claude-sonnet-4'
+            )
+            engine.getOrCreateMachine(
+                'machine-1',
+                { host: 'localhost', platform: 'linux', happyCliVersion: '0.1.0' },
+                null,
+                'default'
+            )
+            engine.handleMachineAlive({ machineId: 'machine-1', time: Date.now() })
+            engine.handleSessionAlive({
+                sid: session.id,
+                permissionMode: 'acceptEdits',
+                time: Date.now()
+            })
+            store.messages.addMessage(session.id, {
+                role: 'user',
+                content: {
+                    type: 'text',
+                    text: 'turn 1'
+                }
+            })
+            store.messages.addMessage(session.id, {
+                role: 'agent',
+                content: {
+                    type: 'output',
+                    data: {
+                        type: 'assistant',
+                        uuid: 'assistant-uuid-1',
+                        message: {
+                            role: 'assistant',
+                            content: [{ type: 'text', text: 'reply 1' }]
+                        }
+                    }
+                }
+            })
+            store.messages.addMessage(session.id, {
+                role: 'user',
+                content: {
+                    type: 'text',
+                    text: 'turn 2'
+                }
+            })
+            store.messages.addMessage(session.id, {
+                role: 'agent',
+                content: {
+                    type: 'output',
+                    data: {
+                        type: 'assistant',
+                        uuid: 'assistant-uuid-2',
+                        message: {
+                            role: 'assistant',
+                            content: [{ type: 'text', text: 'reply 2' }]
+                        }
+                    }
+                }
+            })
+
+            let capturedSpawn: { resumeSessionId?: string; permissionMode?: string; forkOptions?: { forkSession?: boolean; resumeSessionAt?: string } } | null = null
+
+            ;(engine as any).rpcGateway.spawnSession = async (
+                _machineId: string,
+                directory: string,
+                agent: string,
+                _model?: string,
+                _modelReasoningEffort?: string,
+                _yolo?: boolean,
+                _sessionType?: string,
+                _worktreeName?: string,
+                resumeSessionId?: string,
+                _effort?: string,
+                permissionMode?: string,
+                _serviceTier?: string,
+                forkOptions?: { forkSession?: boolean; resumeSessionAt?: string }
+            ) => {
+                capturedSpawn = { resumeSessionId, permissionMode, forkOptions }
+                const forked = engine.getOrCreateSession(
+                    'session-claude-forked-tag',
+                    {
+                        path: directory,
+                        host: 'localhost',
+                        machineId: 'machine-1',
+                        flavor: agent
+                    },
+                    null,
+                    'default'
+                )
+                return { type: 'success', sessionId: forked.id }
+            }
+
+            const result = await engine.forkSession(session.id, 'default', {
+                resumeSessionAt: 'assistant-uuid-1'
+            })
+
+            expect(result.type).toBe('success')
+            expect(capturedSpawn!).toEqual({
+                resumeSessionId: '11111111-1111-4111-8111-111111111111',
+                permissionMode: 'acceptEdits',
+                forkOptions: {
+                    forkSession: true,
+                    resumeSessionAt: 'assistant-uuid-1'
+                }
+            })
+            const forkedSessionId = (result as { sessionId: string }).sessionId
+            const forkedSession = engine.getSession(forkedSessionId)
+            expect(forkedSession?.metadata?.summary?.text).toBe('Claude Original (fork)')
+            expect(forkedSession?.permissionMode).toBe('acceptEdits')
+            expect(store.messages.getMessages(forkedSessionId, 100).map((message) => {
+                const content = message.content as { role?: string; content?: { text?: string; data?: { message?: { content?: Array<{ text?: string }> } } } }
+                return content.content?.text
+                    ?? content.content?.data?.message?.content?.[0]?.text
+                    ?? null
             })).toEqual(['turn 1', 'reply 1'])
         } finally {
             engine.stop()

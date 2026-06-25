@@ -70,6 +70,23 @@ describe('buildCliArgs', () => {
         expect(args).toContain('priority')
     })
 
+    it('passes Claude fork and resume-at flags through for resumed sessions', () => {
+        const args = buildCliArgs('claude', {
+            directory: '/tmp',
+            resumeSessionId: 'claude-session-1',
+            forkSession: true,
+            resumeSessionAt: 'assistant-uuid-1'
+        })
+
+        expect(args).toEqual(expect.arrayContaining([
+            '--resume',
+            'claude-session-1',
+            '--fork-session',
+            '--resume-session-at',
+            'assistant-uuid-1'
+        ]))
+    })
+
     it('validates all known permission modes', () => {
         for (const mode of ['default', 'acceptEdits', 'bypassPermissions', 'plan', 'ask', 'read-only', 'safe-yolo', 'yolo']) {
             const args = buildCliArgs('claude', {

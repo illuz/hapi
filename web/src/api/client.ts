@@ -35,6 +35,8 @@ import type {
     VisibilityPayload,
     SessionResponse,
     SessionsResponse,
+    ForkSessionOptions,
+    BulkSessionActionResponse,
     SessionSharesResponse,
     SessionShareResponse,
     CreateSessionSharePayload,
@@ -373,14 +375,21 @@ export class ApiClient {
         )
     }
 
-    async forkSession(sessionId: string, rollbackTurns?: number): Promise<{ sessionId: string }> {
+    async forkSession(sessionId: string, options?: number | ForkSessionOptions): Promise<{ sessionId: string }> {
+        const body = typeof options === 'number'
+            ? { rollbackTurns: options }
+            : options
+                ? {
+                    ...(options.rollbackTurns !== undefined ? { rollbackTurns: options.rollbackTurns } : {}),
+                    ...(options.resumeSessionAt ? { resumeSessionAt: options.resumeSessionAt } : {})
+                }
+                : {}
+
         return await this.request<{ sessionId: string }>(
             `/api/sessions/${encodeURIComponent(sessionId)}/fork`,
             {
                 method: 'POST',
-                body: JSON.stringify(
-                    rollbackTurns !== undefined ? { rollbackTurns } : {}
-                )
+                body: JSON.stringify(body)
             }
         )
     }

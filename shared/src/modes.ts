@@ -123,3 +123,28 @@ export function getCodexCollaborationModeOptions(): CodexCollaborationModeOption
         label: getCodexCollaborationModeLabel(mode)
     }))
 }
+
+/**
+ * Resolve the default permission mode when spawning a session of a *different*
+ * flavor from a source session (cross-flavor derivation).
+ *
+ * - Target codex: always `yolo` (Yolo) regardless of who runs it.
+ * - Target claude: `bypassPermissions` (Yolo) when running as root, otherwise
+ *   `acceptEdits`.
+ * - Other flavors: `undefined` — fall back to the CLI default.
+ *
+ * The `isRoot` flag is supplied by the caller (hub detects the OS user), so
+ * this stays a pure, flavor-only mapping shared across hub and web.
+ */
+export function resolveCrossFlavorPermissionMode(
+    targetFlavor: AgentFlavor,
+    isRoot: boolean
+): PermissionMode | undefined {
+    if (targetFlavor === 'codex') {
+        return 'yolo'
+    }
+    if (targetFlavor === 'claude') {
+        return isRoot ? 'bypassPermissions' : 'acceptEdits'
+    }
+    return undefined
+}

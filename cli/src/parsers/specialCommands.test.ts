@@ -118,6 +118,12 @@ describe('parseSpecialCommand', () => {
         expect(result.originalMessage).toBeUndefined();
     });
 
+    it('should pass Claude /goal through to Claude Code', () => {
+        expect(parseSpecialCommand('/goal').type).toBeNull();
+        expect(parseSpecialCommand('/goal clear').type).toBeNull();
+        expect(parseSpecialCommand('/goal finish the release').type).toBeNull();
+    });
+
     it('should handle edge cases correctly', () => {
         // Test with extra whitespace
         expect(parseSpecialCommand('  /compact test  ').type).toBe('compact');

@@ -16,6 +16,7 @@ export interface SDKMessage {
 
 export interface SDKUserMessage extends SDKMessage {
     type: 'user'
+    uuid?: string
     parent_tool_use_id?: string
     message: {
         role: 'user'
@@ -31,6 +32,7 @@ export interface SDKUserMessage extends SDKMessage {
 
 export interface SDKAssistantMessage extends SDKMessage {
     type: 'assistant'
+    uuid?: string
     parent_tool_use_id?: string
     message: {
         role: 'assistant'
@@ -169,6 +171,8 @@ export interface QueryOptions {
     permissionMode?: ClaudePermissionMode
     continue?: boolean
     resume?: string
+    forkSession?: boolean
+    resumeSessionAt?: string
     model?: string
     effort?: string
     fallbackModel?: string

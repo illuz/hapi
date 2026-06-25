@@ -16,7 +16,8 @@ const resumeBodySchema = z.object({
 })
 
 const forkSessionSchema = z.object({
-    rollbackTurns: z.number().int().min(0).optional()
+    rollbackTurns: z.number().int().min(0).optional(),
+    resumeSessionAt: z.string().trim().min(1).optional()
 })
 
 const spawnSessionFromConfigSchema = z.object({
@@ -75,7 +76,6 @@ type BulkSessionActionResponse = {
         error: string
     }>
 }
-
 
 type SlashCommand = {
     name: string
@@ -324,7 +324,8 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
 
         const namespace = c.get('namespace')
         const result = await engine.forkSession(sessionResult.sessionId, namespace, {
-            rollbackTurns: parsed.data.rollbackTurns
+            rollbackTurns: parsed.data.rollbackTurns,
+            resumeSessionAt: parsed.data.resumeSessionAt
         })
         if (result.type === 'error') {
             const status = result.code === 'no_machine_online' ? 503

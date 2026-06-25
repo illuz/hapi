@@ -7,6 +7,12 @@ import {
 } from './codexSlashCommands'
 
 describe('getBuiltinSlashCommands', () => {
+    it('exposes Claude /goal in remote web mode', () => {
+        expect(getBuiltinSlashCommands('claude').map((command) => command.name)).toEqual(expect.arrayContaining([
+            'goal'
+        ]))
+    })
+
     it('exposes HAPI-supported codex built-ins in remote web mode', () => {
         expect(getBuiltinSlashCommands('codex').map((command) => command.name)).toEqual(expect.arrayContaining([
             'clear',

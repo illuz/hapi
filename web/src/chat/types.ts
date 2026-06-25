@@ -134,6 +134,7 @@ export type AgentTextBlock = {
     kind: 'agent-text'
     id: string
     localId: string | null
+    messageUuid?: string
     createdAt: number
     invokedAt?: number | null
     durationMs?: number
@@ -147,6 +148,7 @@ export type AgentReasoningBlock = {
     kind: 'agent-reasoning'
     id: string
     localId: string | null
+    messageUuid?: string
     createdAt: number
     invokedAt?: number | null
     durationMs?: number
@@ -160,6 +162,7 @@ export type CliOutputBlock = {
     kind: 'cli-output'
     id: string
     localId: string | null
+    messageUuid?: string
     createdAt: number
     invokedAt?: number | null
     durationMs?: number
@@ -184,6 +187,7 @@ export type ToolCallBlock = {
     kind: 'tool-call'
     id: string
     localId: string | null
+    messageUuid?: string
     createdAt: number
     invokedAt?: number | null
     durationMs?: number

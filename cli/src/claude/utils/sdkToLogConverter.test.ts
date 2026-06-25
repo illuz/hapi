@@ -113,6 +113,21 @@ describe('SDKToLogConverter', () => {
 
             expect((logMessage as any).requestId).toBe('req_123')
         })
+
+        it('should preserve SDK message uuid when present', () => {
+            const sdkMessage: SDKAssistantMessage = {
+                type: 'assistant',
+                uuid: 'assistant-sdk-uuid-1',
+                message: {
+                    role: 'assistant',
+                    content: [{ type: 'text', text: 'Response' }]
+                }
+            }
+
+            const logMessage = converter.convert(sdkMessage)
+
+            expect(logMessage?.uuid).toBe('assistant-sdk-uuid-1')
+        })
     })
 
     describe('System messages', () => {

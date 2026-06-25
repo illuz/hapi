@@ -100,7 +100,8 @@ export class Session extends AgentSessionBase<EnhancedMode> {
 
     /**
      * Consume one-time Claude flags from claudeArgs after Claude spawn
-     * Currently handles: --resume (with or without session ID)
+     * Currently handles: --resume (with or without session ID),
+     * --fork-session, and --resume-session-at.
      */
     consumeOneTimeFlags = (): void => {
         if (!this.claudeArgs) return;
@@ -123,6 +124,15 @@ export class Session extends AgentSessionBase<EnhancedMode> {
                 } else {
                     // --resume at the end of args
                     logger.debug('[Session] Consumed --resume flag (no session ID)');
+                }
+            } else if (this.claudeArgs[i] === '--fork-session') {
+                logger.debug('[Session] Consumed --fork-session flag');
+            } else if (this.claudeArgs[i] === '--resume-session-at') {
+                if (i + 1 < this.claudeArgs.length && !this.claudeArgs[i + 1].startsWith('-')) {
+                    logger.debug(`[Session] Consumed --resume-session-at flag with message ID: ${this.claudeArgs[i + 1]}`);
+                    i++;
+                } else {
+                    logger.debug('[Session] Consumed --resume-session-at flag without message ID');
                 }
             } else {
                 filteredArgs.push(this.claudeArgs[i]);

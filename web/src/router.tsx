@@ -672,7 +672,6 @@ function BrowsePage() {
     )
 }
 
-
 function getStoredShareToken(routeToken: string): string | null {
     if (typeof window === 'undefined') return null
     return window.sessionStorage.getItem(`hapi-share-token:${routeToken}`)

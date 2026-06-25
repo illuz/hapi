@@ -115,7 +115,9 @@ export class SDKToLogConverter {
         }
 
         const parentUuid = this.lastUuid
-        const uuid = randomUUID()
+        const uuid = typeof (sdkMessage as any).uuid === 'string'
+            ? (sdkMessage as any).uuid
+            : randomUUID()
         const timestamp = new Date().toISOString()
         this.lastUuid = uuid
 
@@ -145,7 +147,9 @@ export class SDKToLogConverter {
             return this.convertRateLimitEvent(sdkMessage)
         }
 
-        const uuid = randomUUID()
+        const uuid = typeof (sdkMessage as any).uuid === 'string'
+            ? (sdkMessage as any).uuid
+            : randomUUID()
         const timestamp = new Date().toISOString()
         let parentUuid = this.lastUuid;
         let isSidechain = false;

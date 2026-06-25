@@ -54,7 +54,7 @@ function createSession(overrides?: Partial<Session>): Session {
 function createApp(session: Session, opts?: {
     resumeSession?: (sessionId: string, namespace: string, resumeOpts?: { permissionMode?: string }) => Promise<{ type: string; sessionId?: string; message?: string; code?: string }>
     spawnSessionFromConfig?: (sessionId: string, namespace: string, options?: { agent?: 'claude' | 'codex' }) => Promise<{ type: string; sessionId?: string; message?: string; code?: string }>
-    forkSession?: (sessionId: string, namespace: string, options?: { rollbackTurns?: number }) => Promise<{ type: string; sessionId?: string; message?: string; code?: string }>
+    forkSession?: (sessionId: string, namespace: string, options?: { rollbackTurns?: number; resumeSessionAt?: string }) => Promise<{ type: string; sessionId?: string; message?: string; code?: string }>
     resolveSessionAccess?: SyncEngine['resolveSessionAccess']
     archiveSession?: (sessionId: string) => Promise<void>
     deleteSession?: (sessionId: string) => Promise<void>
@@ -173,10 +173,15 @@ describe('sessions routes', () => {
     })
 
     it('forks a session and forwards rollbackTurns', async () => {
-        let captured: { sessionId: string; namespace: string; rollbackTurns?: number } | null = null
+        let captured: { sessionId: string; namespace: string; rollbackTurns?: number; resumeSessionAt?: string } | null = null
         const { app } = createApp(createSession(), {
             forkSession: async (sessionId, namespace, options) => {
-                captured = { sessionId, namespace, rollbackTurns: options?.rollbackTurns }
+                captured = {
+                    sessionId,
+                    namespace,
+                    rollbackTurns: options?.rollbackTurns,
+                    resumeSessionAt: options?.resumeSessionAt
+                }
                 return { type: 'success', sessionId: 'session-forked' }
             }
         })
@@ -188,7 +193,37 @@ describe('sessions routes', () => {
         })
 
         expect(response.status).toBe(200)
-        expect(captured!).toEqual({ sessionId: 'session-1', namespace: 'default', rollbackTurns: 2 })
+        expect(captured!).toEqual({ sessionId: 'session-1', namespace: 'default', rollbackTurns: 2, resumeSessionAt: undefined })
+        expect(await response.json()).toEqual({ type: 'success', sessionId: 'session-forked' })
+    })
+
+    it('forks a session and forwards resumeSessionAt', async () => {
+        let captured: { sessionId: string; namespace: string; rollbackTurns?: number; resumeSessionAt?: string } | null = null
+        const { app } = createApp(createSession(), {
+            forkSession: async (sessionId, namespace, options) => {
+                captured = {
+                    sessionId,
+                    namespace,
+                    rollbackTurns: options?.rollbackTurns,
+                    resumeSessionAt: options?.resumeSessionAt
+                }
+                return { type: 'success', sessionId: 'session-forked' }
+            }
+        })
+
+        const response = await app.request('/api/sessions/session-1/fork', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ resumeSessionAt: 'assistant-uuid-1' })
+        })
+
+        expect(response.status).toBe(200)
+        expect(captured!).toEqual({
+            sessionId: 'session-1',
+            namespace: 'default',
+            rollbackTurns: undefined,
+            resumeSessionAt: 'assistant-uuid-1'
+        })
         expect(await response.json()).toEqual({ type: 'success', sessionId: 'session-forked' })
     })
 

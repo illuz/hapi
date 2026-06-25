@@ -22,10 +22,33 @@ describe('sessionBranching', () => {
         })).toBe(true)
     })
 
-    it('rejects fork for non-Codex or missing-thread sessions', () => {
+    it('allows fork for Claude sessions with a persisted agent session id', () => {
         expect(canForkSession({
             metadata: {
                 flavor: 'claude',
+                agentSessionId: 'thread-1'
+            }
+        })).toBe(true)
+
+        expect(canForkSession({
+            metadata: {
+                flavor: 'claude',
+                claudeSessionId: 'claude-session-2'
+            }
+        })).toBe(true)
+
+        expect(canForkSession({
+            metadata: {
+                flavor: null,
+                agentSessionId: 'legacy-claude-session'
+            }
+        })).toBe(true)
+    })
+
+    it('rejects fork for unsupported or missing-agent-session sessions', () => {
+        expect(canForkSession({
+            metadata: {
+                flavor: 'gemini',
                 agentSessionId: 'thread-1'
             }
         })).toBe(false)

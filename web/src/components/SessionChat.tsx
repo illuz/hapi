@@ -492,18 +492,26 @@ export function SessionChat(props: {
             { id: 'plan-3', label: '好的，继续方案三', message: '好的，继续方案三' }
         ]
 
-        if (agentFlavor !== 'codex') {
-            return commonActions
+        if (agentFlavor === 'codex') {
+            return [
+                { id: 'codex-fast', label: '/fast', message: '/fast' },
+                { id: 'codex-fast-off', label: '/fast off', message: '/fast off' },
+                { id: 'codex-goal', label: '/goal', message: '/goal' },
+                { id: 'codex-clear', label: '/clear', message: '/clear' },
+                { id: 'codex-compact', label: '/compact', message: '/compact' },
+                ...commonActions
+            ]
         }
 
-        return [
-            { id: 'codex-fast', label: '/fast', message: '/fast' },
-            { id: 'codex-fast-off', label: '/fast off', message: '/fast off' },
-            { id: 'codex-goal', label: '/goal', message: '/goal' },
-            { id: 'codex-clear', label: '/clear', message: '/clear' },
-            { id: 'codex-compact', label: '/compact', message: '/compact' },
-            ...commonActions
-        ]
+        if (agentFlavor === 'claude') {
+            return [
+                { id: 'claude-goal', label: '/goal', message: '/goal' },
+                { id: 'claude-goal-clear', label: '/goal clear', message: '/goal clear' },
+                ...commonActions
+            ]
+        }
+
+        return commonActions
     }, [agentFlavor])
 
     const handleQuickPrompt = useCallback((action: QuickPromptAction) => {
@@ -574,15 +582,16 @@ export function SessionChat(props: {
         : autoContinueMaxRuns
     const forkFromOutlineSupported = canForkSession(props.session)
 
-    const handleForkFromOutline = useCallback(async (_item: ConversationOutlineItem, index: number) => {
+    const handleForkFromOutline = useCallback(async (item: ConversationOutlineItem, index: number) => {
         if (outlineForkingItemIndex !== null) {
             return
         }
 
         setOutlineForkingItemIndex(index)
         try {
-            const rollbackTurns = getRollbackTurnsFromOutlineIndex(index, outlineItems.length)
-            const result = await forkSession(rollbackTurns)
+            const result = agentFlavor === 'claude'
+                ? await forkSession(item.resumeSessionAt ? { resumeSessionAt: item.resumeSessionAt } : undefined)
+                : await forkSession(getRollbackTurnsFromOutlineIndex(index, outlineItems.length))
             haptic.notification('success')
             await navigate({
                 to: '/sessions/$sessionId',
@@ -600,7 +609,7 @@ export function SessionChat(props: {
         } finally {
             setOutlineForkingItemIndex(null)
         }
-    }, [addToast, forkSession, haptic, navigate, outlineForkingItemIndex, outlineItems.length, props.session.id, t])
+    }, [addToast, agentFlavor, forkSession, haptic, navigate, outlineForkingItemIndex, outlineItems.length, props.session.id, t])
 
     const autoContinueButton = (
         <div className="flex items-center gap-1">

@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { isPermissionModeAllowedForFlavor } from '@hapi/protocol'
 import type { ApiClient } from '@/api/client'
-import type { AgentFlavor, CodexCollaborationMode, PermissionMode, SessionMarkerColor } from '@/types/api'
+import type { AgentFlavor, CodexCollaborationMode, ForkSessionOptions, PermissionMode, SessionMarkerColor } from '@/types/api'
 import { queryKeys } from '@/lib/query-keys'
 import { clearMessageWindow } from '@/lib/message-window-store'
 import { isKnownFlavor } from '@/lib/agentFlavorUtils'
@@ -14,7 +14,7 @@ export function useSessionActions(
 ): {
     abortSession: () => Promise<void>
     archiveSession: () => Promise<void>
-    forkSession: (rollbackTurns?: number) => Promise<{ sessionId: string }>
+    forkSession: (options?: number | ForkSessionOptions) => Promise<{ sessionId: string }>
     switchSession: () => Promise<void>
     spawnSessionFromConfig: (agent?: Extract<AgentFlavor, 'claude' | 'codex'>) => Promise<{ sessionId: string }>
     setPermissionMode: (mode: PermissionMode) => Promise<void>
@@ -56,11 +56,11 @@ export function useSessionActions(
     })
 
     const forkSessionMutation = useMutation({
-        mutationFn: async (rollbackTurns?: number) => {
+        mutationFn: async (options?: number | ForkSessionOptions) => {
             if (!api || !sessionId) {
                 throw new Error('Session unavailable')
             }
-            return await api.forkSession(sessionId, rollbackTurns)
+            return await api.forkSession(sessionId, options)
         },
         onSuccess: async () => {
             await queryClient.invalidateQueries({ queryKey: queryKeys.sessions })

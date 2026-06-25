@@ -3,13 +3,19 @@ type ForkableSessionLike = {
         flavor?: string | null
         agentSessionId?: string
         codexSessionId?: string
+        claudeSessionId?: string
         path?: string
     } | null
 }
 
 export function canForkSession(session: ForkableSessionLike): boolean {
     const metadata = session.metadata
-    return metadata?.flavor === 'codex' && Boolean(metadata.agentSessionId ?? metadata.codexSessionId)
+    const flavor = metadata?.flavor
+    if (flavor !== 'codex' && flavor !== 'claude' && flavor !== null && flavor !== undefined) {
+        return false
+    }
+
+    return Boolean(metadata?.agentSessionId ?? metadata?.codexSessionId ?? metadata?.claudeSessionId)
 }
 
 export function canSpawnSessionFromConfig(session: ForkableSessionLike): boolean {

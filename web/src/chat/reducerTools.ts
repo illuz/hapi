@@ -60,6 +60,7 @@ export function ensureToolBlock(
         durationMs?: number
         usage?: UsageData
         model?: string | null
+        messageUuid?: string
         localId: string | null
         meta?: unknown
         name: string
@@ -112,6 +113,9 @@ export function ensureToolBlock(
         if (seed.model !== undefined) {
             existing.model = seed.model
         }
+        if (seed.messageUuid !== undefined && existing.messageUuid === undefined) {
+            existing.messageUuid = seed.messageUuid
+        }
         return existing
     }
 
@@ -137,6 +141,7 @@ export function ensureToolBlock(
         kind: 'tool-call',
         id,
         localId: seed.localId,
+        messageUuid: seed.messageUuid,
         createdAt: seed.createdAt,
         invokedAt: seed.invokedAt,
         durationMs: seed.durationMs,

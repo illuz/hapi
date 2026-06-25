@@ -97,4 +97,37 @@ describe('Query', () => {
 
         await expect(result.next()).rejects.toThrow('prompt failed')
     })
+
+    it('passes Claude fork and resume-at flags to the CLI', async () => {
+        const child = createFakeChild()
+        spawnMock.mockReturnValueOnce(child)
+        process.env.HAPI_CLAUDE_PATH = 'claude'
+
+        const { query } = await import('./query')
+        const prompt = {
+            async *[Symbol.asyncIterator]() {
+                yield { type: 'user', message: { role: 'user', content: 'hello' } }
+            }
+        }
+
+        const result = query({
+            prompt,
+            options: {
+                resume: 'claude-session-1',
+                forkSession: true,
+                resumeSessionAt: 'assistant-uuid-1'
+            }
+        })
+        await result.return?.()
+
+        expect(spawnMock).toHaveBeenCalled()
+        const args = spawnMock.mock.calls[0]?.[1] as string[]
+        expect(args).toEqual(expect.arrayContaining([
+            '--resume',
+            'claude-session-1',
+            '--fork-session',
+            '--resume-session-at',
+            'assistant-uuid-1'
+        ]))
+    })
 })

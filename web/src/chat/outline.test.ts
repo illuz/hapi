@@ -31,7 +31,8 @@ describe('conversation outline', () => {
                 targetMessageId: 'user:m1',
                 kind: 'user',
                 label: 'Implement the outline panel',
-                createdAt: 1000
+                createdAt: 1000,
+                resumeSessionAt: undefined
             }
         ])
     })
@@ -65,5 +66,23 @@ describe('conversation outline', () => {
             'outline:user:first',
             'outline:user:second'
         ])
+    })
+
+    it('attaches the next assistant message uuid for Claude resume-at fork', () => {
+        const items = buildConversationOutline([
+            userBlock('first', 'First', 1000),
+            {
+                kind: 'agent-text',
+                id: 'agent-1',
+                localId: null,
+                messageUuid: 'assistant-uuid-1',
+                createdAt: 1001,
+                text: 'Reply'
+            },
+            userBlock('second', 'Second', 1002)
+        ])
+
+        expect(items[0]?.resumeSessionAt).toBe('assistant-uuid-1')
+        expect(items[1]?.resumeSessionAt).toBeUndefined()
     })
 })

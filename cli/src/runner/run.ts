@@ -926,6 +926,12 @@ export function buildCliArgs(
       args.push('--resume', options.resumeSessionId);
     }
   }
+  if (agent === 'claude' && options.forkSession) {
+    args.push('--fork-session');
+  }
+  if (agent === 'claude' && options.resumeSessionAt) {
+    args.push('--resume-session-at', options.resumeSessionAt);
+  }
   args.push('--hapi-starting-mode', 'remote', '--started-by', 'runner');
   if (options.model) {
     args.push('--model', options.model);

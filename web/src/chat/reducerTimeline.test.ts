@@ -45,6 +45,17 @@ describe('reduceTimeline', () => {
         expect(blocks[0].kind).toBe('user-text')
     })
 
+    it('preserves assistant message uuid on render blocks for resume-at fork', () => {
+        const { blocks } = reduceTimeline([makeAgentMessage('Hello', {
+            content: [{ type: 'text', text: 'Hello', uuid: 'assistant-uuid-1', parentUUID: null }]
+        })], makeContext())
+
+        const block = blocks[0]
+        expect(block?.kind).toBe('agent-text')
+        if (block?.kind !== 'agent-text') throw new Error('expected agent-text')
+        expect(block.messageUuid).toBe('assistant-uuid-1')
+    })
+
     it('does not filter XML-like user text (filtering is in normalize layer)', () => {
         const text = '<task-notification> <summary>Some task</summary> </task-notification>'
         const { blocks } = reduceTimeline([makeUserMessage(text)], makeContext())

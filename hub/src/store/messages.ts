@@ -190,11 +190,38 @@ function isUserTurnContent(content: unknown): boolean {
     return record?.role === 'user'
 }
 
+function getRecord(value: unknown): Record<string, unknown> | null {
+    return value && typeof value === 'object' && !Array.isArray(value)
+        ? value as Record<string, unknown>
+        : null
+}
+
+function extractClaudeMessageUuid(content: unknown): string | null {
+    const root = getRecord(content)
+    if (!root) return null
+
+    const directUuid = typeof root.uuid === 'string' ? root.uuid : null
+    if (directUuid) return directUuid
+
+    const envelope = unwrapRoleWrappedRecordEnvelope(content)
+    const envelopeContent = getRecord(envelope?.content)
+    const data = getRecord(envelopeContent?.data)
+    const dataUuid = typeof data?.uuid === 'string' ? data.uuid : null
+    if (dataUuid) return dataUuid
+
+    const nested = getRecord(root.content)
+    if (nested && nested !== root) {
+        return extractClaudeMessageUuid(nested)
+    }
+
+    return null
+}
+
 export function copySessionMessages(
     db: Database,
     fromSessionId: string,
     toSessionId: string,
-    options?: { keepUserTurns?: number; dropLastUserTurns?: number }
+    options?: { keepUserTurns?: number; dropLastUserTurns?: number; upToClaudeMessageUuid?: string }
 ): { copied: number } {
     if (fromSessionId === toSessionId) {
         return { copied: 0 }
@@ -238,6 +265,15 @@ export function copySessionMessages(
             }
 
             rowsToCopy = historicalRows.slice(0, cutoffIndex)
+        }
+    }
+
+    if (options?.upToClaudeMessageUuid) {
+        const cutoffIndex = rowsToCopy.findIndex((row) => (
+            extractClaudeMessageUuid(safeJsonParse(row.content)) === options.upToClaudeMessageUuid
+        ))
+        if (cutoffIndex >= 0) {
+            rowsToCopy = rowsToCopy.slice(0, cutoffIndex + 1)
         }
     }
 

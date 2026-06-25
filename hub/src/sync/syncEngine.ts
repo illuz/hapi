@@ -14,7 +14,7 @@ import type {
     ProjectCronConfig,
     ProjectToolKind
 } from '@hapi/protocol/projectTools'
-import { getDefaultSessionTitle } from '@hapi/protocol'
+import { getDefaultSessionTitle, resolveCrossFlavorPermissionMode } from '@hapi/protocol'
 import type { Server } from 'socket.io'
 import type { Store, CancelQueuedMessageResult } from '../store'
 import type { RpcRegistry } from '../socket/rpcRegistry'
@@ -43,6 +43,7 @@ import {
 import { ProjectToolsService } from './projectToolsService'
 import { ConversationHistoryService } from './conversationHistoryService'
 import { SessionCache } from './sessionCache'
+import { isRunningAsRoot } from '../utils/runtimeUser'
 import type { StoredCronRun } from '../store'
 import { triggerProjectCronRun } from './cronScheduler'
 
@@ -102,6 +103,11 @@ export type ForkSessionResult =
             | 'fork_failed'
             | 'spawn_failed'
     }
+
+type ForkSessionOptions = {
+    rollbackTurns?: number
+    resumeSessionAt?: string
+}
 
 export class SyncEngine {
     private readonly eventPublisher: EventPublisher
@@ -628,6 +634,12 @@ export class SyncEngine {
 
         const sourceFlavor = this.resolveSessionFlavor(metadata.flavor)
         const requestedAgent = options?.agent
+        const isCrossFlavor = Boolean(requestedAgent) && requestedAgent !== sourceFlavor
+        // Cross-flavor derivation uses rule-based defaults (cl<->cx) instead of
+        // copying the source permission mode, which may be illegal for the target flavor.
+        const crossFlavorMode = isCrossFlavor
+            ? resolveCrossFlavorPermissionMode(requestedAgent!, isRunningAsRoot())
+            : undefined
         const spawnResult = !requestedAgent || requestedAgent === sourceFlavor
             ? await this.spawnSessionWithStoredConfig(
                 session,
@@ -637,17 +649,27 @@ export class SyncEngine {
             : await this.spawnSessionWithDefaultConfig(
                 targetMachine.id,
                 metadata.path,
-                requestedAgent
+                requestedAgent,
+                crossFlavorMode
             )
 
         if (spawnResult.type !== 'success') {
             return { type: 'error', message: spawnResult.message, code: 'spawn_failed' }
         }
 
+        // Persist the rule-based permission mode in the hub cache so the session
+        // record matches the value the CLI was spawned with. Done before seeding
+        // (seeding skips config copy on cross-flavor and won't overwrite this).
+        if (crossFlavorMode) {
+            this.sessionCache.applySessionConfig(spawnResult.sessionId, {
+                permissionMode: crossFlavorMode
+            })
+        }
+
         await this.seedSpawnedSessionFromSource(session, spawnResult.sessionId, {
             defaultTitle: true,
             titleFlavor: requestedAgent ?? sourceFlavor,
-            copyConfig: !requestedAgent || requestedAgent === sourceFlavor
+            copyConfig: !isCrossFlavor
         })
         return { type: 'success', sessionId: spawnResult.sessionId }
     }
@@ -655,7 +677,7 @@ export class SyncEngine {
     async forkSession(
         sessionId: string,
         namespace: string,
-        options?: { rollbackTurns?: number }
+        options?: ForkSessionOptions
     ): Promise<ForkSessionResult> {
         const access = this.sessionCache.resolveSessionAccess(sessionId, namespace)
         if (!access.ok) {
@@ -670,10 +692,10 @@ export class SyncEngine {
         const metadata = session.metadata
         const flavor = this.resolveSessionFlavor(metadata?.flavor)
 
-        if (flavor !== 'codex') {
+        if (flavor !== 'codex' && flavor !== 'claude') {
             return {
                 type: 'error',
-                message: 'Fork is only supported for Codex sessions',
+                message: 'Fork is only supported for Codex and Claude sessions',
                 code: 'unsupported_session_flavor'
             }
         }
@@ -681,13 +703,42 @@ export class SyncEngine {
         if (!metadata?.path) {
             return { type: 'error', message: 'Session metadata missing path', code: 'fork_unavailable' }
         }
-        if (!metadata.codexSessionId) {
-            return { type: 'error', message: 'Codex thread ID unavailable', code: 'fork_unavailable' }
-        }
-
         const targetMachine = this.resolveOnlineMachineForSession(session, namespace)
         if (!targetMachine) {
             return { type: 'error', message: 'No machine online', code: 'no_machine_online' }
+        }
+
+        if (flavor === 'claude') {
+            const claudeSessionId = metadata.claudeSessionId ?? this.recoverClaudeSessionIdFromMessages(access.sessionId, namespace)
+            if (!claudeSessionId) {
+                return { type: 'error', message: 'Claude session ID unavailable', code: 'fork_unavailable' }
+            }
+
+            const spawnResult = await this.spawnSessionWithStoredConfig(
+                session,
+                targetMachine.id,
+                metadata.path,
+                claudeSessionId,
+                {
+                    forkSession: true,
+                    resumeSessionAt: options?.resumeSessionAt
+                }
+            )
+
+            if (spawnResult.type !== 'success') {
+                return { type: 'error', message: spawnResult.message, code: 'spawn_failed' }
+            }
+
+            await this.seedSpawnedSessionFromSource(session, spawnResult.sessionId, {
+                copyHistory: true,
+                forkLabel: true,
+                resumeSessionAt: options?.resumeSessionAt
+            })
+            return { type: 'success', sessionId: spawnResult.sessionId }
+        }
+
+        if (!metadata.codexSessionId) {
+            return { type: 'error', message: 'Codex thread ID unavailable', code: 'fork_unavailable' }
         }
 
         const forkResult = await this.rpcGateway.forkCodexThread(
@@ -844,7 +895,8 @@ export class SyncEngine {
         session: Session,
         machineId: string,
         directory: string,
-        resumeSessionId?: string
+        resumeSessionId?: string,
+        forkOptions?: { forkSession?: boolean; resumeSessionAt?: string }
     ): Promise<{ type: 'success'; sessionId: string } | { type: 'error'; message: string }> {
         const flavor = this.resolveSessionFlavor(session.metadata?.flavor)
         const spawnResult = await this.rpcGateway.spawnSession(
@@ -859,7 +911,8 @@ export class SyncEngine {
             resumeSessionId,
             session.effort ?? undefined,
             session.permissionMode ?? undefined,
-            session.serviceTier ?? undefined
+            session.serviceTier ?? undefined,
+            forkOptions
         )
 
         if (spawnResult.type !== 'success') {
@@ -873,9 +926,23 @@ export class SyncEngine {
     private async spawnSessionWithDefaultConfig(
         machineId: string,
         directory: string,
-        agent: SpawnSessionFromConfigAgent
+        agent: SpawnSessionFromConfigAgent,
+        permissionMode?: PermissionMode
     ): Promise<{ type: 'success'; sessionId: string } | { type: 'error'; message: string }> {
-        return await this.rpcGateway.spawnSession(machineId, directory, agent)
+        return await this.rpcGateway.spawnSession(
+            machineId,
+            directory,
+            agent,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            permissionMode,
+            undefined
+        )
     }
 
     private async seedSpawnedSessionFromSource(
@@ -888,6 +955,7 @@ export class SyncEngine {
             titleFlavor?: string | null
             copyConfig?: boolean
             rollbackTurns?: number
+            resumeSessionAt?: string
         }
     ): Promise<void> {
         if (options?.copyConfig !== false) {
@@ -907,7 +975,10 @@ export class SyncEngine {
         })
 
         if (options?.copyHistory) {
-            this.copySpawnedSessionHistory(sourceSession, spawnedSessionId, options.rollbackTurns)
+            this.copySpawnedSessionHistory(sourceSession, spawnedSessionId, {
+                rollbackTurns: options.rollbackTurns,
+                resumeSessionAt: options.resumeSessionAt
+            })
         }
     }
 
@@ -972,12 +1043,19 @@ export class SyncEngine {
     private copySpawnedSessionHistory(
         sourceSession: Session,
         spawnedSessionId: string,
-        rollbackTurns?: number
+        options?: {
+            rollbackTurns?: number
+            resumeSessionAt?: string
+        }
     ): void {
         const copied = this.store.messages.copySessionMessages(
             sourceSession.id,
             spawnedSessionId,
-            rollbackTurns !== undefined ? { dropLastUserTurns: rollbackTurns } : undefined
+            options?.resumeSessionAt
+                ? { upToClaudeMessageUuid: options.resumeSessionAt }
+                : options?.rollbackTurns !== undefined
+                    ? { dropLastUserTurns: options.rollbackTurns }
+                    : undefined
         )
 
         if (copied.copied > 0) {

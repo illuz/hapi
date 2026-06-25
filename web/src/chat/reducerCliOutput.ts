@@ -29,6 +29,7 @@ export function isCliOutputText(text: string, meta: unknown): boolean {
 export function createCliOutputBlock(props: {
     id: string
     localId: string | null
+    messageUuid?: string
     createdAt: number
     invokedAt?: number | null
     usage?: UsageData
@@ -41,6 +42,7 @@ export function createCliOutputBlock(props: {
         kind: 'cli-output',
         id: props.id,
         localId: props.localId,
+        messageUuid: props.messageUuid,
         createdAt: props.createdAt,
         invokedAt: props.invokedAt,
         usage: props.usage,
@@ -74,15 +76,16 @@ export function mergeCliOutputBlocks(blocks: ChatBlock[]): ChatBlock[] {
             // metadata; the stdout follow-up (`block`) is a synthetic split
             // with no first-class metadata of its own. Always prefer prev's
             // values; fall back to block only if prev is missing one.
-            merged[merged.length - 1] = {
-                ...prev,
-                text: `${prev.text}${separator}${block.text}`,
-                invokedAt: prev.invokedAt ?? block.invokedAt,
-                durationMs: prev.durationMs ?? block.durationMs,
-                usage: prev.usage ?? block.usage,
-                model: prev.model ?? block.model
-            }
-            continue
+                merged[merged.length - 1] = {
+                    ...prev,
+                    text: `${prev.text}${separator}${block.text}`,
+                    invokedAt: prev.invokedAt ?? block.invokedAt,
+                    durationMs: prev.durationMs ?? block.durationMs,
+                    usage: prev.usage ?? block.usage,
+                    model: prev.model ?? block.model,
+                    messageUuid: prev.messageUuid ?? block.messageUuid
+                }
+                continue
         }
 
         merged.push(block)

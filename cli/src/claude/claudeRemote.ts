@@ -45,7 +45,10 @@ export async function claudeRemote(opts: {
         startFrom = null;
     }
     
-    // Extract --resume from claudeArgs if present (for first spawn)
+    let forkSession = false;
+    let resumeSessionAt: string | undefined;
+
+    // Extract session control flags from claudeArgs if present (for first spawn)
     if (!startFrom && opts.claudeArgs) {
         for (let i = 0; i < opts.claudeArgs.length; i++) {
             if (opts.claudeArgs[i] === '--resume') {
@@ -66,6 +69,22 @@ export async function claudeRemote(opts: {
                     // --resume at end of args - SDK doesn't support this
                     logger.debug('[claudeRemote] Found --resume without session ID - not supported in remote mode');
                     break;
+                }
+            }
+        }
+    }
+    if (opts.claudeArgs) {
+        for (let i = 0; i < opts.claudeArgs.length; i++) {
+            const arg = opts.claudeArgs[i];
+            if (arg === '--fork-session') {
+                forkSession = true;
+                continue;
+            }
+            if (arg === '--resume-session-at' && i + 1 < opts.claudeArgs.length) {
+                const nextArg = opts.claudeArgs[i + 1];
+                if (!nextArg.startsWith('-')) {
+                    resumeSessionAt = nextArg;
+                    i += 1;
                 }
             }
         }
@@ -125,6 +144,8 @@ export async function claudeRemote(opts: {
     const sdkOptions: Options = {
         cwd: opts.path,
         resume: startFrom ?? undefined,
+        forkSession,
+        resumeSessionAt,
         mcpServers: opts.mcpServers,
         permissionMode: initial.mode.permissionMode,
         model: initial.mode.model,

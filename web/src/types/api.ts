@@ -106,6 +106,10 @@ export type AuthResponse = {
 
 export type SessionsResponse = { sessions: SessionSummary[] }
 export type SessionResponse = { session: Session }
+export type ForkSessionOptions = {
+    rollbackTurns?: number
+    resumeSessionAt?: string
+}
 export type BulkSessionActionResponse = {
     successIds: string[]
     skipped: Array<{
@@ -116,6 +120,7 @@ export type BulkSessionActionResponse = {
         sessionId: string
         error: string
     }>
+}
 export type SessionShareStatus = 'active' | 'expired' | 'revoked'
 
 export type SessionShare = {

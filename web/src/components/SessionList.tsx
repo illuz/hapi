@@ -12,6 +12,12 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { SessionMarkerDot } from '@/components/SessionMarkerDot'
 import { loadSessionColorFilterPreference, saveSessionColorFilterPreference } from '@/lib/sessionColorFilterPreference'
 import {
+    loadSessionListSearchQuery,
+    loadSessionListUpdateWindow,
+    saveSessionListSearchQuery,
+    saveSessionListUpdateWindow
+} from '@/lib/sessionListFiltersPreference'
+import {
     normalizeSessionManagementSearch,
     SESSION_MANAGEMENT_UPDATE_WINDOW_OPTIONS,
     sessionMatchesManagementMarkerColor,
@@ -1139,9 +1145,9 @@ export function SessionList(props: {
     const { t } = useTranslation()
     const { renderHeader = true, api, selectedSessionId, machineLabelsById = {} } = props
     const attentionTokens = useSessionAttentionTokens()
-    const [searchQuery, setSearchQuery] = useState('')
+    const [searchQuery, setSearchQuery] = useState(loadSessionListSearchQuery)
     const [markerColorFilter, setMarkerColorFilter] = useState<SessionMarkerColor | null>(loadSessionColorFilterPreference)
-    const [updateWindow, setUpdateWindow] = useState<UpdateWindowKey | null>(null)
+    const [updateWindow, setUpdateWindow] = useState<UpdateWindowKey | null>(loadSessionListUpdateWindow)
     const normalizedQuery = normalizeSearch(searchQuery)
     const isSearching = normalizedQuery.length > 0
     const isFilteringByMarkerColor = markerColorFilter !== null
@@ -1200,6 +1206,25 @@ export function SessionList(props: {
     useEffect(() => {
         saveSessionColorFilterPreference(markerColorFilter)
     }, [markerColorFilter])
+
+    const saveSearchQueryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    useEffect(() => {
+        if (saveSearchQueryTimerRef.current) {
+            clearTimeout(saveSearchQueryTimerRef.current)
+        }
+        saveSearchQueryTimerRef.current = setTimeout(() => {
+            saveSessionListSearchQuery(searchQuery)
+        }, 300)
+        return () => {
+            if (saveSearchQueryTimerRef.current) {
+                clearTimeout(saveSearchQueryTimerRef.current)
+            }
+        }
+    }, [searchQuery])
+
+    useEffect(() => {
+        saveSessionListUpdateWindow(updateWindow)
+    }, [updateWindow])
     // 各时间窗口的会话计数（用于菜单展示）
     const updateWindowCounts = useMemo(() => {
         const counts = {} as Record<UpdateWindowKey, number>

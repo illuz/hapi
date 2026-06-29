@@ -41,6 +41,7 @@ import { clearDraftsAfterSend } from '@/lib/clearDraftsAfterSend'
 import { getMachineTitle } from '@/lib/machineTitle'
 import { filterSessionsByActivityOrMarker } from '@/lib/sessionFilters'
 import { loadSessionColorFilterPreference } from '@/lib/sessionColorFilterPreference'
+import { loadSessionListActivityFilter, saveSessionListActivityFilter } from '@/lib/sessionListFiltersPreference'
 import { cleanupInactiveSessions } from '@/lib/sessionCleanup'
 import FilesPage from '@/routes/sessions/files'
 import FilePage from '@/routes/sessions/file'
@@ -115,7 +116,7 @@ function SessionsPage() {
     const { machines } = useMachines(api, true)
     const [cleanupDialogOpen, setCleanupDialogOpen] = useState(false)
     const [isCleaningInactive, setIsCleaningInactive] = useState(false)
-    const [activityFilterEnabled, setActivityFilterEnabled] = useState(true)
+    const [activityFilterEnabled, setActivityFilterEnabled] = useState(loadSessionListActivityFilter)
     const [lastViewedSessionId, setLastViewedSessionId] = useState<string | null>(() => {
         if (typeof window === 'undefined') return null
         return window.sessionStorage.getItem('hapi-last-viewed-session-id')
@@ -160,7 +161,11 @@ function SessionsPage() {
     const { countsByKey: projectToolCountsByKey } = useProjectToolCounts(api, visibleProjectToolTargets)
 
     const handleToggleFilter = useCallback(() => {
-        setActivityFilterEnabled(previous => !previous)
+        setActivityFilterEnabled(previous => {
+            const next = !previous
+            saveSessionListActivityFilter(next)
+            return next
+        })
     }, [])
 
     const inactiveSessions = useMemo(

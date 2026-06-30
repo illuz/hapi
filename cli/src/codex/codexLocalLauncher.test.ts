@@ -69,7 +69,9 @@ function createSessionStub(
     permissionMode: 'default' | 'read-only' | 'safe-yolo' | 'yolo',
     codexArgs?: string[],
     path = '/tmp/worktree',
-    initialTranscriptPath: string | null = null
+    initialTranscriptPath: string | null = null,
+    model: string | null = null,
+    modelReasoningEffort: string | null = null
 ) {
     const sessionEvents: Array<{ type: string; message?: string }> = [];
     const agentMessages: unknown[] = [];
@@ -96,7 +98,9 @@ function createSessionStub(
                 }
             },
             getPermissionMode: () => permissionMode,
-            getModelReasoningEffort: () => null,
+            getModel: () => model,
+            getModelReasoningEffort: () => modelReasoningEffort,
+            getServiceTier: () => null,
             onSessionFound: (value: string) => {
                 sessionId = value;
             },
@@ -194,6 +198,16 @@ describe('codexLocalLauncher', () => {
             '--model',
             'o3'
         ]);
+    });
+
+    it('passes managed Codex model and reasoning effort to local launcher', async () => {
+        const { session } = createSessionStub('default', undefined, '/tmp/worktree', null, 'gpt-5.5', 'xhigh');
+
+        await codexLocalLauncher(session as never);
+
+        expect(harness.launches).toHaveLength(1);
+        expect(harness.launches[0]?.model).toBe('gpt-5.5');
+        expect(harness.launches[0]?.modelReasoningEffort).toBe('xhigh');
     });
 
     it('preserves raw Codex approval flags in default mode', async () => {

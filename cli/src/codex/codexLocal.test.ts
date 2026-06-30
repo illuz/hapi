@@ -92,4 +92,31 @@ describe('codexLocal', () => {
         expect(hookArg).toContain('{ hooks = [{ type = "command", command = "');
         expect(args).toContain("mcp_servers.hapi.args=['mcp','--url','http://127.0.0.1:63995/']");
     });
+
+    it('passes model and reasoning effort flags before raw Codex args', async () => {
+        const controller = new AbortController();
+
+        await codexLocal({
+            abort: controller.signal,
+            sessionId: null,
+            path: '/tmp/project',
+            model: 'gpt-5.5',
+            modelReasoningEffort: 'xhigh',
+            onSessionFound: vi.fn(),
+            codexArgs: ['--sandbox', 'read-only']
+        });
+
+        const spawnOptions = spawnWithTerminalGuardMock.mock.calls[0][0] as {
+            args: string[];
+        };
+        expect(spawnOptions.args).toEqual(expect.arrayContaining([
+            '--model',
+            'gpt-5.5',
+            '--model-reasoning-effort',
+            'xhigh',
+            '--sandbox',
+            'read-only'
+        ]));
+        expect(spawnOptions.args.indexOf('--model')).toBeLessThan(spawnOptions.args.indexOf('--sandbox'));
+    });
 });

@@ -83,7 +83,6 @@ export const codexCommand: CommandDefinition = {
                         throw new Error('Missing --model value')
                     }
                     options.model = model
-                    unknownArgs.push('--model', model)
                 } else if (arg === '--model-reasoning-effort') {
                     const effort = commandArgs[++i]
                     if (!effort) {

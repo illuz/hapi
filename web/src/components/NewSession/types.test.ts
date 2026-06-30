@@ -1,6 +1,6 @@
 import { CLAUDE_MODEL_PRESETS, getClaudeModelLabel } from '@hapi/protocol'
 import { describe, expect, it } from 'vitest'
-import { CLAUDE_EFFORT_OPTIONS, MODEL_OPTIONS } from './types'
+import { CLAUDE_EFFORT_OPTIONS, CODEX_REASONING_EFFORT_OPTIONS, MODEL_OPTIONS } from './types'
 
 describe('Claude model options', () => {
     it('includes 1m model options in the expected order', () => {
@@ -28,5 +28,11 @@ describe('Claude effort options', () => {
             { value: 'high', label: 'High' },
             { value: 'max', label: 'Max' },
         ])
+    })
+})
+
+describe('Codex reasoning options', () => {
+    it('includes xhigh as a selectable reasoning effort', () => {
+        expect(CODEX_REASONING_EFFORT_OPTIONS).toContainEqual({ value: 'xhigh', label: 'XHigh' })
     })
 })

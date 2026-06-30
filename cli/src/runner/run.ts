@@ -14,6 +14,7 @@ import { spawnHappyCLI } from '@/utils/spawnHappyCLI';
 import { writeRunnerState, RunnerLocallyPersistedState, readRunnerState, acquireRunnerLock, releaseRunnerLock } from '@/persistence';
 import { isProcessAlive, isWindows, killProcess, killProcessByChildProcess } from '@/utils/process';
 import { PERMISSION_MODES } from '@hapi/protocol/modes';
+import { DEFAULT_CODEX_MODEL, DEFAULT_CODEX_REASONING_EFFORT } from '@hapi/protocol';
 import { withRetry } from '@/utils/time';
 import { isRetryableConnectionError } from '@/utils/errorUtils';
 
@@ -933,14 +934,21 @@ export function buildCliArgs(
     args.push('--resume-session-at', options.resumeSessionAt);
   }
   args.push('--hapi-starting-mode', 'remote', '--started-by', 'runner');
-  if (options.model) {
-    args.push('--model', options.model);
+  const effectiveModel = agent === 'codex'
+    ? (options.model ?? (options.resumeSessionId ? undefined : DEFAULT_CODEX_MODEL))
+    : options.model;
+  const effectiveModelReasoningEffort = agent === 'codex'
+    ? (options.modelReasoningEffort ?? (options.resumeSessionId ? undefined : DEFAULT_CODEX_REASONING_EFFORT))
+    : options.modelReasoningEffort;
+
+  if (effectiveModel) {
+    args.push('--model', effectiveModel);
   }
   if (options.effort && agent === 'claude') {
     args.push('--effort', options.effort);
   }
-  if (options.modelReasoningEffort && agent === 'codex') {
-    args.push('--model-reasoning-effort', options.modelReasoningEffort);
+  if (effectiveModelReasoningEffort && agent === 'codex') {
+    args.push('--model-reasoning-effort', effectiveModelReasoningEffort);
   }
   if (options.serviceTier && agent === 'codex') {
     args.push('--service-tier', options.serviceTier);

@@ -20,6 +20,9 @@ export type GeminiModelPreset = keyof typeof GEMINI_MODEL_LABELS
 export const GEMINI_MODEL_PRESETS = Object.keys(GEMINI_MODEL_LABELS) as GeminiModelPreset[]
 export const DEFAULT_GEMINI_MODEL: GeminiModelPreset = 'gemini-2.5-pro'
 
+export const DEFAULT_CODEX_MODEL = 'gpt-5.5' as const
+export const DEFAULT_CODEX_REASONING_EFFORT = 'xhigh' as const
+
 export function isClaudeModelPreset(model: string | null | undefined): model is ClaudeModelPreset {
     return typeof model === 'string' && Object.hasOwn(CLAUDE_MODEL_LABELS, model)
 }

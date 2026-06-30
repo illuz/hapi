@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import {
     CLAUDE_MODEL_PRESETS,
     CLAUDE_MODEL_LABELS,
+    DEFAULT_CODEX_MODEL,
+    DEFAULT_CODEX_REASONING_EFFORT,
     DEFAULT_GEMINI_MODEL,
     GEMINI_MODEL_LABELS,
     GEMINI_MODEL_PRESETS,
@@ -62,5 +64,10 @@ describe('model constants consistency', () => {
 
     test('DEFAULT_GEMINI_MODEL is a valid preset', () => {
         expect(GEMINI_MODEL_PRESETS).toContain(DEFAULT_GEMINI_MODEL)
+    })
+
+    test('Codex defaults use GPT-5.5 with xhigh reasoning', () => {
+        expect(DEFAULT_CODEX_MODEL).toBe('gpt-5.5')
+        expect(DEFAULT_CODEX_REASONING_EFFORT).toBe('xhigh')
     })
 })

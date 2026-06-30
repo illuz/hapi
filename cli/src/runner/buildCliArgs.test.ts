@@ -70,6 +70,29 @@ describe('buildCliArgs', () => {
         expect(args).toContain('priority')
     })
 
+    it('defaults new Codex sessions to GPT-5.5 and xhigh reasoning', () => {
+        const args = buildCliArgs('codex', {
+            directory: '/tmp',
+        })
+
+        expect(args).toEqual(expect.arrayContaining([
+            '--model',
+            'gpt-5.5',
+            '--model-reasoning-effort',
+            'xhigh'
+        ]))
+    })
+
+    it('does not inject Codex defaults when resuming', () => {
+        const args = buildCliArgs('codex', {
+            directory: '/tmp',
+            resumeSessionId: 'codex-thread-1',
+        })
+
+        expect(args).not.toContain('--model')
+        expect(args).not.toContain('--model-reasoning-effort')
+    })
+
     it('passes Claude fork and resume-at flags through for resumed sessions', () => {
         const args = buildCliArgs('claude', {
             directory: '/tmp',

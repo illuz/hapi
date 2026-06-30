@@ -89,6 +89,23 @@ describe('codexCommand', () => {
         })
     })
 
+    it('parses managed Codex model and reasoning flags without raw arg passthrough', async () => {
+        await codexCommand.run(createCommandContext([
+            '--model',
+            'gpt-5.5',
+            '--model-reasoning-effort',
+            'xhigh',
+            '--sandbox',
+            'read-only'
+        ]))
+
+        expect(runCodexMock).toHaveBeenCalledWith({
+            model: 'gpt-5.5',
+            modelReasoningEffort: 'xhigh',
+            codexArgs: ['--sandbox', 'read-only']
+        })
+    })
+
     it('prints the upgrade error and exits when the local version check fails', async () => {
         const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
         const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {

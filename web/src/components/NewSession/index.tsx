@@ -1,4 +1,5 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { DEFAULT_CODEX_MODEL, DEFAULT_CODEX_REASONING_EFFORT } from '@hapi/protocol'
 import type { ApiClient } from '@/api/client'
 import type { Machine, SessionMarkerColor } from '@/types/api'
 import { usePlatform } from '@/hooks/usePlatform'
@@ -54,9 +55,9 @@ export function NewSession(props: {
     const [suppressSuggestions, setSuppressSuggestions] = useState(false)
     const [isDirectoryFocused, setIsDirectoryFocused] = useState(false)
     const [agent, setAgent] = useState<AgentType>(loadPreferredAgent)
-    const [model, setModel] = useState('auto')
+    const [model, setModel] = useState(() => agent === 'codex' ? DEFAULT_CODEX_MODEL : 'auto')
     const [effort, setEffort] = useState<ClaudeEffort>('auto')
-    const [modelReasoningEffort, setModelReasoningEffort] = useState<CodexReasoningEffort>('default')
+    const [modelReasoningEffort, setModelReasoningEffort] = useState<CodexReasoningEffort>(DEFAULT_CODEX_REASONING_EFFORT)
     const [yoloMode, setYoloMode] = useState(loadPreferredYoloMode)
     const [sessionType, setSessionType] = useState<SessionType>('simple')
     const [worktreeName, setWorktreeName] = useState('')
@@ -71,8 +72,9 @@ export function NewSession(props: {
     }, [sessionType])
 
     useEffect(() => {
-        setModel('auto')
+        setModel(agent === 'codex' ? DEFAULT_CODEX_MODEL : 'auto')
         setEffort('auto')
+        setModelReasoningEffort(DEFAULT_CODEX_REASONING_EFFORT)
     }, [agent])
 
     useEffect(() => {
@@ -118,10 +120,16 @@ export function NewSession(props: {
     const codexModelOptions = useMemo(() => {
         const options = [{ value: 'auto', label: 'Default' }]
         for (const codexModel of codexModelsState.models) {
+            if (options.some((option) => option.value === codexModel.id)) {
+                continue
+            }
             options.push({
                 value: codexModel.id,
                 label: codexModel.displayName
             })
+        }
+        if (!options.some((option) => option.value === DEFAULT_CODEX_MODEL)) {
+            options.splice(1, 0, { value: DEFAULT_CODEX_MODEL, label: DEFAULT_CODEX_MODEL })
         }
         if (model !== 'auto' && !options.some((option) => option.value === model)) {
             options.splice(1, 0, { value: model, label: model })

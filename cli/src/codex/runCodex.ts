@@ -17,6 +17,7 @@ import type { ReasoningEffort, ServiceTier, ThreadGoal } from './appServerTypes'
 import { parseCodexSpecialCommand } from './codexSpecialCommands';
 import { listSlashCommands } from '@/modules/common/slashCommands';
 import { resolveCodexSlashCommand } from './utils/slashCommands';
+import { DEFAULT_CODEX_MODEL, DEFAULT_CODEX_REASONING_EFFORT } from '@hapi/protocol';
 
 export { emitReadyIfIdle } from './utils/emitReadyIfIdle';
 
@@ -34,6 +35,9 @@ export async function runCodex(opts: {
 }): Promise<void> {
     const workingDirectory = getInvokedCwd();
     const startedBy = opts.startedBy ?? 'terminal';
+    const isNewThread = !opts.resumeSessionId;
+    const initialModel = opts.model ?? (isNewThread ? DEFAULT_CODEX_MODEL : undefined);
+    const initialModelReasoningEffort = opts.modelReasoningEffort ?? (isNewThread ? DEFAULT_CODEX_REASONING_EFFORT : undefined);
 
     logger.debug(`[codex] Starting with options: startedBy=${startedBy}`);
 
@@ -45,8 +49,8 @@ export async function runCodex(opts: {
         startedBy,
         workingDirectory,
         agentState: state,
-        model: opts.model,
-        modelReasoningEffort: opts.modelReasoningEffort,
+        model: initialModel,
+        modelReasoningEffort: initialModelReasoningEffort,
         serviceTier: opts.serviceTier
     });
 
@@ -67,8 +71,8 @@ export async function runCodex(opts: {
     const sessionWrapperRef: { current: CodexSession | null } = { current: null };
 
     let currentPermissionMode: PermissionMode = opts.permissionMode ?? 'default';
-    let currentModel = opts.model;
-    let currentModelReasoningEffort: ReasoningEffort | undefined = opts.modelReasoningEffort;
+    let currentModel = initialModel;
+    let currentModelReasoningEffort: ReasoningEffort | undefined = initialModelReasoningEffort;
     let currentServiceTier: ServiceTier | undefined = opts.serviceTier;
     let currentCollaborationMode: EnhancedMode['collaborationMode'] = 'default';
     let currentDeveloperInstructions: string | undefined = undefined;

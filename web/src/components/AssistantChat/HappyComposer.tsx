@@ -5,6 +5,7 @@ import {
     type ClipboardEvent as ReactClipboardEvent,
     type FormEvent as ReactFormEvent,
     type KeyboardEvent as ReactKeyboardEvent,
+    type PointerEvent as ReactPointerEvent,
     type SyntheticEvent as ReactSyntheticEvent,
     useCallback,
     useEffect,
@@ -29,7 +30,25 @@ import { Autocomplete } from '@/components/ChatInput/Autocomplete'
 import { StatusBar } from '@/components/AssistantChat/StatusBar'
 import { ComposerButtons } from '@/components/AssistantChat/ComposerButtons'
 import { AttachmentItem } from '@/components/AssistantChat/AttachmentItem'
+import { Button } from '@/components/ui/button'
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle
+} from '@/components/ui/dialog'
 import { useTranslation } from '@/lib/use-translation'
+import {
+    getCollapsedComposerMaxRowsFromDelta,
+    getInitialCollapsedComposerMaxRows,
+    measureComposerVisualLines,
+    COLLAPSED_COMPOSER_MAX_ROWS_STORAGE_KEY,
+    saveCollapsedComposerMaxRows,
+    safeRemoveItem,
+    shouldShowCollapsedComposerResize,
+    shouldShowExpandedComposerTrigger
+} from './composerExpand'
 import { getModelOptionsForFlavor, getNextModelForFlavor } from './modelOptions'
 import { getClaudeComposerEffortOptions } from './claudeEffortOptions'
 import { getCodexComposerReasoningEffortOptions } from './codexReasoningEffortOptions'
@@ -46,6 +65,69 @@ export type QuickPromptAction = {
 }
 
 const defaultSuggestionHandler = async (): Promise<Suggestion[]> => []
+
+const expandedComposerHeightClass = 'h-[calc(var(--tg-viewport-stable-height,var(--app-viewport-height,100dvh))-16px)] max-h-[calc(var(--tg-viewport-stable-height,var(--app-viewport-height,100dvh))-16px)]'
+const collapsedComposerMinRows = 2
+const mobileCollapsedComposerMaxRows = 3
+
+function ExpandIcon() {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        >
+            <path d="M15 3h6v6" />
+            <path d="M9 21H3v-6" />
+            <path d="m21 3-7 7" />
+            <path d="m3 21 7-7" />
+        </svg>
+    )
+}
+
+function ResizeHandleIcon() {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        >
+            <path d="M7 15h10" />
+            <path d="M7 10h10" />
+        </svg>
+    )
+}
+
+function CloseIcon() {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        >
+            <path d="m18 6-12 12" />
+            <path d="m6 6 12 12" />
+        </svg>
+    )
+}
 
 export function HappyComposer(props: {
     sessionId?: string
@@ -166,10 +248,20 @@ export function HappyComposer(props: {
     const [isContinuing, setIsContinuing] = useState(false)
     const [showContinueHint, setShowContinueHint] = useState(false)
     const [showQuickPrompts, setShowQuickPrompts] = useState(false)
+    const [showExpandedComposer, setShowExpandedComposer] = useState(false)
+    const [collapsedVisualLineCount, setCollapsedVisualLineCount] = useState(1)
+    const [collapsedComposerMaxRows, setCollapsedComposerMaxRows] = useState(getInitialCollapsedComposerMaxRows)
+    const [isResizingCollapsedComposer, setIsResizingCollapsedComposer] = useState(false)
 
-    const textareaRef = useRef<HTMLTextAreaElement>(null)
+    const collapsedTextareaRef = useRef<HTMLTextAreaElement>(null)
+    const expandedTextareaRef = useRef<HTMLTextAreaElement>(null)
+    const activeTextareaRef = useRef<HTMLTextAreaElement | null>(null)
     const prevControlledByUser = useRef(controlledByUser)
+    const prevExpandedComposerRef = useRef(false)
     const loadedDraftKeyRef = useRef<string | null>(null)
+    const collapsedResizeStartRowsRef = useRef(collapsedComposerMaxRows)
+    const collapsedResizePointerIdRef = useRef<number | null>(null)
+    const collapsedResizeStartYRef = useRef(0)
     const draftStorageKey = sessionId ? `hapi:composer-draft:${sessionId}` : null
 
     useComposerDraft(sessionId, composerText, (text) => api.composer().setText(text))
@@ -216,9 +308,35 @@ export function HappyComposer(props: {
         }
     }, [platformHaptic])
 
+    const setCollapsedInputRef = useCallback((node: HTMLTextAreaElement | null) => {
+        collapsedTextareaRef.current = node
+        if (!showExpandedComposer) {
+            activeTextareaRef.current = node
+        }
+    }, [showExpandedComposer])
+
+    const updateCollapsedVisualLineCount = useCallback(() => {
+        if (typeof window === 'undefined') return
+
+        const textarea = collapsedTextareaRef.current
+        if (!textarea) {
+            setCollapsedVisualLineCount(1)
+            return
+        }
+
+        const styles = window.getComputedStyle(textarea)
+        setCollapsedVisualLineCount(measureComposerVisualLines({
+            scrollHeight: textarea.scrollHeight,
+            lineHeight: Number.parseFloat(styles.lineHeight),
+            paddingTop: Number.parseFloat(styles.paddingTop),
+            paddingBottom: Number.parseFloat(styles.paddingBottom)
+        }))
+    }, [])
+
     const handleSuggestionSelect = useCallback((index: number) => {
         const suggestion = suggestions[index]
-        if (!suggestion || !textareaRef.current) return
+        const activeTextarea = activeTextareaRef.current ?? collapsedTextareaRef.current
+        if (!suggestion || !activeTextarea) return
         if (suggestion.text.startsWith('$')) {
             markSkillUsed(suggestion.text.slice(1))
         }
@@ -238,7 +356,7 @@ export function HappyComposer(props: {
         })
 
         setTimeout(() => {
-            const el = textareaRef.current
+            const el = activeTextareaRef.current ?? activeTextarea
             if (!el) return
             el.setSelectionRange(result.cursorPosition, result.cursorPosition)
             try {
@@ -260,6 +378,13 @@ export function HappyComposer(props: {
     const showTerminalButton = Boolean(onTerminal || terminalUnsupported)
     const terminalDisabled = controlsDisabled || terminalUnsupported
     const terminalLabel = terminalUnsupported ? t('terminal.unsupportedWindows') : t('composer.terminal')
+    const showExpandedComposerTrigger = shouldShowExpandedComposerTrigger(composerText, collapsedVisualLineCount)
+    const effectiveCollapsedComposerMaxRows = isTouch ? mobileCollapsedComposerMaxRows : collapsedComposerMaxRows
+    const showCollapsedResizeControls = !isTouch && shouldShowCollapsedComposerResize(
+        composerText,
+        collapsedVisualLineCount,
+        effectiveCollapsedComposerMaxRows
+    )
 
     useEffect(() => {
         if (!isAborting) return
@@ -314,6 +439,72 @@ export function HappyComposer(props: {
         }
     }, [composerText, draftStorageKey])
 
+    useEffect(() => {
+        updateCollapsedVisualLineCount()
+    }, [composerText, attachments.length, collapsedComposerMaxRows, updateCollapsedVisualLineCount])
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return
+
+        const handleResize = () => updateCollapsedVisualLineCount()
+        window.addEventListener('resize', handleResize)
+
+        return () => window.removeEventListener('resize', handleResize)
+    }, [updateCollapsedVisualLineCount])
+
+    useEffect(() => {
+        const textarea = collapsedTextareaRef.current
+        if (!textarea || typeof ResizeObserver === 'undefined') return
+
+        const observer = new ResizeObserver(() => updateCollapsedVisualLineCount())
+        observer.observe(textarea)
+
+        return () => observer.disconnect()
+    }, [updateCollapsedVisualLineCount, composerText, collapsedComposerMaxRows])
+
+    useEffect(() => {
+        const wasExpanded = prevExpandedComposerRef.current
+        prevExpandedComposerRef.current = showExpandedComposer
+
+        if (typeof window === 'undefined') return
+
+        if (showExpandedComposer) {
+            const timer = window.setTimeout(() => {
+                const textarea = expandedTextareaRef.current
+                if (!textarea) return
+                activeTextareaRef.current = textarea
+                const start = Math.min(inputState.selection.start, textarea.value.length)
+                const end = Math.min(inputState.selection.end, textarea.value.length)
+                try {
+                    textarea.focus({ preventScroll: true })
+                } catch {
+                    textarea.focus()
+                }
+                textarea.setSelectionRange(start, end)
+            }, 0)
+
+            return () => window.clearTimeout(timer)
+        }
+
+        if (!wasExpanded) return
+
+        const timer = window.setTimeout(() => {
+            const textarea = collapsedTextareaRef.current
+            if (!textarea) return
+            activeTextareaRef.current = textarea
+            const start = Math.min(inputState.selection.start, textarea.value.length)
+            const end = Math.min(inputState.selection.end, textarea.value.length)
+            try {
+                textarea.focus({ preventScroll: true })
+            } catch {
+                textarea.focus()
+            }
+            textarea.setSelectionRange(start, end)
+        }, 0)
+
+        return () => window.clearTimeout(timer)
+    }, [showExpandedComposer, inputState.selection.end, inputState.selection.start])
+
     const clearDraft = useCallback(() => {
         if (!draftStorageKey || typeof window === 'undefined') return
         try {
@@ -321,6 +512,69 @@ export function HappyComposer(props: {
         } catch {
         }
     }, [draftStorageKey])
+
+    useEffect(() => {
+        if (isTouch) {
+            safeRemoveItem(COLLAPSED_COMPOSER_MAX_ROWS_STORAGE_KEY)
+            return
+        }
+
+        saveCollapsedComposerMaxRows(collapsedComposerMaxRows)
+    }, [collapsedComposerMaxRows, isTouch])
+
+    useEffect(() => {
+        if (!isResizingCollapsedComposer) return
+
+        const onMove = (event: PointerEvent) => {
+            if (event.pointerId !== collapsedResizePointerIdRef.current) return
+
+            setCollapsedComposerMaxRows(getCollapsedComposerMaxRowsFromDelta({
+                startRows: collapsedResizeStartRowsRef.current,
+                deltaY: event.clientY - collapsedResizeStartYRef.current
+            }))
+        }
+
+        const onUp = (event: PointerEvent) => {
+            if (event.pointerId !== collapsedResizePointerIdRef.current) return
+            collapsedResizePointerIdRef.current = null
+            setIsResizingCollapsedComposer(false)
+        }
+
+        document.addEventListener('pointermove', onMove)
+        document.addEventListener('pointerup', onUp)
+        document.addEventListener('pointercancel', onUp)
+
+        return () => {
+            document.removeEventListener('pointermove', onMove)
+            document.removeEventListener('pointerup', onUp)
+            document.removeEventListener('pointercancel', onUp)
+        }
+    }, [isResizingCollapsedComposer])
+
+    useEffect(() => {
+        if (!isResizingCollapsedComposer) {
+            document.body.style.removeProperty('user-select')
+            document.body.style.removeProperty('cursor')
+            return
+        }
+
+        document.body.style.setProperty('user-select', 'none')
+        document.body.style.setProperty('cursor', 'ns-resize')
+
+        return () => {
+            document.body.style.removeProperty('user-select')
+            document.body.style.removeProperty('cursor')
+        }
+    }, [isResizingCollapsedComposer])
+
+    const sendComposer = useCallback(() => {
+        api.composer().send()
+        clearDraft()
+        setShowContinueHint(false)
+        setShowQuickPrompts(false)
+        clearSuggestions()
+        setShowExpandedComposer(false)
+    }, [api, clearDraft, clearSuggestions])
 
     const handleAbort = useCallback(() => {
         if (abortDisabled) return
@@ -389,6 +643,34 @@ export function HappyComposer(props: {
         [permissionModeOptions]
     )
 
+    const handleExpandedComposerOpenChange = useCallback((open: boolean) => {
+        if (showExpandedComposer === open) return
+
+        setShowSettings(false)
+        setShowQuickPrompts(false)
+        clearSuggestions()
+        setShowExpandedComposer(open)
+
+        if (open) {
+            haptic('light')
+        }
+    }, [showExpandedComposer, clearSuggestions, haptic])
+
+    const handleCollapsedResizePointerDown = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+        event.preventDefault()
+        event.stopPropagation()
+
+        collapsedResizePointerIdRef.current = event.pointerId
+        collapsedResizeStartYRef.current = event.clientY
+        collapsedResizeStartRowsRef.current = collapsedComposerMaxRows
+        try {
+            event.currentTarget.setPointerCapture(event.pointerId)
+        } catch {
+        }
+        setIsResizingCollapsedComposer(true)
+        haptic('light')
+    }, [collapsedComposerMaxRows, haptic])
+
     const handleKeyDown = useCallback((e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
         const key = e.key
 
@@ -411,9 +693,7 @@ export function HappyComposer(props: {
         ) {
             e.preventDefault()
             if (canSend) {
-                api.composer().send()
-                clearDraft()
-                setShowContinueHint(false)
+                sendComposer()
             }
             return
         }
@@ -433,9 +713,7 @@ export function HappyComposer(props: {
             }
             e.preventDefault()
             if (!e.ctrlKey && !e.altKey && !e.metaKey && canSend) {
-                api.composer().send()
-                clearDraft()
-                setShowContinueHint(false)
+                sendComposer()
             }
             return
         }
@@ -491,10 +769,9 @@ export function HappyComposer(props: {
         permissionMode,
         permissionModes,
         canSend,
-        api,
         haptic,
-        clearDraft,
-        composerEnterBehavior
+        composerEnterBehavior,
+        sendComposer
     ])
 
     useEffect(() => {
@@ -517,6 +794,17 @@ export function HappyComposer(props: {
         }
         setInputState({ text: e.target.value, selection })
     }, [])
+
+    const handleExpandedChange = useCallback((e: ReactChangeEvent<HTMLTextAreaElement>) => {
+        const nextText = e.target.value
+        const selection = {
+            start: e.target.selectionStart,
+            end: e.target.selectionEnd
+        }
+
+        api.composer().setText(nextText)
+        setInputState({ text: nextText, selection })
+    }, [api])
 
     const handleSelect = useCallback((e: ReactSyntheticEvent<HTMLTextAreaElement>) => {
         const target = e.target as HTMLTextAreaElement
@@ -616,12 +904,14 @@ export function HappyComposer(props: {
     const voiceEnabled = Boolean(onVoiceToggle)
 
     const handleSend = useCallback(() => {
-        api.composer().send()
-        clearDraft()
-        setShowQuickPrompts(false)
-    }, [api, clearDraft])
+        sendComposer()
+    }, [sendComposer])
 
     const overlays = useMemo(() => {
+        if (showExpandedComposer) {
+            return null
+        }
+
         if (showSettings && (showCollaborationSettings || showPermissionSettings || showModelSettings || showModelReasoningEffortSettings || showEffortSettings)) {
             return (
                 <div className="absolute bottom-[100%] mb-2 w-full">
@@ -907,89 +1197,197 @@ export function HappyComposer(props: {
         handleEffortChange,
         handleQuickPrompt,
         handleSuggestionSelect,
+        showExpandedComposer,
         t
     ])
 
     return (
-        <div className={`px-3 ${bottomPaddingClass} pt-2 bg-[var(--app-bg)]`}>
-            <div className="mx-auto w-full max-w-content">
-                <ComposerPrimitive.Root className="relative" onSubmit={handleSubmit}>
-                    {overlays}
+        <>
+            <div className={`px-3 ${bottomPaddingClass} pt-2 bg-[var(--app-bg)]`}>
+                <div className="mx-auto w-full max-w-content">
+                    <ComposerPrimitive.Root className="relative" onSubmit={handleSubmit}>
+                        {overlays}
 
-                    <StatusBar
-                        active={active}
-                        thinking={thinking}
-                        agentState={agentState}
-                        backgroundTaskCount={backgroundTaskCount}
-                        contextSize={contextSize}
-                        contextCacheRead={contextCacheRead}
-                        contextWindow={contextWindow}
-                        model={model}
-                        modelReasoningEffort={modelReasoningEffort}
-                        serviceTier={serviceTier}
-                        permissionMode={permissionMode}
-                        collaborationMode={collaborationMode}
-                        agentFlavor={agentFlavor}
-                        voiceStatus={voiceStatus}
-                    />
+                        <StatusBar
+                            active={active}
+                            thinking={thinking}
+                            agentState={agentState}
+                            backgroundTaskCount={backgroundTaskCount}
+                            contextSize={contextSize}
+                            contextCacheRead={contextCacheRead}
+                            contextWindow={contextWindow}
+                            model={model}
+                            modelReasoningEffort={modelReasoningEffort}
+                            serviceTier={serviceTier}
+                            permissionMode={permissionMode}
+                            collaborationMode={collaborationMode}
+                            agentFlavor={agentFlavor}
+                            voiceStatus={voiceStatus}
+                        />
 
-                    <div className="overflow-hidden rounded-[20px] bg-[var(--app-secondary-bg)]">
+                        <div className="overflow-hidden rounded-[20px] bg-[var(--app-secondary-bg)]">
+                            {attachments.length > 0 ? (
+                                <div className="flex flex-wrap gap-2 px-4 pt-3">
+                                    <ComposerPrimitive.Attachments components={{ Attachment: AttachmentItem }} />
+                                </div>
+                            ) : null}
+
+                            <div className="relative flex items-center px-4 py-3">
+                                {showExpandedComposerTrigger ? (
+                                    <button
+                                        type="button"
+                                        aria-label={t('composer.expand')}
+                                        title={t('composer.expand')}
+                                        disabled={controlsDisabled}
+                                        className="absolute right-4 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-full text-[var(--app-fg)]/60 transition-colors hover:bg-[var(--app-bg)] hover:text-[var(--app-fg)] disabled:cursor-not-allowed disabled:opacity-50"
+                                        onClick={() => handleExpandedComposerOpenChange(true)}
+                                    >
+                                        <ExpandIcon />
+                                    </button>
+                                ) : null}
+
+                                <ComposerPrimitive.Input
+                                    ref={setCollapsedInputRef}
+                                    autoFocus={!controlsDisabled && !isTouch}
+                                    placeholder={showContinueHint ? t('misc.typeMessage') : t('misc.typeAMessage')}
+                                    disabled={controlsDisabled}
+                                    minRows={collapsedComposerMinRows}
+                                    maxRows={effectiveCollapsedComposerMaxRows}
+                                    submitOnEnter={false}
+                                    cancelOnEscape={false}
+                                    onChange={handleChange}
+                                    onFocus={() => {
+                                        activeTextareaRef.current = collapsedTextareaRef.current
+                                    }}
+                                    onSelect={handleSelect}
+                                    onKeyDown={handleKeyDown}
+                                    onPaste={handlePaste}
+                                    className={`flex-1 resize-none bg-transparent text-base leading-snug text-[var(--app-fg)] placeholder-[var(--app-hint)] focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${
+                                        showExpandedComposerTrigger ? 'pr-10' : ''
+                                    }`}
+                                />
+                            </div>
+
+                            {showCollapsedResizeControls ? (
+                                <div className="flex items-center justify-between px-4 pb-1">
+                                    <button
+                                        type="button"
+                                        aria-label={t('composer.resize')}
+                                        title={t('composer.resizeHint')}
+                                        disabled={controlsDisabled}
+                                        className="flex min-h-11 items-center gap-1 rounded-full px-2 text-xs text-[var(--app-hint)] transition-colors hover:bg-[var(--app-bg)] hover:text-[var(--app-fg)] disabled:cursor-not-allowed disabled:opacity-50"
+                                        onPointerDown={handleCollapsedResizePointerDown}
+                                    >
+                                        <ResizeHandleIcon />
+                                        <span>{t('composer.resizeHint')}</span>
+                                    </button>
+                                    <span className="text-[11px] text-[var(--app-hint)]">
+                                        {t('composer.rememberHeight')}
+                                    </span>
+                                </div>
+                            ) : null}
+
+                            <ComposerButtons
+                                canSend={canSend}
+                                controlsDisabled={controlsDisabled}
+                                showSettingsButton={showSettingsButton}
+                                onSettingsToggle={handleSettingsToggle}
+                                showTerminalButton={showTerminalButton}
+                                terminalDisabled={terminalDisabled}
+                                terminalLabel={terminalLabel}
+                                onTerminal={onTerminal ?? (() => {})}
+                                showAbortButton={showAbortButton}
+                                abortDisabled={abortDisabled}
+                                isAborting={isAborting}
+                                onAbort={handleAbort}
+                                showSwitchButton={showSwitchButton}
+                                switchDisabled={switchDisabled}
+                                isSwitching={isSwitching}
+                                onSwitch={handleSwitch}
+                                showContinueButton={showContinueButton}
+                                continueDisabled={continueDisabled}
+                                isContinuing={isContinuing}
+                                onContinue={handleContinue}
+                                showQuickPromptButton={showQuickPromptButton}
+                                onQuickPromptToggle={handleQuickPromptToggle}
+                                voiceEnabled={voiceEnabled}
+                                voiceStatus={voiceStatus}
+                                voiceMicMuted={voiceMicMuted}
+                                onVoiceToggle={onVoiceToggle ?? (() => {})}
+                                onVoiceMicToggle={onVoiceMicToggle}
+                                onSend={handleSend}
+                            />
+                        </div>
+                    </ComposerPrimitive.Root>
+                </div>
+            </div>
+
+            <Dialog open={showExpandedComposer} onOpenChange={handleExpandedComposerOpenChange}>
+                <DialogContent
+                    onOpenAutoFocus={(event) => event.preventDefault()}
+                    onCloseAutoFocus={(event) => event.preventDefault()}
+                    className={`left-2 right-2 top-2 bottom-2 ${expandedComposerHeightClass} flex w-auto max-w-none translate-x-0 translate-y-0 flex-col overflow-hidden rounded-[24px] p-0 sm:left-1/2 sm:right-auto sm:top-1/2 sm:bottom-auto sm:h-[82vh] sm:max-h-[82vh] sm:w-[calc(100vw-32px)] sm:max-w-4xl sm:-translate-x-1/2 sm:-translate-y-1/2`}
+                >
+                    <DialogHeader className="relative shrink-0 border-b border-[var(--app-border)] px-4 py-3 pr-14 pt-[calc(0.75rem+env(safe-area-inset-top))] text-left">
+                        <DialogTitle className="text-[var(--app-fg)]">{t('composer.expandTitle')}</DialogTitle>
+                        <DialogDescription>
+                            {t('composer.expandDescription')}
+                        </DialogDescription>
+                        <button
+                            type="button"
+                            aria-label={t('composer.collapse')}
+                            title={t('composer.collapse')}
+                            className="absolute right-4 top-3 flex h-9 w-9 items-center justify-center rounded-full text-[var(--app-hint)] transition-colors hover:bg-[var(--app-secondary-bg)] hover:text-[var(--app-fg)]"
+                            onClick={() => handleExpandedComposerOpenChange(false)}
+                        >
+                            <CloseIcon />
+                        </button>
+                    </DialogHeader>
+
+                    <div className="relative flex min-h-0 flex-1 flex-col bg-[var(--app-dialog-bg)] px-4 py-3">
                         {attachments.length > 0 ? (
-                            <div className="flex flex-wrap gap-2 px-4 pt-3">
+                            <div className="shrink-0 flex flex-wrap gap-2 pb-3">
                                 <ComposerPrimitive.Attachments components={{ Attachment: AttachmentItem }} />
                             </div>
                         ) : null}
 
-                        <div className="flex items-center px-4 py-3">
-                            <ComposerPrimitive.Input
-                                ref={textareaRef}
-                                autoFocus={!controlsDisabled && !isTouch}
-                                placeholder={showContinueHint ? t('misc.typeMessage') : t('misc.typeAMessage')}
-                                disabled={controlsDisabled}
-                                maxRows={5}
-                                submitOnEnter={false}
-                                cancelOnEscape={false}
-                                onChange={handleChange}
-                                onSelect={handleSelect}
-                                onKeyDown={handleKeyDown}
-                                onPaste={handlePaste}
-                                className="flex-1 resize-none bg-transparent text-base leading-snug text-[var(--app-fg)] placeholder-[var(--app-hint)] focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                            />
-                        </div>
-
-                        <ComposerButtons
-                            canSend={canSend}
-                            controlsDisabled={controlsDisabled}
-                            showSettingsButton={showSettingsButton}
-                            onSettingsToggle={handleSettingsToggle}
-                            showTerminalButton={showTerminalButton}
-                            terminalDisabled={terminalDisabled}
-                            terminalLabel={terminalLabel}
-                            onTerminal={onTerminal ?? (() => {})}
-                            showAbortButton={showAbortButton}
-                            abortDisabled={abortDisabled}
-                            isAborting={isAborting}
-                            onAbort={handleAbort}
-                            showSwitchButton={showSwitchButton}
-                            switchDisabled={switchDisabled}
-                            isSwitching={isSwitching}
-                            onSwitch={handleSwitch}
-                            showContinueButton={showContinueButton}
-                            continueDisabled={continueDisabled}
-                            isContinuing={isContinuing}
-                            onContinue={handleContinue}
-                            showQuickPromptButton={showQuickPromptButton}
-                            onQuickPromptToggle={handleQuickPromptToggle}
-                            voiceEnabled={voiceEnabled}
-                            voiceStatus={voiceStatus}
-                            voiceMicMuted={voiceMicMuted}
-                            onVoiceToggle={onVoiceToggle ?? (() => {})}
-                            onVoiceMicToggle={onVoiceMicToggle}
-                            onSend={handleSend}
+                        <textarea
+                            ref={expandedTextareaRef}
+                            value={inputState.text}
+                            placeholder={showContinueHint ? t('misc.typeMessage') : t('misc.typeAMessage')}
+                            disabled={controlsDisabled}
+                            onChange={handleExpandedChange}
+                            onFocus={() => {
+                                activeTextareaRef.current = expandedTextareaRef.current
+                            }}
+                            onSelect={handleSelect}
+                            onKeyDown={handleKeyDown}
+                            onPaste={handlePaste}
+                            className="min-h-0 flex-1 resize-none rounded-[20px] border border-[var(--app-border)] bg-[var(--app-bg)] px-4 py-3 text-base leading-7 text-[var(--app-fg)] placeholder-[var(--app-hint)] shadow-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[var(--app-link)] disabled:cursor-not-allowed disabled:opacity-50"
                         />
+
+                        {suggestions.length > 0 ? (
+                            <div className="pointer-events-none absolute inset-x-4 bottom-3">
+                                <div className="pointer-events-auto">
+                                    <FloatingOverlay maxHeight={260}>
+                                        <Autocomplete
+                                            suggestions={suggestions}
+                                            selectedIndex={selectedIndex}
+                                            onSelect={(index) => handleSuggestionSelect(index)}
+                                        />
+                                    </FloatingOverlay>
+                                </div>
+                            </div>
+                        ) : null}
                     </div>
-                </ComposerPrimitive.Root>
-            </div>
-        </div>
+
+                    <div className="flex shrink-0 items-center justify-end gap-2 border-t border-[var(--app-border)] px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3">
+                        <Button type="button" onClick={sendComposer} disabled={!canSend}>
+                            {t('composer.send')}
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
+        </>
     )
 }

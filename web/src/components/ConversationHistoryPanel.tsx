@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import type { ApiClient } from '@/api/client'
+import { ApiError, type ApiClient } from '@/api/client'
 import type { ConversationHistoryEntry, Session } from '@/types/api'
 import { useConversationHistory, type ConversationHistoryScope } from '@/hooks/queries/useConversationHistory'
 import { SessionMarkerDot } from '@/components/SessionMarkerDot'
@@ -179,14 +179,43 @@ function buildHistoryCopyText(entry: ConversationHistoryEntry, projectLabel: str
 }
 
 function ConversationHistoryDetailDialog(props: {
+    api: ApiClient
     entry: ConversationHistoryEntry | null
     onOpenChange: (open: boolean) => void
+    onOpenSession?: (sessionId: string) => void
 }) {
     const { t } = useTranslation()
     const { copied, copy } = useCopyToClipboard()
+    const [isOpeningSession, setIsOpeningSession] = useState(false)
+    const [openSessionError, setOpenSessionError] = useState<string | null>(null)
     const entry = props.entry
     const projectLabel = entry ? getProjectLabel(entry) : null
     const copyText = entry ? buildHistoryCopyText(entry, projectLabel, t) : ''
+
+    useEffect(() => {
+        setIsOpeningSession(false)
+        setOpenSessionError(null)
+    }, [entry?.id])
+
+    const handleOpenSession = async () => {
+        if (!entry || !props.onOpenSession || isOpeningSession) return
+
+        setIsOpeningSession(true)
+        setOpenSessionError(null)
+
+        try {
+            await props.api.getSession(entry.sessionId)
+            props.onOpenSession(entry.sessionId)
+        } catch (error) {
+            if (error instanceof ApiError && error.status === 404) {
+                setOpenSessionError(t('session.history.detail.deleted'))
+            } else {
+                setOpenSessionError(error instanceof Error ? error.message : t('session.history.detail.openFailed'))
+            }
+        } finally {
+            setIsOpeningSession(false)
+        }
+    }
 
     return (
         <Dialog open={entry !== null} onOpenChange={props.onOpenChange}>
@@ -214,14 +243,31 @@ function ConversationHistoryDetailDialog(props: {
                                         </div>
                                     </DialogDescription>
                                 </div>
-                                <button
-                                    type="button"
-                                    onClick={() => void copy(copyText)}
-                                    className="shrink-0 rounded-full border border-[var(--app-border)] px-3 py-1.5 text-xs font-medium text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]"
-                                >
-                                    {copied ? t('session.history.detail.copied') : t('session.history.detail.copy')}
-                                </button>
+                                <div className="flex shrink-0 flex-col items-end gap-2">
+                                    {props.onOpenSession ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => void handleOpenSession()}
+                                            disabled={isOpeningSession}
+                                            className="rounded-full border border-[var(--app-link)] bg-[var(--app-link)] px-3 py-1.5 text-xs font-medium text-[var(--app-bg)] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                                        >
+                                            {isOpeningSession ? t('session.history.detail.opening') : t('session.history.detail.openSession')}
+                                        </button>
+                                    ) : null}
+                                    <button
+                                        type="button"
+                                        onClick={() => void copy(copyText)}
+                                        className="rounded-full border border-[var(--app-border)] px-3 py-1.5 text-xs font-medium text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]"
+                                    >
+                                        {copied ? t('session.history.detail.copied') : t('session.history.detail.copy')}
+                                    </button>
+                                </div>
                             </div>
+                            {openSessionError ? (
+                                <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-left text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
+                                    {openSessionError}
+                                </div>
+                            ) : null}
                         </DialogHeader>
                         <button
                             type="button"
@@ -455,10 +501,12 @@ export function ConversationHistoryPanel(props: {
                 </div>
             </section>
             <ConversationHistoryDetailDialog
+                api={props.api}
                 entry={selectedEntry}
                 onOpenChange={(open) => {
                     if (!open) setSelectedEntry(null)
                 }}
+                onOpenSession={props.onOpenSession}
             />
         </div>
     )

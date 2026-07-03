@@ -1,4 +1,5 @@
 import { clearDraft } from '@/lib/composer-drafts'
+import { clearComposerDraft } from '@/lib/composerDraftStorage'
 
 /**
  * Clear draft(s) after a successful send.
@@ -10,7 +11,9 @@ export function clearDraftsAfterSend(
     routeSessionId: string | null,
 ): void {
     clearDraft(sentSessionId)
+    clearComposerDraft(sentSessionId)
     if (routeSessionId && sentSessionId !== routeSessionId) {
         clearDraft(routeSessionId)
+        clearComposerDraft(routeSessionId)
     }
 }

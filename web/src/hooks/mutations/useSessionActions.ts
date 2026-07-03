@@ -4,6 +4,7 @@ import type { ApiClient } from '@/api/client'
 import type { AgentFlavor, CodexCollaborationMode, ForkSessionOptions, PermissionMode, SessionMarkerColor } from '@/types/api'
 import { queryKeys } from '@/lib/query-keys'
 import { clearMessageWindow } from '@/lib/message-window-store'
+import { clearComposerDraft } from '@/lib/composerDraftStorage'
 import { isKnownFlavor } from '@/lib/agentFlavorUtils'
 
 export function useSessionActions(
@@ -185,6 +186,7 @@ export function useSessionActions(
             if (!sessionId) return
             queryClient.removeQueries({ queryKey: queryKeys.session(sessionId) })
             clearMessageWindow(sessionId)
+            clearComposerDraft(sessionId)
             await queryClient.invalidateQueries({ queryKey: queryKeys.sessions })
         },
     })

@@ -13,6 +13,7 @@ import type {
 import { queryKeys } from '@/lib/query-keys'
 import { triggerSessionAttention } from '@/lib/sessionAttention'
 import { clearMessageWindow, getMessageWindowState, ingestIncomingMessages, markMessagesConsumed, removeOptimisticMessage, updateMessageStatus } from '@/lib/message-window-store'
+import { clearComposerDraft } from '@/lib/composerDraftStorage'
 
 type SSESubscription = {
     all?: boolean
@@ -612,6 +613,7 @@ export function useSSE(options: {
                     removeSessionSummary(event.sessionId)
                     void queryClient.removeQueries({ queryKey: queryKeys.session(event.sessionId) })
                     clearMessageWindow(event.sessionId)
+                    clearComposerDraft(event.sessionId)
                 } else if (hasRecordShape(event.data) && typeof event.data.shareConfirmedAt === 'number') {
                     triggerSessionAttention(event.sessionId)
                     queueSessionListInvalidation()

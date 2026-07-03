@@ -1,6 +1,7 @@
 import type { ApiClient } from '@/api/client'
 import type { BulkSessionActionResponse, SessionSummary } from '@/types/api'
 import { clearMessageWindow } from '@/lib/message-window-store'
+import { clearComposerDraft } from '@/lib/composerDraftStorage'
 import { queryKeys } from '@/lib/query-keys'
 
 type SessionCleanupQueryClient = {
@@ -29,6 +30,7 @@ export async function cleanupInactiveSessions(options: CleanupInactiveSessionsOp
     for (const sessionId of result.successIds) {
         options.queryClient.removeQueries({ queryKey: queryKeys.session(sessionId) })
         clearMessageWindow(sessionId)
+        clearComposerDraft(sessionId)
     }
 
     if (options.selectedSessionId && result.successIds.includes(options.selectedSessionId)) {

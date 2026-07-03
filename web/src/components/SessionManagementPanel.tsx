@@ -18,6 +18,7 @@ import {
     sessionMatchesManagementUpdateWindow
 } from '@/lib/sessionManagementFilters'
 import { clearMessageWindow } from '@/lib/message-window-store'
+import { clearComposerDraft } from '@/lib/composerDraftStorage'
 import { queryKeys } from '@/lib/query-keys'
 import { getDisplaySessionTitle } from '@/lib/sessionTitle'
 
@@ -279,6 +280,7 @@ export function SessionManagementPanel(props: {
             for (const sessionId of succeededIds) {
                 queryClient.removeQueries({ queryKey: queryKeys.session(sessionId) })
                 clearMessageWindow(sessionId)
+                clearComposerDraft(sessionId)
             }
 
             if (succeededIds.length > 0) {

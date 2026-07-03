@@ -23,6 +23,7 @@ import { usePlatform } from '@/hooks/usePlatform'
 import { usePWAInstall } from '@/hooks/usePWAInstall'
 import { supportsEffort, supportsModelChange } from '@hapi/protocol'
 import { markSkillUsed } from '@/lib/recent-skills'
+import { clearComposerDraft, getComposerDraft, saveComposerDraft } from '@/lib/composerDraftStorage'
 import { useComposerDraft } from '@/hooks/useComposerDraft'
 import { useComposerEnterBehavior } from '@/hooks/useComposerEnterBehavior'
 import { FloatingOverlay } from '@/components/ChatInput/FloatingOverlay'
@@ -262,7 +263,7 @@ export function HappyComposer(props: {
     const collapsedResizeStartRowsRef = useRef(collapsedComposerMaxRows)
     const collapsedResizePointerIdRef = useRef<number | null>(null)
     const collapsedResizeStartYRef = useRef(0)
-    const draftStorageKey = sessionId ? `hapi:composer-draft:${sessionId}` : null
+    const draftSessionId = sessionId ?? null
 
     useComposerDraft(sessionId, composerText, (text) => api.composer().setText(text))
 
@@ -405,39 +406,27 @@ export function HappyComposer(props: {
     }, [isContinuing, controlledByUser])
 
     useEffect(() => {
-        if (!draftStorageKey || typeof window === 'undefined') {
+        if (!draftSessionId) {
             loadedDraftKeyRef.current = null
             return
         }
 
-        let savedDraft = ''
-        try {
-            savedDraft = window.localStorage.getItem(draftStorageKey) ?? ''
-        } catch {
-            savedDraft = ''
-        }
+        const savedDraft = getComposerDraft(draftSessionId)
 
-        loadedDraftKeyRef.current = draftStorageKey
+        loadedDraftKeyRef.current = draftSessionId
         api.composer().setText(savedDraft)
         setInputState({
             text: savedDraft,
             selection: { start: savedDraft.length, end: savedDraft.length }
         })
-    }, [api, draftStorageKey])
+    }, [api, draftSessionId])
 
     useEffect(() => {
-        if (!draftStorageKey || typeof window === 'undefined') return
-        if (loadedDraftKeyRef.current !== draftStorageKey) return
+        if (!draftSessionId) return
+        if (loadedDraftKeyRef.current !== draftSessionId) return
 
-        try {
-            if (composerText.length > 0) {
-                window.localStorage.setItem(draftStorageKey, composerText)
-            } else {
-                window.localStorage.removeItem(draftStorageKey)
-            }
-        } catch {
-        }
-    }, [composerText, draftStorageKey])
+        saveComposerDraft(draftSessionId, composerText)
+    }, [composerText, draftSessionId])
 
     useEffect(() => {
         updateCollapsedVisualLineCount()
@@ -506,12 +495,9 @@ export function HappyComposer(props: {
     }, [showExpandedComposer, inputState.selection.end, inputState.selection.start])
 
     const clearDraft = useCallback(() => {
-        if (!draftStorageKey || typeof window === 'undefined') return
-        try {
-            window.localStorage.removeItem(draftStorageKey)
-        } catch {
-        }
-    }, [draftStorageKey])
+        if (!draftSessionId) return
+        clearComposerDraft(draftSessionId)
+    }, [draftSessionId])
 
     useEffect(() => {
         if (isTouch) {

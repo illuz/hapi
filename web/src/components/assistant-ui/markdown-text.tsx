@@ -17,6 +17,7 @@ import { SyntaxHighlighter } from '@/components/assistant-ui/shiki-highlighter'
 import { MermaidDiagram } from '@/components/assistant-ui/mermaid-diagram'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
 import { CopyIcon, CheckIcon } from '@/components/icons'
+import { MarkdownAnchor } from '@/components/assistant-ui/markdown-link-behavior'
 
 import type { MarkdownTextPrimitiveProps } from '@assistant-ui/react-markdown'
 
@@ -85,18 +86,6 @@ function Code(props: ComponentPropsWithoutRef<'code'>) {
                 'aui-md-code break-words rounded-md border border-[var(--app-inline-code-border)] bg-[var(--app-inline-code-bg)] px-[0.38em] py-[0.14em] font-mono text-[0.88em] text-[var(--app-inline-code-fg)]',
                 props.className
             )}
-        />
-    )
-}
-
-function A(props: ComponentPropsWithoutRef<'a'>) {
-    const rel = props.target === '_blank' ? (props.rel ?? 'noreferrer') : props.rel
-
-    return (
-        <a
-            {...props}
-            rel={rel}
-            className={cn('aui-md-a font-medium text-[var(--app-link)] underline decoration-[color:var(--app-link-muted)] underline-offset-3', props.className)}
         />
     )
 }
@@ -218,7 +207,7 @@ export const defaultComponents = memoizeMarkdownComponents({
     h4: H4,
     h5: H5,
     h6: H6,
-    a: A,
+    a: MarkdownAnchor,
     p: Paragraph,
     strong: Strong,
     em: Em,

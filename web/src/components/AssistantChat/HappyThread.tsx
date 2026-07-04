@@ -5,6 +5,7 @@ import type { SessionMetadataSummary } from '@/types/api'
 import type { ConversationOutlineItem } from '@/chat/outline'
 import { getConversationMessageAnchorId } from '@/chat/outline'
 import { HappyChatProvider } from '@/components/AssistantChat/context'
+import { MarkdownLinkBehaviorProvider } from '@/components/assistant-ui/markdown-link-behavior'
 import { HappyAssistantMessage } from '@/components/AssistantChat/messages/AssistantMessage'
 import { HappyUserMessage } from '@/components/AssistantChat/messages/UserMessage'
 import { HappySystemMessage } from '@/components/AssistantChat/messages/SystemMessage'
@@ -980,7 +981,8 @@ export function HappyThread(props: {
             onRefresh: props.onRefresh,
             onRetryMessage: props.onRetryMessage
         }}>
-            <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col relative">
+            <MarkdownLinkBehaviorProvider behavior="copy-non-file">
+                <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col relative">
                 <ThreadPrimitive.Viewport
                     asChild
                     autoScroll={false}
@@ -1073,7 +1075,8 @@ export function HappyThread(props: {
                         />
                     </>
                 ) : null}
-            </ThreadPrimitive.Root>
+                </ThreadPrimitive.Root>
+            </MarkdownLinkBehaviorProvider>
         </HappyChatProvider>
     )
 }

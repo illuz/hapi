@@ -9,6 +9,7 @@ import {
     MARKDOWN_CLASSNAME,
 } from '@/components/assistant-ui/markdown-text'
 import { SyntaxHighlighter } from '@/components/assistant-ui/shiki-highlighter'
+import { MarkdownAnchor } from '@/components/assistant-ui/markdown-link-behavior'
 import { CheckIcon, CopyIcon } from '@/components/icons'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
 import { cn } from '@/lib/utils'
@@ -103,18 +104,6 @@ function StaticCode(props: ComponentPropsWithoutRef<'code'>) {
                 }}
             />
         </>
-    )
-}
-
-function A(props: ComponentPropsWithoutRef<'a'>) {
-    const rel = props.target === '_blank' ? (props.rel ?? 'noreferrer') : props.rel
-
-    return (
-        <a
-            {...props}
-            rel={rel}
-            className={cn('aui-md-a font-medium text-[var(--app-link)] underline decoration-[color:var(--app-link-muted)] underline-offset-3', props.className)}
-        />
     )
 }
 
@@ -233,7 +222,7 @@ const staticComponents = {
     h4: H4,
     h5: H5,
     h6: H6,
-    a: A,
+    a: MarkdownAnchor,
     p: Paragraph,
     strong: Strong,
     em: Em,

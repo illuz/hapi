@@ -227,6 +227,8 @@ export default {
   'share.status.revoked': 'Revoked',
   'share.toast.copied': 'Share link copied',
   'share.toast.copyFailed': 'Copy failed',
+  'markdown.copyLink': 'Copy link',
+  'markdown.linkCopied': 'Copied',
   'share.error.passwordRequired': 'Please enter a share password.',
   'share.error.createFailed': 'Failed to create share.',
   'share.badge': '{n} shares',

@@ -227,6 +227,8 @@ export default {
   'share.status.revoked': '已撤销',
   'share.toast.copied': '分享链接已复制',
   'share.toast.copyFailed': '复制失败',
+  'markdown.copyLink': '复制链接',
+  'markdown.linkCopied': '已复制',
   'share.error.passwordRequired': '请输入分享密码。',
   'share.error.createFailed': '创建分享失败。',
   'share.badge': '{n} 个分享',

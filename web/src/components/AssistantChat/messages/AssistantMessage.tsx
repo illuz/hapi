@@ -1,4 +1,4 @@
-import { useCallback, useState, type KeyboardEvent, type MouseEvent } from 'react'
+import { useCallback, useMemo, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { MessagePrimitive, useAssistantState } from '@assistant-ui/react'
 import { MarkdownText } from '@/components/assistant-ui/markdown-text'
 import { Reasoning, ReasoningGroup } from '@/components/assistant-ui/reasoning'
@@ -11,13 +11,39 @@ import { getAssistantCopyText } from '@/components/AssistantChat/messages/assist
 import { getConversationMessageAnchorId } from '@/chat/outline'
 import { MessageMetadata } from '@/components/AssistantChat/messages/MessageMetadata'
 import { isNestedInteractiveEvent } from '@/components/AssistantChat/messages/metadataToggle'
+import { useHappyChatContext } from '@/components/AssistantChat/context'
+import { linkAssistantFilePaths } from '@/lib/filePathLinks'
 
 const TOOL_COMPONENTS = {
     Fallback: HappyToolMessage
 } as const
 
+function AssistantMarkdownText() {
+    const ctx = useHappyChatContext()
+    const shouldLinkFilePaths = useAssistantState(({ thread, message }) => {
+        if (message.role !== 'assistant') return false
+        if (message.status?.type === 'running') return false
+
+        for (let index = thread.messages.length - 1; index >= 0; index -= 1) {
+            const candidate = thread.messages[index]
+            if (candidate.role === 'assistant') {
+                return candidate.id === message.id
+            }
+        }
+
+        return false
+    })
+
+    const preprocess = useMemo(() => {
+        if (!shouldLinkFilePaths) return undefined
+        return (text: string) => linkAssistantFilePaths(text, ctx.sessionId)
+    }, [ctx.sessionId, shouldLinkFilePaths])
+
+    return <MarkdownText preprocess={preprocess} />
+}
+
 const MESSAGE_PART_COMPONENTS = {
-    Text: MarkdownText,
+    Text: AssistantMarkdownText,
     Reasoning: Reasoning,
     ReasoningGroup: ReasoningGroup,
     tools: TOOL_COMPONENTS

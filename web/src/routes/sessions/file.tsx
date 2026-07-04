@@ -1,17 +1,21 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useParams, useSearch } from '@tanstack/react-router'
 import type { GitCommandResponse } from '@/types/api'
 import { FileIcon } from '@/components/FileIcon'
+import { MarkdownRenderer } from '@/components/MarkdownRenderer'
 import { CopyIcon, CheckIcon } from '@/components/icons'
 import { useAppContext } from '@/lib/app-context'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
 import { queryKeys } from '@/lib/query-keys'
 import { langAlias, useShikiHighlighter } from '@/lib/shiki'
-import { decodeBase64 } from '@/lib/utils'
+import { cn, decodeBase64 } from '@/lib/utils'
 
 const MAX_COPYABLE_FILE_BYTES = 1_000_000
+const MARKDOWN_EXTENSIONS = new Set(['md', 'markdown', 'mdown', 'mkd', 'mkdn', 'mdx'])
+
+type FileDisplayMode = 'diff' | 'source' | 'rendered'
 
 function decodePath(value: string): string {
     if (!value) return ''
@@ -88,11 +92,21 @@ function FileContentSkeleton() {
     )
 }
 
+function getFileExtension(path: string): string {
+    const fileName = path.split('/').pop() ?? path
+    const parts = fileName.split('.')
+    if (parts.length <= 1) return ''
+    return parts[parts.length - 1]?.toLowerCase() ?? ''
+}
+
+export function isMarkdownFilePath(path: string): boolean {
+    return MARKDOWN_EXTENSIONS.has(getFileExtension(path))
+}
+
 function resolveLanguage(path: string): string | undefined {
-    const parts = path.split('.')
-    if (parts.length <= 1) return undefined
-    const ext = parts[parts.length - 1]?.toLowerCase()
+    const ext = getFileExtension(path)
     if (!ext) return undefined
+    if (MARKDOWN_EXTENSIONS.has(ext)) return 'markdown'
     return langAlias[ext] ?? ext
 }
 
@@ -114,6 +128,112 @@ function extractCommandError(result: GitCommandResponse | undefined): string | n
     if (!result) return null
     if (result.success) return null
     return result.error ?? result.stderr ?? 'Failed to load diff'
+}
+
+function DiffUnavailableNotice(props: { message: string }) {
+    return (
+        <details
+            data-testid="diff-unavailable-notice"
+            className="group mb-3 rounded-md border border-amber-500/20 bg-amber-500/10 text-xs text-[var(--app-hint)]"
+        >
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-2 py-2 transition-colors hover:text-[var(--app-fg)] [&::-webkit-details-marker]:hidden">
+                <span>Diff unavailable</span>
+                <span className="shrink-0 text-[11px] text-[var(--app-hint)] group-open:hidden">Show details</span>
+                <span className="hidden shrink-0 text-[11px] text-[var(--app-hint)] group-open:inline">Hide details</span>
+            </summary>
+            <div className="border-t border-amber-500/20 px-2 py-2 font-mono text-[11px] leading-relaxed">
+                {props.message}
+            </div>
+        </details>
+    )
+}
+
+function FileModeButton(props: {
+    active: boolean
+    children: string
+    onClick: () => void
+}) {
+    return (
+        <button
+            type="button"
+            onClick={props.onClick}
+            className={cn(
+                'rounded px-3 py-1 text-xs font-semibold transition-colors',
+                props.active
+                    ? 'bg-[var(--app-button)] text-[var(--app-button-text)] opacity-80'
+                    : 'bg-[var(--app-subtle-bg)] text-[var(--app-hint)] hover:text-[var(--app-fg)]'
+            )}
+        >
+            {props.children}
+        </button>
+    )
+}
+
+function CopyContentButton(props: {
+    canCopy: boolean
+    copied: boolean
+    onCopy: () => void
+}) {
+    if (!props.canCopy) return null
+
+    return (
+        <button
+            type="button"
+            onClick={props.onCopy}
+            className="absolute right-2 top-2 z-10 rounded p-1 text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]"
+            title="Copy file content"
+        >
+            {props.copied ? <CheckIcon className="h-3.5 w-3.5" /> : <CopyIcon className="h-3.5 w-3.5" />}
+        </button>
+    )
+}
+
+function SourcePreview(props: {
+    content: string
+    highlighted: ReactNode | null
+    canCopy: boolean
+    copied: boolean
+    onCopy: () => void
+}) {
+    return (
+        <div className="relative">
+            <CopyContentButton
+                canCopy={props.canCopy}
+                copied={props.copied}
+                onCopy={props.onCopy}
+            />
+            <pre className="shiki overflow-auto rounded-md bg-[var(--app-code-bg)] p-3 pr-8 text-xs font-mono">
+                <code>{props.highlighted ?? props.content}</code>
+            </pre>
+        </div>
+    )
+}
+
+function RenderedMarkdownPreview(props: {
+    content: string
+    canCopy: boolean
+    copied: boolean
+    onCopy: () => void
+}) {
+    return (
+        <div className="relative">
+            <CopyContentButton
+                canCopy={props.canCopy}
+                copied={props.copied}
+                onCopy={props.onCopy}
+            />
+            <div className="rounded-md border border-[var(--app-border)] bg-[var(--app-bg)] p-4 pr-10">
+                <MarkdownRenderer content={props.content} className="text-sm" />
+            </div>
+        </div>
+    )
+}
+
+function getEffectiveDisplayMode(mode: FileDisplayMode, hasDiff: boolean, markdownFile: boolean): FileDisplayMode {
+    if (mode === 'diff' && hasDiff) return 'diff'
+    if (mode === 'rendered' && markdownFile) return 'rendered'
+    if (mode === 'source') return 'source'
+    return markdownFile ? 'rendered' : 'source'
 }
 
 export default function FilePage() {
@@ -166,6 +286,7 @@ export default function FilePage() {
         : false
 
     const language = useMemo(() => resolveLanguage(filePath), [filePath])
+    const markdownFile = useMemo(() => isMarkdownFilePath(filePath), [filePath])
     const highlighted = useShikiHighlighter(decodedContent, language)
     const contentSizeBytes = useMemo(
         () => (decodedContent ? getUtf8ByteLength(decodedContent) : 0),
@@ -176,24 +297,35 @@ export default function FilePage() {
         && decodedContent.length > 0
         && contentSizeBytes <= MAX_COPYABLE_FILE_BYTES
 
-    const [displayMode, setDisplayMode] = useState<'diff' | 'file'>('diff')
+    const [displayMode, setDisplayMode] = useState<FileDisplayMode>('diff')
+
+    useEffect(() => {
+        setDisplayMode('diff')
+    }, [filePath, staged])
 
     useEffect(() => {
         if (diffSuccess && !diffContent) {
-            setDisplayMode('file')
+            setDisplayMode(markdownFile ? 'rendered' : 'source')
             return
         }
         if (diffFailed) {
-            setDisplayMode('file')
+            setDisplayMode(markdownFile ? 'rendered' : 'source')
         }
-    }, [diffSuccess, diffFailed, diffContent])
+    }, [diffSuccess, diffFailed, diffContent, markdownFile])
+
+    useEffect(() => {
+        if (!markdownFile && displayMode === 'rendered') {
+            setDisplayMode(diffContent ? 'diff' : 'source')
+        }
+    }, [markdownFile, displayMode, diffContent])
 
     const loading = diffQuery.isLoading || fileQuery.isLoading
     const fileError = fileContentResult && !fileContentResult.success
         ? (fileContentResult.error ?? 'Failed to read file')
         : null
     const missingPath = !filePath
-    const diffErrorMessage = diffError ? `Diff unavailable: ${diffError}` : null
+    const effectiveDisplayMode = getEffectiveDisplayMode(displayMode, Boolean(diffContent), markdownFile)
+    const showModeSwitcher = Boolean(diffContent) || markdownFile
 
     return (
         <div className="flex h-full min-h-0 flex-col">
@@ -228,33 +360,39 @@ export default function FilePage() {
                 </div>
             </div>
 
-            {diffContent ? (
+            {showModeSwitcher ? (
                 <div className="bg-[var(--app-bg)]">
                     <div className="mx-auto w-full max-w-content px-3 py-2 flex items-center gap-2 border-b border-[var(--app-divider)]">
-                        <button
-                            type="button"
-                            onClick={() => setDisplayMode('diff')}
-                            className={`rounded px-3 py-1 text-xs font-semibold ${displayMode === 'diff' ? 'bg-[var(--app-button)] text-[var(--app-button-text)] opacity-80' : 'bg-[var(--app-subtle-bg)] text-[var(--app-hint)]'}`}
+                        {diffContent ? (
+                            <FileModeButton
+                                active={effectiveDisplayMode === 'diff'}
+                                onClick={() => setDisplayMode('diff')}
+                            >
+                                Diff
+                            </FileModeButton>
+                        ) : null}
+                        <FileModeButton
+                            active={effectiveDisplayMode === 'source'}
+                            onClick={() => setDisplayMode('source')}
                         >
-                            Diff
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setDisplayMode('file')}
-                            className={`rounded px-3 py-1 text-xs font-semibold ${displayMode === 'file' ? 'bg-[var(--app-button)] text-[var(--app-button-text)] opacity-80' : 'bg-[var(--app-subtle-bg)] text-[var(--app-hint)]'}`}
-                        >
-                            File
-                        </button>
+                            {markdownFile ? 'Source' : 'File'}
+                        </FileModeButton>
+                        {markdownFile ? (
+                            <FileModeButton
+                                active={effectiveDisplayMode === 'rendered'}
+                                onClick={() => setDisplayMode('rendered')}
+                            >
+                                Rendered
+                            </FileModeButton>
+                        ) : null}
                     </div>
                 </div>
             ) : null}
 
             <div className="app-scroll-y flex-1 min-h-0">
                 <div className="mx-auto w-full max-w-content p-4">
-                    {diffErrorMessage ? (
-                        <div className="mb-3 rounded-md bg-amber-500/10 p-2 text-xs text-[var(--app-hint)]">
-                            {diffErrorMessage}
-                        </div>
+                    {diffError ? (
+                        <DiffUnavailableNotice message={diffError} />
                     ) : null}
                     {missingPath ? (
                         <div className="text-sm text-[var(--app-hint)]">No file path provided.</div>
@@ -266,27 +404,30 @@ export default function FilePage() {
                         <div className="text-sm text-[var(--app-hint)]">
                             This looks like a binary file. It cannot be displayed.
                         </div>
-                    ) : displayMode === 'diff' && diffContent ? (
+                    ) : effectiveDisplayMode === 'diff' && diffContent ? (
                         <DiffDisplay diffContent={diffContent} />
-                    ) : displayMode === 'diff' && diffError ? (
+                    ) : effectiveDisplayMode === 'diff' && diffError ? (
                         <div className="text-sm text-[var(--app-hint)]">{diffError}</div>
-                    ) : displayMode === 'file' ? (
+                    ) : effectiveDisplayMode === 'rendered' && markdownFile ? (
                         decodedContent ? (
-                            <div className="relative">
-                                {canCopyContent ? (
-                                    <button
-                                        type="button"
-                                        onClick={() => copyContent(decodedContent)}
-                                        className="absolute right-2 top-2 z-10 rounded p-1 text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] transition-colors"
-                                        title="Copy file content"
-                                    >
-                                        {contentCopied ? <CheckIcon className="h-3.5 w-3.5" /> : <CopyIcon className="h-3.5 w-3.5" />}
-                                    </button>
-                                ) : null}
-                                <pre className="shiki overflow-auto rounded-md bg-[var(--app-code-bg)] p-3 pr-8 text-xs font-mono">
-                                    <code>{highlighted ?? decodedContent}</code>
-                                </pre>
-                            </div>
+                            <RenderedMarkdownPreview
+                                content={decodedContent}
+                                canCopy={canCopyContent}
+                                copied={contentCopied}
+                                onCopy={() => copyContent(decodedContent)}
+                            />
+                        ) : (
+                            <div className="text-sm text-[var(--app-hint)]">File is empty.</div>
+                        )
+                    ) : effectiveDisplayMode === 'source' ? (
+                        decodedContent ? (
+                            <SourcePreview
+                                content={decodedContent}
+                                highlighted={highlighted}
+                                canCopy={canCopyContent}
+                                copied={contentCopied}
+                                onCopy={() => copyContent(decodedContent)}
+                            />
                         ) : (
                             <div className="text-sm text-[var(--app-hint)]">File is empty.</div>
                         )

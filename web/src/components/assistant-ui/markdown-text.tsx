@@ -236,13 +236,18 @@ export const defaultComponents = memoizeMarkdownComponents({
     img: Image,
 } as const)
 
-export function MarkdownText() {
+type MarkdownTextProps = {
+    preprocess?: MarkdownTextPrimitiveProps['preprocess']
+}
+
+export function MarkdownText(props: MarkdownTextProps) {
     return (
         <MarkdownTextPrimitive
             remarkPlugins={MARKDOWN_PLUGINS}
             rehypePlugins={MARKDOWN_REHYPE_PLUGINS}
             components={defaultComponents}
             componentsByLanguage={MARKDOWN_COMPONENTS_BY_LANGUAGE}
+            preprocess={props.preprocess}
             className={cn(MARKDOWN_CLASSNAME)}
         />
     )

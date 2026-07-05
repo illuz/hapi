@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import FilePage, { isMarkdownFilePath } from './file'
+import FilePage, { isMarkdownFilePath, isPreviewableImageFilePath } from './file'
 
 const mockState = vi.hoisted(() => ({
     search: {
@@ -97,6 +97,16 @@ describe('isMarkdownFilePath', () => {
     })
 })
 
+describe('isPreviewableImageFilePath', () => {
+    it('recognizes common browser image file extensions', () => {
+        expect(isPreviewableImageFilePath('assets/logo.png')).toBe(true)
+        expect(isPreviewableImageFilePath('assets/photo.JPG')).toBe(true)
+        expect(isPreviewableImageFilePath('assets/diagram.svg')).toBe(true)
+        expect(isPreviewableImageFilePath('assets/icon.webp')).toBe(true)
+        expect(isPreviewableImageFilePath('archive.zip')).toBe(false)
+    })
+})
+
 describe('FilePage Markdown preview', () => {
     beforeEach(() => {
         vi.clearAllMocks()
@@ -165,5 +175,49 @@ describe('FilePage Markdown preview', () => {
 
         expect(notice).toHaveAttribute('open')
         expect(screen.getByText('Command failed: not a git repository')).toBeInTheDocument()
+    })
+
+    it('renders image files as a visual preview instead of a binary warning', () => {
+        const imageBytes = '\x00\x01binary-image'
+        setFile('assets/diagram.png', imageBytes)
+
+        render(<FilePage />)
+
+        const image = screen.getByRole('img', { name: 'diagram.png' })
+        expect(image).toHaveAttribute('src', `data:image/png;base64,${encodeBase64(imageBytes)}`)
+        expect(screen.getByText('image/png')).toBeInTheDocument()
+        expect(screen.getByRole('link', { name: 'Open image' })).toHaveAttribute('download', 'diagram.png')
+        expect(screen.queryByText('This looks like a binary file. It cannot be displayed.')).not.toBeInTheDocument()
+    })
+
+    it('allows changed image files to switch between diff and preview', () => {
+        mockState.diffQuery = {
+            data: { success: true, stdout: 'Binary files a/assets/icon.webp and b/assets/icon.webp differ', error: undefined },
+            isLoading: false,
+        }
+        setFile('assets/icon.webp', '\x00webp-image')
+
+        render(<FilePage />)
+
+        expect(screen.getByRole('button', { name: 'Diff' })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Preview' })).toBeInTheDocument()
+        expect(screen.getByRole('img', { name: 'icon.webp' })).toHaveAttribute('src', `data:image/webp;base64,${encodeBase64('\x00webp-image')}`)
+
+        fireEvent.click(screen.getByRole('button', { name: 'Diff' }))
+
+        expect(screen.getByText('Binary files a/assets/icon.webp and b/assets/icon.webp differ')).toBeInTheDocument()
+
+        fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+
+        expect(screen.getByRole('img', { name: 'icon.webp' })).toBeInTheDocument()
+    })
+
+    it('keeps unsupported binary files hidden', () => {
+        setFile('archives/data.zip', '\x00\x01zip')
+
+        render(<FilePage />)
+
+        expect(screen.getByText('This looks like a binary file. It cannot be displayed.')).toBeInTheDocument()
+        expect(screen.queryByRole('img')).not.toBeInTheDocument()
     })
 })

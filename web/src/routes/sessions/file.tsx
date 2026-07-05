@@ -14,8 +14,20 @@ import { cn, decodeBase64 } from '@/lib/utils'
 
 const MAX_COPYABLE_FILE_BYTES = 1_000_000
 const MARKDOWN_EXTENSIONS = new Set(['md', 'markdown', 'mdown', 'mkd', 'mkdn', 'mdx'])
+const IMAGE_MIME_TYPES = new Map<string, string>([
+    ['apng', 'image/apng'],
+    ['avif', 'image/avif'],
+    ['bmp', 'image/bmp'],
+    ['gif', 'image/gif'],
+    ['ico', 'image/x-icon'],
+    ['jpeg', 'image/jpeg'],
+    ['jpg', 'image/jpeg'],
+    ['png', 'image/png'],
+    ['svg', 'image/svg+xml'],
+    ['webp', 'image/webp'],
+])
 
-type FileDisplayMode = 'diff' | 'source' | 'rendered'
+type FileDisplayMode = 'diff' | 'source' | 'rendered' | 'image'
 
 function decodePath(value: string): string {
     if (!value) return ''
@@ -101,6 +113,14 @@ function getFileExtension(path: string): string {
 
 export function isMarkdownFilePath(path: string): boolean {
     return MARKDOWN_EXTENSIONS.has(getFileExtension(path))
+}
+
+export function isPreviewableImageFilePath(path: string): boolean {
+    return IMAGE_MIME_TYPES.has(getFileExtension(path))
+}
+
+function getImageMimeType(path: string): string | null {
+    return IMAGE_MIME_TYPES.get(getFileExtension(path)) ?? null
 }
 
 function resolveLanguage(path: string): string | undefined {
@@ -229,10 +249,43 @@ function RenderedMarkdownPreview(props: {
     )
 }
 
-function getEffectiveDisplayMode(mode: FileDisplayMode, hasDiff: boolean, markdownFile: boolean): FileDisplayMode {
+function ImagePreview(props: {
+    dataUri: string
+    fileName: string
+    mimeType: string
+}) {
+    return (
+        <div className="overflow-hidden rounded-md border border-[var(--app-border)] bg-[var(--app-bg)]">
+            <div className="flex min-h-[220px] items-center justify-center bg-[var(--app-code-bg)] p-3">
+                <img
+                    src={props.dataUri}
+                    alt={props.fileName}
+                    loading="lazy"
+                    className="max-h-[70vh] max-w-full rounded object-contain"
+                />
+            </div>
+            <div className="flex items-center justify-between gap-3 border-t border-[var(--app-divider)] px-3 py-2 text-xs text-[var(--app-hint)]">
+                <span className="min-w-0 truncate">{props.mimeType}</span>
+                <a
+                    href={props.dataUri}
+                    target="_blank"
+                    rel="noreferrer"
+                    download={props.fileName}
+                    className="shrink-0 rounded px-2 py-1 font-semibold text-[var(--app-fg)] transition-colors hover:bg-[var(--app-subtle-bg)]"
+                >
+                    Open image
+                </a>
+            </div>
+        </div>
+    )
+}
+
+function getEffectiveDisplayMode(mode: FileDisplayMode, hasDiff: boolean, markdownFile: boolean, imageFile: boolean): FileDisplayMode {
     if (mode === 'diff' && hasDiff) return 'diff'
     if (mode === 'rendered' && markdownFile) return 'rendered'
-    if (mode === 'source') return 'source'
+    if (mode === 'image' && imageFile) return 'image'
+    if (mode === 'source' && !imageFile) return 'source'
+    if (imageFile) return 'image'
     return markdownFile ? 'rendered' : 'source'
 }
 
@@ -276,18 +329,25 @@ export default function FilePage() {
     const diffSuccess = diffQuery.data?.success === true
     const diffFailed = diffQuery.data?.success === false
 
+    const markdownFile = useMemo(() => isMarkdownFilePath(filePath), [filePath])
+    const imageFile = useMemo(() => isPreviewableImageFilePath(filePath), [filePath])
+    const imageMimeType = useMemo(() => getImageMimeType(filePath), [filePath])
+
     const fileContentResult = fileQuery.data
-    const decodedContentResult = fileContentResult?.success && fileContentResult.content
-        ? decodeBase64(fileContentResult.content)
+    const encodedContent = fileContentResult?.success ? (fileContentResult.content ?? '') : ''
+    const decodedContentResult = fileContentResult?.success && encodedContent && !imageFile
+        ? decodeBase64(encodedContent)
         : { text: '', ok: true }
     const decodedContent = decodedContentResult.text
     const binaryFile = fileContentResult?.success
-        ? !decodedContentResult.ok || isBinaryContent(decodedContent)
+        ? !imageFile && (!decodedContentResult.ok || isBinaryContent(decodedContent))
         : false
+    const imageDataUri = fileContentResult?.success && encodedContent && imageMimeType
+        ? `data:${imageMimeType};base64,${encodedContent}`
+        : null
 
-    const language = useMemo(() => resolveLanguage(filePath), [filePath])
-    const markdownFile = useMemo(() => isMarkdownFilePath(filePath), [filePath])
-    const highlighted = useShikiHighlighter(decodedContent, language)
+    const language = useMemo(() => imageFile ? undefined : resolveLanguage(filePath), [filePath, imageFile])
+    const highlighted = useShikiHighlighter(imageFile ? '' : decodedContent, language)
     const contentSizeBytes = useMemo(
         () => (decodedContent ? getUtf8ByteLength(decodedContent) : 0),
         [decodedContent]
@@ -300,31 +360,35 @@ export default function FilePage() {
     const [displayMode, setDisplayMode] = useState<FileDisplayMode>('diff')
 
     useEffect(() => {
-        setDisplayMode('diff')
-    }, [filePath, staged])
+        setDisplayMode(imageFile ? 'image' : 'diff')
+    }, [filePath, staged, imageFile])
 
     useEffect(() => {
         if (diffSuccess && !diffContent) {
-            setDisplayMode(markdownFile ? 'rendered' : 'source')
+            setDisplayMode(imageFile ? 'image' : markdownFile ? 'rendered' : 'source')
             return
         }
         if (diffFailed) {
-            setDisplayMode(markdownFile ? 'rendered' : 'source')
+            setDisplayMode(imageFile ? 'image' : markdownFile ? 'rendered' : 'source')
         }
-    }, [diffSuccess, diffFailed, diffContent, markdownFile])
+    }, [diffSuccess, diffFailed, diffContent, markdownFile, imageFile])
 
     useEffect(() => {
         if (!markdownFile && displayMode === 'rendered') {
-            setDisplayMode(diffContent ? 'diff' : 'source')
+            setDisplayMode(imageFile ? 'image' : diffContent ? 'diff' : 'source')
+            return
         }
-    }, [markdownFile, displayMode, diffContent])
+        if (!imageFile && displayMode === 'image') {
+            setDisplayMode(diffContent ? 'diff' : markdownFile ? 'rendered' : 'source')
+        }
+    }, [markdownFile, imageFile, displayMode, diffContent])
 
     const loading = diffQuery.isLoading || fileQuery.isLoading
     const fileError = fileContentResult && !fileContentResult.success
         ? (fileContentResult.error ?? 'Failed to read file')
         : null
     const missingPath = !filePath
-    const effectiveDisplayMode = getEffectiveDisplayMode(displayMode, Boolean(diffContent), markdownFile)
+    const effectiveDisplayMode = getEffectiveDisplayMode(displayMode, Boolean(diffContent), markdownFile, imageFile)
     const showModeSwitcher = Boolean(diffContent) || markdownFile
 
     return (
@@ -371,18 +435,28 @@ export default function FilePage() {
                                 Diff
                             </FileModeButton>
                         ) : null}
-                        <FileModeButton
-                            active={effectiveDisplayMode === 'source'}
-                            onClick={() => setDisplayMode('source')}
-                        >
-                            {markdownFile ? 'Source' : 'File'}
-                        </FileModeButton>
+                        {!imageFile ? (
+                            <FileModeButton
+                                active={effectiveDisplayMode === 'source'}
+                                onClick={() => setDisplayMode('source')}
+                            >
+                                {markdownFile ? 'Source' : 'File'}
+                            </FileModeButton>
+                        ) : null}
                         {markdownFile ? (
                             <FileModeButton
                                 active={effectiveDisplayMode === 'rendered'}
                                 onClick={() => setDisplayMode('rendered')}
                             >
                                 Rendered
+                            </FileModeButton>
+                        ) : null}
+                        {imageFile ? (
+                            <FileModeButton
+                                active={effectiveDisplayMode === 'image'}
+                                onClick={() => setDisplayMode('image')}
+                            >
+                                Preview
                             </FileModeButton>
                         ) : null}
                     </div>
@@ -415,6 +489,16 @@ export default function FilePage() {
                                 canCopy={canCopyContent}
                                 copied={contentCopied}
                                 onCopy={() => copyContent(decodedContent)}
+                            />
+                        ) : (
+                            <div className="text-sm text-[var(--app-hint)]">File is empty.</div>
+                        )
+                    ) : effectiveDisplayMode === 'image' && imageFile ? (
+                        imageDataUri && imageMimeType ? (
+                            <ImagePreview
+                                dataUri={imageDataUri}
+                                fileName={fileName}
+                                mimeType={imageMimeType}
                             />
                         ) : (
                             <div className="text-sm text-[var(--app-hint)]">File is empty.</div>

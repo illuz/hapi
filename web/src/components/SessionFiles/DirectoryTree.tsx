@@ -1,7 +1,48 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ApiClient } from '@/api/client'
 import { FileIcon } from '@/components/FileIcon'
 import { useSessionDirectory } from '@/hooks/queries/useSessionDirectory'
+
+const DIRECTORY_TREE_EXPANDED_STORAGE_PREFIX = 'hapi:directory-tree:expanded:'
+
+function getExpandedStorageKey(sessionId: string): string {
+    return `${DIRECTORY_TREE_EXPANDED_STORAGE_PREFIX}${sessionId}`
+}
+
+function getDefaultExpandedPaths(): Set<string> {
+    return new Set([''])
+}
+
+function readExpandedPaths(sessionId: string): Set<string> {
+    if (typeof window === 'undefined') return getDefaultExpandedPaths()
+
+    try {
+        const raw = window.sessionStorage.getItem(getExpandedStorageKey(sessionId))
+        if (!raw) return getDefaultExpandedPaths()
+
+        const parsed: unknown = JSON.parse(raw)
+        if (!Array.isArray(parsed) || !parsed.every((value) => typeof value === 'string')) {
+            return getDefaultExpandedPaths()
+        }
+
+        return new Set(parsed)
+    } catch {
+        return getDefaultExpandedPaths()
+    }
+}
+
+function writeExpandedPaths(sessionId: string, expanded: Set<string>): void {
+    if (typeof window === 'undefined') return
+
+    try {
+        window.sessionStorage.setItem(
+            getExpandedStorageKey(sessionId),
+            JSON.stringify(Array.from(expanded))
+        )
+    } catch {
+        // Ignore storage failures; the tree remains usable with in-memory state.
+    }
+}
 
 function ChevronIcon(props: { className?: string; collapsed: boolean }) {
     return (
@@ -174,7 +215,11 @@ export function DirectoryTree(props: {
     rootLabel: string
     onOpenFile: (path: string) => void
 }) {
-    const [expanded, setExpanded] = useState<Set<string>>(() => new Set(['']))
+    const [expanded, setExpanded] = useState<Set<string>>(() => readExpandedPaths(props.sessionId))
+
+    useEffect(() => {
+        setExpanded(readExpandedPaths(props.sessionId))
+    }, [props.sessionId])
 
     const handleToggle = useCallback((path: string) => {
         setExpanded((prev) => {
@@ -184,9 +229,10 @@ export function DirectoryTree(props: {
             } else {
                 next.add(path)
             }
+            writeExpandedPaths(props.sessionId, next)
             return next
         })
-    }, [])
+    }, [props.sessionId])
 
     return (
         <div className="border-t border-[var(--app-divider)]">
@@ -203,4 +249,3 @@ export function DirectoryTree(props: {
         </div>
     )
 }
-

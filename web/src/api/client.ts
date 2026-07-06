@@ -20,6 +20,11 @@ import type {
     ProjectAgentConfig,
     ProjectCronConfig,
     ProjectToolCountsResponse,
+    ProjectPortMappingCheckResponse,
+    ProjectPortMappingCreatePayload,
+    ProjectPortMappingMutationResponse,
+    ProjectPortMappingsResponse,
+    ProjectPortMappingUpdatePayload,
     ProjectToolKind,
     ProjectToolListResponse,
     ProjectToolMutationResponse,
@@ -531,6 +536,84 @@ export class ApiClient {
 
     async getMachines(): Promise<MachinesResponse> {
         return await this.request<MachinesResponse>('/api/machines')
+    }
+
+
+    async getProjectPortMappings(
+        machineId: string,
+        projectPath: string
+    ): Promise<ProjectPortMappingsResponse> {
+        const params = new URLSearchParams()
+        params.set('projectPath', projectPath)
+        return await this.request<ProjectPortMappingsResponse>(
+            `/api/machines/${encodeURIComponent(machineId)}/port-mappings?${params.toString()}`
+        )
+    }
+
+    async createProjectPortMapping(
+        machineId: string,
+        payload: ProjectPortMappingCreatePayload
+    ): Promise<ProjectPortMappingMutationResponse> {
+        return await this.request<ProjectPortMappingMutationResponse>(
+            `/api/machines/${encodeURIComponent(machineId)}/port-mappings`,
+            {
+                method: 'POST',
+                body: JSON.stringify(payload)
+            }
+        )
+    }
+
+    async updateProjectPortMapping(
+        mappingId: string,
+        payload: ProjectPortMappingUpdatePayload
+    ): Promise<ProjectPortMappingMutationResponse> {
+        return await this.request<ProjectPortMappingMutationResponse>(
+            `/api/port-mappings/${encodeURIComponent(mappingId)}`,
+            {
+                method: 'PATCH',
+                body: JSON.stringify(payload)
+            }
+        )
+    }
+
+    async enableProjectPortMapping(
+        mappingId: string,
+        durationMs?: number
+    ): Promise<ProjectPortMappingMutationResponse> {
+        return await this.request<ProjectPortMappingMutationResponse>(
+            `/api/port-mappings/${encodeURIComponent(mappingId)}/enable`,
+            {
+                method: 'POST',
+                body: JSON.stringify(durationMs ? { durationMs } : {})
+            }
+        )
+    }
+
+    async disableProjectPortMapping(mappingId: string): Promise<ProjectPortMappingMutationResponse> {
+        return await this.request<ProjectPortMappingMutationResponse>(
+            `/api/port-mappings/${encodeURIComponent(mappingId)}/disable`,
+            { method: 'POST' }
+        )
+    }
+
+    async deleteProjectPortMapping(mappingId: string): Promise<ProjectPortMappingMutationResponse> {
+        return await this.request<ProjectPortMappingMutationResponse>(
+            `/api/port-mappings/${encodeURIComponent(mappingId)}`,
+            { method: 'DELETE' }
+        )
+    }
+
+    async checkProjectPortMapping(
+        machineId: string,
+        port: number
+    ): Promise<ProjectPortMappingCheckResponse> {
+        return await this.request<ProjectPortMappingCheckResponse>(
+            `/api/machines/${encodeURIComponent(machineId)}/port-mappings/check`,
+            {
+                method: 'POST',
+                body: JSON.stringify({ port, targetHost: '127.0.0.1' })
+            }
+        )
     }
 
     async getProjectTools<K extends ProjectToolKind>(

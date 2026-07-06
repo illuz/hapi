@@ -6,6 +6,7 @@ import { CronRunsStore } from './cronRunsStore'
 import { HistoryStore } from './historyStore'
 import { MachineStore } from './machineStore'
 import { MessageStore } from './messageStore'
+import { PortMappingsStore } from './portMappingsStore'
 import { PushStore } from './pushStore'
 import { SessionShareStore } from './sessionShareStore'
 import { SessionStore } from './sessionStore'
@@ -17,6 +18,7 @@ export type {
     StoredHistoryEntry,
     StoredMachine,
     StoredMessage,
+    StoredPortMapping,
     StoredPushSubscription,
     StoredSession,
     StoredSessionShare,
@@ -29,12 +31,13 @@ export { HistoryStore } from './historyStore'
 export type { AddHistoryEntryInput, SearchHistoryOptions, SearchHistoryResult, HistorySearchScope } from './historyStore'
 export { MachineStore } from './machineStore'
 export { MessageStore } from './messageStore'
+export { PortMappingsStore } from './portMappingsStore'
 export { PushStore } from './pushStore'
 export { SessionShareStore } from './sessionShareStore'
 export { SessionStore } from './sessionStore'
 export { UserStore } from './userStore'
 
-const SCHEMA_VERSION: number = 14
+const SCHEMA_VERSION: number = 15
 const REQUIRED_TABLES = [
     'sessions',
     'machines',
@@ -44,7 +47,8 @@ const REQUIRED_TABLES = [
     'cron_projects',
     'cron_runs',
     'conversation_history',
-    'session_shares'
+    'session_shares',
+    'port_mappings'
 ] as const
 
 export class Store {
@@ -54,6 +58,7 @@ export class Store {
     readonly sessions: SessionStore
     readonly machines: MachineStore
     readonly messages: MessageStore
+    readonly portMappings: PortMappingsStore
     readonly users: UserStore
     readonly push: PushStore
     readonly sessionShares: SessionShareStore
@@ -98,6 +103,7 @@ export class Store {
         this.sessions = new SessionStore(this.db)
         this.machines = new MachineStore(this.db)
         this.messages = new MessageStore(this.db)
+        this.portMappings = new PortMappingsStore(this.db)
         this.users = new UserStore(this.db)
         this.push = new PushStore(this.db)
         this.sessionShares = new SessionShareStore(this.db)
@@ -125,6 +131,7 @@ export class Store {
             11: () => this.migrateFromV11ToV12(),
             12: () => this.migrateFromV12ToV13(),
             13: () => this.migrateFromV13ToV14(),
+            14: () => this.migrateFromV14ToV15(),
         })
 
         if (currentVersion === 0) {
@@ -358,6 +365,30 @@ export class Store {
             CREATE UNIQUE INDEX IF NOT EXISTS idx_conversation_history_assistant_message
                 ON conversation_history(session_id, assistant_message_id)
                 WHERE assistant_message_id IS NOT NULL;
+
+            CREATE TABLE IF NOT EXISTS port_mappings (
+                id TEXT PRIMARY KEY,
+                namespace TEXT NOT NULL,
+                machine_id TEXT NOT NULL,
+                project_path TEXT NOT NULL,
+                alias TEXT NOT NULL,
+                port INTEGER NOT NULL,
+                target_host TEXT NOT NULL DEFAULT '127.0.0.1',
+                enabled INTEGER NOT NULL DEFAULT 1,
+                duration_ms INTEGER NOT NULL,
+                expires_at INTEGER,
+                last_enabled_at INTEGER,
+                access_token_hash TEXT NOT NULL UNIQUE,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                UNIQUE(namespace, alias)
+            );
+            CREATE INDEX IF NOT EXISTS idx_port_mappings_namespace_project
+                ON port_mappings(namespace, machine_id, project_path);
+            CREATE INDEX IF NOT EXISTS idx_port_mappings_alias
+                ON port_mappings(alias);
+            CREATE INDEX IF NOT EXISTS idx_port_mappings_expiry
+                ON port_mappings(enabled, expires_at);
 
             CREATE TABLE IF NOT EXISTS session_shares (
                 id TEXT PRIMARY KEY,
@@ -604,6 +635,10 @@ export class Store {
         this.createSessionShareSchema()
     }
 
+    private migrateFromV14ToV15(): void {
+        this.createPortMappingSchema()
+    }
+
     private getMessageColumnNames(): Set<string> {
         const rows = this.db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>
         return new Set(rows.map((row) => row.name))
@@ -630,6 +665,7 @@ export class Store {
         this.createHistorySchema()
         this.ensureHistoryProjectHostColumn()
         this.createSessionShareSchema()
+        this.createPortMappingSchema()
 
         const messageColumns = this.getMessageColumnNames()
         if (messageColumns.size === 0) {
@@ -717,6 +753,34 @@ export class Store {
             CREATE UNIQUE INDEX IF NOT EXISTS idx_conversation_history_assistant_message
                 ON conversation_history(session_id, assistant_message_id)
                 WHERE assistant_message_id IS NOT NULL;
+        `)
+    }
+
+    private createPortMappingSchema(): void {
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS port_mappings (
+                id TEXT PRIMARY KEY,
+                namespace TEXT NOT NULL,
+                machine_id TEXT NOT NULL,
+                project_path TEXT NOT NULL,
+                alias TEXT NOT NULL,
+                port INTEGER NOT NULL,
+                target_host TEXT NOT NULL DEFAULT '127.0.0.1',
+                enabled INTEGER NOT NULL DEFAULT 1,
+                duration_ms INTEGER NOT NULL,
+                expires_at INTEGER,
+                last_enabled_at INTEGER,
+                access_token_hash TEXT NOT NULL UNIQUE,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                UNIQUE(namespace, alias)
+            );
+            CREATE INDEX IF NOT EXISTS idx_port_mappings_namespace_project
+                ON port_mappings(namespace, machine_id, project_path);
+            CREATE INDEX IF NOT EXISTS idx_port_mappings_alias
+                ON port_mappings(alias);
+            CREATE INDEX IF NOT EXISTS idx_port_mappings_expiry
+                ON port_mappings(enabled, expires_at);
         `)
     }
 

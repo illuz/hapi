@@ -22,5 +22,6 @@ export const queryKeys = {
     skills: (sessionId: string) => ['skills', sessionId] as const,
     projectToolCounts: (projectsKey: string) => ['project-tool-counts', projectsKey] as const,
     projectTools: (machineId: string, projectPath: string, kind: 'agent' | 'cron') => ['project-tools', machineId, projectPath, kind] as const,
+    projectPortMappings: (machineId: string, projectPath: string) => ['project-port-mappings', machineId, projectPath] as const,
     cronRuns: (machineId: string, projectPath: string, cronId?: string | null) => ['cron-runs', machineId, projectPath, cronId ?? 'all'] as const,
 }

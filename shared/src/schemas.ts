@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { PortMappingsUpdatedEventSchema } from './portMappings'
 import { CODEX_COLLABORATION_MODES, PERMISSION_MODES } from './modes'
 import { AutoContinueSettingsSchema } from './autoContinue'
 import { SESSION_MARKER_COLORS } from './sessionMarkers'
@@ -249,6 +250,9 @@ export const SyncEventSchema = z.discriminatedUnion('type', [
         projectPath: z.string().optional(),
         cronId: z.string().optional(),
         cronRunId: z.string().optional()
+    }),
+    PortMappingsUpdatedEventSchema.extend({
+        type: z.literal('port-mappings-updated')
     }),
     SessionEventBaseSchema.extend({
         type: z.literal('toast'),

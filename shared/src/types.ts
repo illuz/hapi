@@ -68,3 +68,19 @@ export type {
 } from './modes'
 
 export type { ClaudeModelPreset, GeminiModelPreset } from './models'
+
+export type {
+    PortMapping,
+    PortMappingAlias,
+    PortMappingCreateRequest,
+    PortMappingEnableRequest,
+    PortMappingListResponse,
+    PortMappingMutationResponse,
+    PortMappingStatus,
+    PortMappingUpdateRequest,
+    PortMappingsUpdatedEvent,
+    PortProxyCheckRequest,
+    PortProxyCheckResponse,
+    PortProxyFetchRequest,
+    PortProxyFetchResponse
+} from './portMappings'

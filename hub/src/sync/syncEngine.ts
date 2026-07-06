@@ -41,6 +41,7 @@ import {
     type RpcUploadFileResponse
 } from './rpcGateway'
 import { ProjectToolsService } from './projectToolsService'
+import { PortMappingService } from './portMappingService'
 import { ConversationHistoryService } from './conversationHistoryService'
 import { SessionCache } from './sessionCache'
 import { isRunningAsRoot } from '../utils/runtimeUser'
@@ -117,6 +118,7 @@ export class SyncEngine {
     private readonly autoContinueService: AutoContinueService
     private readonly rpcGateway: RpcGateway
     private readonly projectToolsService: ProjectToolsService
+    private readonly portMappingService: PortMappingService
     private readonly conversationHistoryService: ConversationHistoryService
     private inactivityTimer: NodeJS.Timeout | null = null
 
@@ -144,6 +146,11 @@ export class SyncEngine {
         })
         this.rpcGateway = new RpcGateway(io, rpcRegistry)
         this.conversationHistoryService = new ConversationHistoryService(store, (sessionId) => this.getSession(sessionId))
+        this.portMappingService = new PortMappingService({
+            store,
+            rpcGateway: this.rpcGateway,
+            emit: (event) => this.eventPublisher.emit(event)
+        })
         this.projectToolsService = new ProjectToolsService({
             store,
             rpcGateway: this.rpcGateway,
@@ -402,6 +409,7 @@ export class SyncEngine {
             this.triggerDedupIfNeeded(session.id)
         }
         this.machineCache.expireInactive()
+        this.portMappingService.expireMappings()
     }
 
     private reloadAll(): void {
@@ -1297,6 +1305,47 @@ export class SyncEngine {
 
     async listOpencodeModelsForCwd(machineId: string, cwd: string): Promise<RpcListOpencodeModelsResponse> {
         return await this.rpcGateway.listOpencodeModelsForCwd(machineId, cwd)
+    }
+
+
+    listPortMappings(params: { namespace: string; machineId: string; projectPath: string }) {
+        return this.portMappingService.list(params)
+    }
+
+    createPortMapping(params: { namespace: string; machineId: string; projectPath: string; alias?: string; port: number; durationMs?: number }) {
+        return this.portMappingService.create(params)
+    }
+
+    updatePortMapping(params: { namespace: string; id: string; alias?: string; port?: number; durationMs?: number }) {
+        return this.portMappingService.update(params)
+    }
+
+    enablePortMapping(params: { namespace: string; id: string; durationMs?: number }) {
+        return this.portMappingService.enable(params)
+    }
+
+    disablePortMapping(params: { namespace: string; id: string }) {
+        return this.portMappingService.disable(params)
+    }
+
+    deletePortMapping(params: { namespace: string; id: string }) {
+        return this.portMappingService.delete(params)
+    }
+
+    checkPortMapping(params: { machineId: string; port: number; targetHost?: string }) {
+        return this.portMappingService.check(params)
+    }
+
+    proxyPortMappingFetch(params: { machineId: string; port: number; targetHost?: string; method: string; path: string; headers?: Record<string, string>; bodyBase64?: string }) {
+        return this.portMappingService.proxyFetch(params)
+    }
+
+    resolvePortProxyMapping(alias: string, accessTokens: string[]) {
+        return this.portMappingService.resolveProxyMapping(alias, accessTokens)
+    }
+
+    getPortMappingCookieName(mappingId: string): string {
+        return this.portMappingService.getCookieName(mappingId)
     }
 
     async listProjectTools(

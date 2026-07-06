@@ -9,6 +9,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve as resolvePath }
 import { logger } from '@/ui/logger'
 import { configuration } from '@/configuration'
 import type { Update, UpdateMachineBody } from '@hapi/protocol'
+import { PortProxyCheckRequestSchema, PortProxyFetchRequestSchema } from '@hapi/protocol/portMappings'
 import type { RunnerState, Machine, MachineMetadata } from './types'
 import { RunnerStateSchema, MachineMetadataSchema } from './types'
 import { backoff } from '@/utils/time'
@@ -26,6 +27,7 @@ import {
     listProjectTools,
     upsertProjectTool
 } from '../modules/common/projectToolsFs'
+import { checkPortProxyTarget, fetchPortProxyTarget } from '../modules/common/portProxy'
 import type { SpawnSessionOptions, SpawnSessionResult } from '../modules/common/rpcTypes'
 import { applyVersionedAck } from './versionedUpdate'
 import { buildSocketIoExtraHeaderOptions } from './hubExtraHeaders'
@@ -266,6 +268,23 @@ export class ApiMachineClient {
                 return await listOpencodeModelsForCwd(resolvedCwd)
             }
         )
+
+
+        this.rpcHandlerManager.registerHandler('port-proxy:check', async (params: any) => {
+            const parsed = PortProxyCheckRequestSchema.safeParse(params)
+            if (!parsed.success) {
+                return { success: false, error: 'Invalid port proxy check request' }
+            }
+            return await checkPortProxyTarget(parsed.data)
+        })
+
+        this.rpcHandlerManager.registerHandler('port-proxy:fetch', async (params: any) => {
+            const parsed = PortProxyFetchRequestSchema.safeParse(params)
+            if (!parsed.success) {
+                return { success: false, error: 'Invalid port proxy fetch request' }
+            }
+            return await fetchPortProxyTarget(parsed.data)
+        })
 
         this.rpcHandlerManager.registerHandler('project-tools:list', async (params: any) => {
             if (typeof params?.machineId === 'string' && params.machineId !== this.machine.id) {

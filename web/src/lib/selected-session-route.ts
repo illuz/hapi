@@ -1,4 +1,4 @@
-const RESERVED_SESSION_ROUTE_SEGMENTS = new Set(['new', 'project-tools', 'manage'])
+const RESERVED_SESSION_ROUTE_SEGMENTS = new Set(['new', 'project-tools', 'project-ports', 'manage'])
 
 export function getSelectedSessionIdFromRoute(sessionId: string | null | undefined): string | null {
     const normalizedSessionId = sessionId?.trim()

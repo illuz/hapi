@@ -3,6 +3,7 @@ import type {
     ProjectToolKind,
     ProjectToolCountsResult
 } from '@hapi/protocol/projectTools'
+import type { PortProxyCheckRequest, PortProxyCheckResponse, PortProxyFetchRequest, PortProxyFetchResponse } from '@hapi/protocol/portMappings'
 import type { Server } from 'socket.io'
 import type { RpcRegistry } from '../socket/rpcRegistry'
 
@@ -387,6 +388,21 @@ export class RpcGateway {
 
     async listCodexModelsForMachine(machineId: string): Promise<RpcListCodexModelsResponse> {
         return await this.machineRpc(machineId, 'listCodexModels', {}, MODEL_LIST_RPC_TIMEOUT_MS) as RpcListCodexModelsResponse
+    }
+
+
+    async checkPortMappingTarget(
+        machineId: string,
+        params: PortProxyCheckRequest
+    ): Promise<PortProxyCheckResponse> {
+        return await this.machineRpc(machineId, 'port-proxy:check', params) as PortProxyCheckResponse
+    }
+
+    async fetchPortMappingTarget(
+        machineId: string,
+        params: PortProxyFetchRequest
+    ): Promise<PortProxyFetchResponse> {
+        return await this.machineRpc(machineId, 'port-proxy:fetch', params, 60_000) as PortProxyFetchResponse
     }
 
     async listOpencodeModelsForSession(sessionId: string): Promise<RpcListOpencodeModelsResponse> {

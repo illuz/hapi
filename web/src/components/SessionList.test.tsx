@@ -105,8 +105,9 @@ function makeSession(overrides: Partial<SessionSummary> = {}): SessionSummary {
 }
 
 describe('SessionList project tools buttons', () => {
-    it('renders Agents and Cron count buttons without toggling the project row', () => {
+    it('renders Agents, Cron, and Ports buttons without toggling the project row', () => {
         const onOpenProjectTools = vi.fn()
+        const onOpenProjectPorts = vi.fn()
         render(
             <SessionList
                 sessions={[makeSession()]}
@@ -121,6 +122,7 @@ describe('SessionList project tools buttons', () => {
                     [getProjectToolCountsKey('machine-1', '/repo')!]: { agents: 2, crons: 1 }
                 }}
                 onOpenProjectTools={onOpenProjectTools}
+                onOpenProjectPorts={onOpenProjectPorts}
             />
         )
 
@@ -144,6 +146,15 @@ describe('SessionList project tools buttons', () => {
             machineId: 'machine-1',
             projectPath: '/repo',
             tab: 'cron',
+        })
+        expect(sessionTitle).toBeInTheDocument()
+
+        const portsButton = screen.getByRole('button', { name: 'Ports' })
+        expect(portsButton).toHaveTextContent('🌐')
+        fireEvent.click(portsButton)
+        expect(onOpenProjectPorts).toHaveBeenCalledWith({
+            machineId: 'machine-1',
+            projectPath: '/repo',
         })
         expect(sessionTitle).toBeInTheDocument()
     })

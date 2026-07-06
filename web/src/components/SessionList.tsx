@@ -306,11 +306,30 @@ function ProjectToolCountButton(props: {
         <button
             type="button"
             onClick={props.onClick}
-            className="shrink-0 rounded-full border border-[var(--app-border)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--app-hint)] transition-colors hover:border-[var(--app-link)] hover:text-[var(--app-link)]"
+            className="shrink-0 rounded-full border border-[var(--app-border)] px-1 py-0.5 text-[10px] font-medium text-[var(--app-hint)] transition-colors hover:border-[var(--app-link)] hover:text-[var(--app-link)]"
             aria-label={`${props.label} ${props.count}`}
             title={`${props.label}: ${props.count}`}
         >
             <span aria-hidden="true">{props.icon}</span> {props.count}
+        </button>
+    )
+}
+
+
+function ProjectToolIconButton(props: {
+    label: string
+    icon: string
+    onClick: (event: React.MouseEvent<HTMLButtonElement>) => void
+}) {
+    return (
+        <button
+            type="button"
+            onClick={props.onClick}
+            className="shrink-0 rounded-full border border-[var(--app-border)] px-1 py-0.5 text-[10px] font-medium text-[var(--app-hint)] transition-colors hover:border-[var(--app-link)] hover:text-[var(--app-link)]"
+            aria-label={props.label}
+            title={props.label}
+        >
+            <span aria-hidden="true">{props.icon}</span>
         </button>
     )
 }
@@ -1141,6 +1160,7 @@ export function SessionList(props: {
     selectedSessionId?: string | null
     projectToolCountsByKey?: ProjectToolCountsByKey
     onOpenProjectTools?: (args: { machineId: string; projectPath: string; tab: 'agents' | 'cron' }) => void
+    onOpenProjectPorts?: (args: { machineId: string; projectPath: string }) => void
 }) {
     const { t } = useTranslation()
     const { renderHeader = true, api, selectedSessionId, machineLabelsById = {} } = props
@@ -1449,6 +1469,7 @@ export function SessionList(props: {
                                         const projectToolsKey = getProjectToolCountsKey(group.machineId, group.directory)
                                         const projectToolCounts = projectToolsKey ? props.projectToolCountsByKey?.[projectToolsKey] : undefined
                                         const canOpenProjectTools = Boolean(group.machineId && props.onOpenProjectTools && group.directory !== 'Other')
+                                        const canOpenProjectPorts = Boolean(group.machineId && props.onOpenProjectPorts && group.directory !== 'Other')
                                         return (
                                             <div key={group.key}>
                                                 <div
@@ -1488,6 +1509,19 @@ export function SessionList(props: {
                                                                     })
                                                                 }}
                                                             />
+                                                            {canOpenProjectPorts ? (
+                                                                <ProjectToolIconButton
+                                                                    label="Ports"
+                                                                    icon="🌐"
+                                                                    onClick={(event) => {
+                                                                        event.stopPropagation()
+                                                                        props.onOpenProjectPorts?.({
+                                                                            machineId: group.machineId!,
+                                                                            projectPath: group.directory,
+                                                                        })
+                                                                    }}
+                                                                />
+                                                            ) : null}
                                                         </>
                                                     ) : null}
                                                     <CopyPathButton path={group.directory} className="opacity-0 group-hover/project:opacity-100 transition-opacity duration-150" />

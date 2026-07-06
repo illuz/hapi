@@ -16,6 +16,7 @@ import { createMessagesRoutes } from './routes/messages'
 import { createPermissionsRoutes } from './routes/permissions'
 import { createMachinesRoutes } from './routes/machines'
 import { createProjectToolsRoutes } from './routes/projectTools'
+import { createPortMappingRoutes, createPortProxyRoutes } from './routes/portMappings'
 import { createGitRoutes } from './routes/git'
 import { createHistoryRoutes } from './routes/history'
 import { createCliRoutes } from './routes/cli'
@@ -99,10 +100,12 @@ function createWebApp(options: {
     app.route('/api', createPermissionsRoutes(options.getSyncEngine))
     app.route('/api', createMachinesRoutes(options.getSyncEngine))
     app.route('/api', createProjectToolsRoutes(options.getSyncEngine))
+    app.route('/api', createPortMappingRoutes(options.getSyncEngine))
     app.route('/api', createHistoryRoutes(options.getSyncEngine))
     app.route('/api', createGitRoutes(options.getSyncEngine))
     app.route('/api', createPushRoutes(options.store, options.vapidPublicKey))
     app.route('/api', createVoiceRoutes())
+    app.route('/', createPortProxyRoutes(options.getSyncEngine))
 
     // Skip static serving in relay mode, show helpful message on root
     if (options.relayMode) {

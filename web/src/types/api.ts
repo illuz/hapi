@@ -14,6 +14,14 @@ import type {
     ProjectToolCountsResult,
     ProjectToolKind
 } from '@hapi/protocol/projectTools'
+import type {
+    PortMapping,
+    PortMappingCreateRequest,
+    PortMappingListResponse,
+    PortMappingMutationResponse,
+    PortMappingUpdateRequest,
+    PortProxyCheckResponse
+} from '@hapi/protocol/portMappings'
 
 export type {
     AgentFlavor,
@@ -43,6 +51,16 @@ export type {
     ProjectToolCountsResult,
     ProjectToolKind
 } from '@hapi/protocol/projectTools'
+
+export type {
+    PortMapping,
+    PortMappingCreateRequest,
+    PortMappingListResponse,
+    PortMappingMutationResponse,
+    PortMappingStatus,
+    PortMappingUpdateRequest,
+    PortProxyCheckResponse
+} from '@hapi/protocol/portMappings'
 
 export type SessionMetadataSummary = {
     path: string
@@ -305,6 +323,12 @@ export type ProjectCronRun = {
 export type CronRunsResponse = {
     runs: ProjectCronRun[]
 }
+
+export type ProjectPortMappingsResponse = PortMappingListResponse
+export type ProjectPortMappingMutationResponse = PortMappingMutationResponse
+export type ProjectPortMappingCheckResponse = PortProxyCheckResponse
+export type ProjectPortMappingCreatePayload = PortMappingCreateRequest
+export type ProjectPortMappingUpdatePayload = PortMappingUpdateRequest
 
 export type GitCommandResponse = {
     success: boolean

@@ -131,3 +131,20 @@ export type VersionedUpdateResult<T> =
     | { result: 'success'; version: number; value: T }
     | { result: 'version-mismatch'; version: number; value: T }
     | { result: 'error' }
+
+export type StoredPortMapping = {
+    id: string
+    namespace: string
+    machineId: string
+    projectPath: string
+    alias: string
+    port: number
+    targetHost: string
+    enabled: boolean
+    durationMs: number
+    expiresAt: number | null
+    lastEnabledAt: number | null
+    accessTokenHash: string
+    createdAt: number
+    updatedAt: number
+}

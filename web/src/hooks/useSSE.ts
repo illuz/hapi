@@ -217,13 +217,15 @@ export function useSSE(options: {
         projectToolCounts: boolean
         projectTools: Map<string, { machineId: string; projectPath: string; kind?: 'agent' | 'cron' }>
         cronRuns: Map<string, { machineId: string; projectPath: string; cronId?: string | null }>
+        projectPorts: Map<string, { machineId: string; projectPath: string }>
     }>({
         sessions: false,
         machines: false,
         sessionIds: new Set(),
         projectToolCounts: false,
         projectTools: new Map(),
-        cronRuns: new Map()
+        cronRuns: new Map(),
+        projectPorts: new Map()
     })
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const reconnectAttemptRef = useRef(0)
@@ -271,6 +273,7 @@ export function useSSE(options: {
             pendingInvalidationsRef.current.projectToolCounts = false
             pendingInvalidationsRef.current.projectTools.clear()
             pendingInvalidationsRef.current.cronRuns.clear()
+            pendingInvalidationsRef.current.projectPorts.clear()
             if (reconnectTimerRef.current) {
                 clearTimeout(reconnectTimerRef.current)
                 reconnectTimerRef.current = null
@@ -336,6 +339,7 @@ export function useSSE(options: {
                 && !pending.projectToolCounts
                 && pending.projectTools.size === 0
                 && pending.cronRuns.size === 0
+                && pending.projectPorts.size === 0
             ) {
                 return
             }
@@ -346,6 +350,7 @@ export function useSSE(options: {
             const shouldInvalidateProjectToolCounts = pending.projectToolCounts
             const projectTools = Array.from(pending.projectTools.values())
             const cronRuns = Array.from(pending.cronRuns.values())
+            const projectPorts = Array.from(pending.projectPorts.values())
 
             pending.sessions = false
             pending.machines = false
@@ -353,6 +358,7 @@ export function useSSE(options: {
             pending.projectToolCounts = false
             pending.projectTools.clear()
             pending.cronRuns.clear()
+            pending.projectPorts.clear()
 
             const tasks: Array<Promise<unknown>> = []
             if (shouldInvalidateSessions) {
@@ -380,6 +386,11 @@ export function useSSE(options: {
                         queryKey: queryKeys.projectTools(item.machineId, item.projectPath, 'cron')
                     }))
                 }
+            }
+            for (const item of projectPorts) {
+                tasks.push(queryClient.invalidateQueries({
+                    queryKey: queryKeys.projectPortMappings(item.machineId, item.projectPath)
+                }))
             }
             for (const item of cronRuns) {
                 tasks.push(queryClient.invalidateQueries({
@@ -426,6 +437,15 @@ export function useSSE(options: {
             pendingInvalidationsRef.current.projectTools.set(
                 `${event.machineId}::${event.projectPath}`,
                 { machineId: event.machineId, projectPath: event.projectPath, kind: event.kind }
+            )
+            scheduleInvalidationFlush()
+        }
+
+
+        const queueProjectPortsInvalidation = (event: Extract<SyncEvent, { type: 'port-mappings-updated' }>) => {
+            pendingInvalidationsRef.current.projectPorts.set(
+                `${event.machineId}::${event.projectPath}`,
+                { machineId: event.machineId, projectPath: event.projectPath }
             )
             scheduleInvalidationFlush()
         }
@@ -664,6 +684,10 @@ export function useSSE(options: {
                 queueCronRunsInvalidation(event)
             }
 
+            if (event.type === 'port-mappings-updated') {
+                queueProjectPortsInvalidation(event)
+            }
+
             onEventRef.current(event)
         }
 
@@ -745,6 +769,10 @@ export function useSSE(options: {
             pendingInvalidationsRef.current.sessions = false
             pendingInvalidationsRef.current.machines = false
             pendingInvalidationsRef.current.sessionIds.clear()
+            pendingInvalidationsRef.current.projectToolCounts = false
+            pendingInvalidationsRef.current.projectTools.clear()
+            pendingInvalidationsRef.current.cronRuns.clear()
+            pendingInvalidationsRef.current.projectPorts.clear()
             if (reconnectTimerRef.current) {
                 clearTimeout(reconnectTimerRef.current)
                 reconnectTimerRef.current = null

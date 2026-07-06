@@ -18,6 +18,7 @@ import { SessionList } from '@/components/SessionList'
 import { SessionSidebarMoreMenu } from '@/components/SessionSidebarMoreMenu'
 import { SessionManagementPanel } from '@/components/SessionManagementPanel'
 import { ProjectToolsPanel } from '@/components/ProjectToolsPanel'
+import { ProjectPortsPanel } from '@/components/ProjectPortsPanel'
 import { NewSession } from '@/components/NewSession'
 import { WorkspaceBrowser } from '@/components/WorkspaceBrowser'
 import { LoadingState } from '@/components/LoadingState'
@@ -285,6 +286,10 @@ function SessionsPage() {
                             to: '/sessions/project-tools',
                             search: { machineId, projectPath, tab }
                         })}
+                        onOpenProjectPorts={({ machineId, projectPath }) => navigate({
+                            to: '/sessions/project-ports',
+                            search: { machineId, projectPath }
+                        })}
                     />
                 </div>
             </div>
@@ -347,6 +352,32 @@ function ProjectToolsRoutePage() {
                 to: '/sessions/$sessionId',
                 params: { sessionId }
             })}
+        />
+    )
+}
+
+
+function ProjectPortsRoutePage() {
+    const { api } = useAppContext()
+    const navigate = useNavigate()
+    const goBack = useAppGoBack()
+    const search = projectPortsRoute.useSearch()
+
+    if (!search.machineId || !search.projectPath) {
+        return (
+            <SessionUnavailableState
+                error="Choose a project from the session list to manage port mappings."
+                onBack={() => { void navigate({ to: '/sessions' }) }}
+            />
+        )
+    }
+
+    return (
+        <ProjectPortsPanel
+            api={api}
+            machineId={search.machineId}
+            projectPath={search.projectPath}
+            onClose={goBack}
         />
     )
 }
@@ -778,6 +809,28 @@ const projectToolsRoute = createRoute({
     component: ProjectToolsRoutePage,
 })
 
+
+type ProjectPortsSearch = {
+    machineId?: string
+    projectPath?: string
+}
+
+const projectPortsRoute = createRoute({
+    getParentRoute: () => sessionsRoute,
+    path: 'project-ports',
+    validateSearch: (search: Record<string, unknown>): ProjectPortsSearch => {
+        const result: ProjectPortsSearch = {}
+        if (typeof search.machineId === 'string' && search.machineId) {
+            result.machineId = search.machineId
+        }
+        if (typeof search.projectPath === 'string' && search.projectPath) {
+            result.projectPath = search.projectPath
+        }
+        return result
+    },
+    component: ProjectPortsRoutePage,
+})
+
 const sessionManageRoute = createRoute({
     getParentRoute: () => sessionsRoute,
     path: 'manage',
@@ -900,6 +953,7 @@ export const routeTree = rootRoute.addChildren([
         newSessionRoute,
         sessionManageRoute,
         projectToolsRoute,
+        projectPortsRoute,
         sessionDetailRoute.addChildren([
             sessionTerminalRoute,
             sessionFilesRoute,

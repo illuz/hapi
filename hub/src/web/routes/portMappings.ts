@@ -116,8 +116,16 @@ export function createPortMappingRoutes(getSyncEngine: () => SyncEngine | null):
             machineId,
             projectPath: parsed.data.projectPath,
             alias: parsed.data.alias,
-            port: parsed.data.port,
-            durationMs: parsed.data.durationMs
+            durationMs: parsed.data.durationMs,
+            ...(parsed.data.targetType === 'port'
+                ? {
+                    targetType: 'port' as const,
+                    port: parsed.data.port
+                }
+                : {
+                    targetType: 'static' as const,
+                    staticPath: parsed.data.staticPath
+                })
         })
         if (result.type === 'error') {
             return c.json({ error: result.message, code: result.code }, toHttpStatus(result.code))
@@ -141,6 +149,7 @@ export function createPortMappingRoutes(getSyncEngine: () => SyncEngine | null):
             id: c.req.param('mappingId'),
             alias: parsed.data.alias,
             port: parsed.data.port,
+            staticPath: parsed.data.staticPath,
             durationMs: parsed.data.durationMs
         })
         if (result.type === 'error') {
@@ -224,7 +233,7 @@ async function handlePortProxyRequest(c: Context<WebAppEnv>, getSyncEngine: () =
     const tokens = [tokenFromQuery, ...cookieTokens].filter((value): value is string => Boolean(value))
     const resolved = engine.resolvePortProxyMapping(alias, tokens)
     if (!resolved) {
-        return new Response('Port mapping is disabled, expired, or unauthorized.', { status: 403 })
+        return new Response('Mapping is disabled, expired, or unauthorized.', { status: 403 })
     }
 
     if (tokenFromQuery) {
@@ -247,9 +256,7 @@ async function handlePortProxyRequest(c: Context<WebAppEnv>, getSyncEngine: () =
     }
 
     const proxied = await engine.proxyPortMappingFetch({
-        machineId: resolved.mapping.machineId,
-        port: resolved.mapping.port,
-        targetHost: resolved.mapping.targetHost,
+        mapping: resolved.mapping,
         method: c.req.raw.method,
         path: targetPath,
         headers: requestHeaders,
@@ -300,7 +307,7 @@ async function readProxyRequestBody(request: Request): Promise<string | undefine
     }
     const buffer = Buffer.from(await request.arrayBuffer())
     if (buffer.byteLength > MAX_PROXY_BODY_BYTES) {
-        return new Response('Request body too large for port proxy.', { status: 413 })
+        return new Response('Request body too large for mapping proxy.', { status: 413 })
     }
     return buffer.byteLength > 0 ? buffer.toString('base64') : undefined
 }
@@ -347,9 +354,11 @@ function rewriteLocationHeader(value: string, mapping: PortMapping): string {
     const prefix = `/ports/${mapping.alias}`
     try {
         const parsed = new URL(value)
-        const targetOrigin = `http://${mapping.targetHost}:${mapping.port}`
-        if (parsed.origin === targetOrigin) {
-            return `${prefix}${parsed.pathname}${parsed.search}${parsed.hash}`
+        if (mapping.targetType === 'port' && mapping.targetHost && mapping.port) {
+            const targetOrigin = `http://${mapping.targetHost}:${mapping.port}`
+            if (parsed.origin === targetOrigin) {
+                return `${prefix}${parsed.pathname}${parsed.search}${parsed.hash}`
+            }
         }
         return value
     } catch {

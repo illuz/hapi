@@ -3,7 +3,13 @@ import type {
     ProjectToolKind,
     ProjectToolCountsResult
 } from '@hapi/protocol/projectTools'
-import type { PortProxyCheckRequest, PortProxyCheckResponse, PortProxyFetchRequest, PortProxyFetchResponse } from '@hapi/protocol/portMappings'
+import type {
+    PortProxyCheckRequest,
+    PortProxyCheckResponse,
+    PortProxyFetchRequest,
+    PortProxyFetchResponse,
+    StaticSiteProxyFetchRequest
+} from '@hapi/protocol/portMappings'
 import type { Server } from 'socket.io'
 import type { RpcRegistry } from '../socket/rpcRegistry'
 
@@ -403,6 +409,13 @@ export class RpcGateway {
         params: PortProxyFetchRequest
     ): Promise<PortProxyFetchResponse> {
         return await this.machineRpc(machineId, 'port-proxy:fetch', params, 60_000) as PortProxyFetchResponse
+    }
+
+    async fetchStaticSiteContent(
+        machineId: string,
+        params: StaticSiteProxyFetchRequest
+    ): Promise<PortProxyFetchResponse> {
+        return await this.machineRpc(machineId, 'static-site:fetch', params, 60_000) as PortProxyFetchResponse
     }
 
     async listOpencodeModelsForSession(sessionId: string): Promise<RpcListOpencodeModelsResponse> {

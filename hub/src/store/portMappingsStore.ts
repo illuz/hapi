@@ -8,8 +8,10 @@ type DbPortMappingRow = {
     machine_id: string
     project_path: string
     alias: string
+    target_type: 'port' | 'static'
     port: number
     target_host: string
+    static_path: string | null
     enabled: number
     duration_ms: number
     expires_at: number | null
@@ -19,17 +21,29 @@ type DbPortMappingRow = {
     updated_at: number
 }
 
+type PortMappingTargetInput =
+    | {
+        targetType: 'port'
+        port: number
+        targetHost?: string
+        staticPath?: never
+    }
+    | {
+        targetType: 'static'
+        staticPath: string
+        port?: never
+        targetHost?: never
+    }
+
 export type CreatePortMappingInput = {
     namespace: string
     machineId: string
     projectPath: string
     alias: string
-    port: number
-    targetHost?: string
     durationMs: number
     accessTokenHash: string
     now?: number
-}
+} & PortMappingTargetInput
 
 export type ListPortMappingsOptions = {
     namespace: string
@@ -40,6 +54,7 @@ export type ListPortMappingsOptions = {
 export type UpdatePortMappingInput = {
     alias?: string
     port?: number
+    staticPath?: string
     durationMs?: number
 }
 
@@ -50,8 +65,10 @@ function toStoredPortMapping(row: DbPortMappingRow): StoredPortMapping {
         machineId: row.machine_id,
         projectPath: row.project_path,
         alias: row.alias,
+        targetType: row.target_type,
         port: row.port,
         targetHost: row.target_host,
+        staticPath: row.static_path,
         enabled: row.enabled === 1,
         durationMs: row.duration_ms,
         expiresAt: row.expires_at,
@@ -68,17 +85,16 @@ export class PortMappingsStore {
     create(input: CreatePortMappingInput): StoredPortMapping {
         const now = input.now ?? Date.now()
         const id = randomUUID()
-        const targetHost = input.targetHost ?? '127.0.0.1'
         const expiresAt = now + input.durationMs
 
         this.db.prepare(`
             INSERT INTO port_mappings (
-                id, namespace, machine_id, project_path, alias, port, target_host,
-                enabled, duration_ms, expires_at, last_enabled_at, access_token_hash,
+                id, namespace, machine_id, project_path, alias, target_type, port, target_host,
+                static_path, enabled, duration_ms, expires_at, last_enabled_at, access_token_hash,
                 created_at, updated_at
             ) VALUES (
-                @id, @namespace, @machine_id, @project_path, @alias, @port, @target_host,
-                1, @duration_ms, @expires_at, @last_enabled_at, @access_token_hash,
+                @id, @namespace, @machine_id, @project_path, @alias, @target_type, @port, @target_host,
+                @static_path, 1, @duration_ms, @expires_at, @last_enabled_at, @access_token_hash,
                 @created_at, @updated_at
             )
         `).run({
@@ -87,8 +103,10 @@ export class PortMappingsStore {
             machine_id: input.machineId,
             project_path: input.projectPath,
             alias: input.alias,
-            port: input.port,
-            target_host: targetHost,
+            target_type: input.targetType,
+            port: input.targetType === 'port' ? input.port : 0,
+            target_host: input.targetType === 'port' ? (input.targetHost ?? '127.0.0.1') : '',
+            static_path: input.targetType === 'static' ? input.staticPath : null,
             duration_ms: input.durationMs,
             expires_at: expiresAt,
             last_enabled_at: now,
@@ -151,6 +169,7 @@ export class PortMappingsStore {
             UPDATE port_mappings
             SET alias = @alias,
                 port = @port,
+                static_path = @static_path,
                 duration_ms = @duration_ms,
                 expires_at = @expires_at,
                 updated_at = @updated_at
@@ -159,7 +178,8 @@ export class PortMappingsStore {
             namespace,
             id,
             alias: input.alias ?? current.alias,
-            port: input.port ?? current.port,
+            port: current.targetType === 'port' ? (input.port ?? current.port) : current.port,
+            static_path: current.targetType === 'static' ? (input.staticPath ?? current.staticPath) : current.staticPath,
             duration_ms: nextDurationMs,
             expires_at: nextExpiresAt,
             updated_at: now

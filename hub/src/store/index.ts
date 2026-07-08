@@ -37,7 +37,7 @@ export { SessionShareStore } from './sessionShareStore'
 export { SessionStore } from './sessionStore'
 export { UserStore } from './userStore'
 
-const SCHEMA_VERSION: number = 15
+const SCHEMA_VERSION: number = 16
 const REQUIRED_TABLES = [
     'sessions',
     'machines',
@@ -132,6 +132,7 @@ export class Store {
             12: () => this.migrateFromV12ToV13(),
             13: () => this.migrateFromV13ToV14(),
             14: () => this.migrateFromV14ToV15(),
+            15: () => this.migrateFromV15ToV16(),
         })
 
         if (currentVersion === 0) {
@@ -372,8 +373,10 @@ export class Store {
                 machine_id TEXT NOT NULL,
                 project_path TEXT NOT NULL,
                 alias TEXT NOT NULL,
+                target_type TEXT NOT NULL DEFAULT 'port',
                 port INTEGER NOT NULL,
                 target_host TEXT NOT NULL DEFAULT '127.0.0.1',
+                static_path TEXT,
                 enabled INTEGER NOT NULL DEFAULT 1,
                 duration_ms INTEGER NOT NULL,
                 expires_at INTEGER,
@@ -639,6 +642,10 @@ export class Store {
         this.createPortMappingSchema()
     }
 
+    private migrateFromV15ToV16(): void {
+        this.ensurePortMappingColumns()
+    }
+
     private getMessageColumnNames(): Set<string> {
         const rows = this.db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>
         return new Set(rows.map((row) => row.name))
@@ -764,8 +771,10 @@ export class Store {
                 machine_id TEXT NOT NULL,
                 project_path TEXT NOT NULL,
                 alias TEXT NOT NULL,
+                target_type TEXT NOT NULL DEFAULT 'port',
                 port INTEGER NOT NULL,
                 target_host TEXT NOT NULL DEFAULT '127.0.0.1',
+                static_path TEXT,
                 enabled INTEGER NOT NULL DEFAULT 1,
                 duration_ms INTEGER NOT NULL,
                 expires_at INTEGER,
@@ -782,6 +791,20 @@ export class Store {
             CREATE INDEX IF NOT EXISTS idx_port_mappings_expiry
                 ON port_mappings(enabled, expires_at);
         `)
+        this.ensurePortMappingColumns()
+    }
+
+    private ensurePortMappingColumns(): void {
+        const rows = this.db.prepare('PRAGMA table_info(port_mappings)').all() as Array<{ name: string }>
+        if (rows.length === 0) {
+            return
+        }
+        if (!rows.some((row) => row.name === 'target_type')) {
+            this.db.exec("ALTER TABLE port_mappings ADD COLUMN target_type TEXT NOT NULL DEFAULT 'port'")
+        }
+        if (!rows.some((row) => row.name === 'static_path')) {
+            this.db.exec('ALTER TABLE port_mappings ADD COLUMN static_path TEXT')
+        }
     }
 
     private createSessionShareSchema(): void {

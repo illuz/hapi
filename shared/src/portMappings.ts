@@ -14,6 +14,12 @@ export const PortMappingAliasSchema = z.string()
 export const PortMappingPortSchema = z.number().int().min(1).max(65535)
 export const PortMappingDurationMsSchema = z.number().int().min(60_000).max(24 * 60 * 60_000)
 export const PortMappingStatusSchema = z.enum(['active', 'disabled', 'expired'])
+export const PortMappingTargetTypeSchema = z.enum(['port', 'static'])
+export const PortMappingStaticPathSchema = z.string()
+    .trim()
+    .min(1)
+    .max(240)
+    .refine((value) => !/[\0\r\n]/.test(value), 'Static path cannot contain control characters')
 
 export const PortMappingSchema = z.object({
     id: NonEmptyTrimmedStringSchema,
@@ -21,8 +27,10 @@ export const PortMappingSchema = z.object({
     machineId: NonEmptyTrimmedStringSchema,
     projectPath: NonEmptyTrimmedStringSchema,
     alias: PortMappingAliasSchema,
-    port: PortMappingPortSchema,
-    targetHost: NonEmptyTrimmedStringSchema.default('127.0.0.1'),
+    targetType: PortMappingTargetTypeSchema,
+    port: PortMappingPortSchema.nullable(),
+    targetHost: NonEmptyTrimmedStringSchema.nullable(),
+    staticPath: PortMappingStaticPathSchema.nullable(),
     enabled: z.boolean(),
     status: PortMappingStatusSchema,
     durationMs: PortMappingDurationMsSchema,
@@ -37,16 +45,27 @@ export const PortMappingListResponseSchema = z.object({
     mappings: z.array(PortMappingSchema)
 })
 
-export const PortMappingCreateRequestSchema = z.object({
-    projectPath: NonEmptyTrimmedStringSchema,
-    alias: PortMappingAliasSchema.optional(),
-    port: PortMappingPortSchema,
-    durationMs: PortMappingDurationMsSchema.optional()
-})
+export const PortMappingCreateRequestSchema = z.discriminatedUnion('targetType', [
+    z.object({
+        targetType: z.literal('port'),
+        projectPath: NonEmptyTrimmedStringSchema,
+        alias: PortMappingAliasSchema.optional(),
+        port: PortMappingPortSchema,
+        durationMs: PortMappingDurationMsSchema.optional()
+    }),
+    z.object({
+        targetType: z.literal('static'),
+        projectPath: NonEmptyTrimmedStringSchema,
+        alias: PortMappingAliasSchema.optional(),
+        staticPath: PortMappingStaticPathSchema,
+        durationMs: PortMappingDurationMsSchema.optional()
+    })
+])
 
 export const PortMappingUpdateRequestSchema = z.object({
     alias: PortMappingAliasSchema.optional(),
     port: PortMappingPortSchema.optional(),
+    staticPath: PortMappingStaticPathSchema.optional(),
     durationMs: PortMappingDurationMsSchema.optional()
 }).refine((value) => Object.keys(value).length > 0, 'At least one field is required')
 
@@ -65,6 +84,7 @@ export const PortMappingsUpdatedEventSchema = z.object({
     projectPath: NonEmptyTrimmedStringSchema,
     mappingId: NonEmptyTrimmedStringSchema.optional(),
     alias: PortMappingAliasSchema.optional(),
+    targetType: PortMappingTargetTypeSchema.optional(),
     status: PortMappingStatusSchema.optional()
 })
 
@@ -101,8 +121,19 @@ export const PortProxyCheckResponseSchema = z.discriminatedUnion('success', [
     z.object({ success: z.literal(false), error: z.string() })
 ])
 
+export const StaticSiteProxyFetchRequestSchema = z.object({
+    projectPath: NonEmptyTrimmedStringSchema,
+    staticPath: PortMappingStaticPathSchema,
+    method: NonEmptyTrimmedStringSchema,
+    path: z.string().startsWith('/'),
+    headers: z.record(z.string(), z.string()).optional(),
+    bodyBase64: z.string().optional()
+})
+
 export type PortMappingAlias = z.infer<typeof PortMappingAliasSchema>
 export type PortMappingStatus = z.infer<typeof PortMappingStatusSchema>
+export type PortMappingTargetType = z.infer<typeof PortMappingTargetTypeSchema>
+export type PortMappingStaticPath = z.infer<typeof PortMappingStaticPathSchema>
 export type PortMapping = z.infer<typeof PortMappingSchema>
 export type PortMappingListResponse = z.infer<typeof PortMappingListResponseSchema>
 export type PortMappingCreateRequest = z.infer<typeof PortMappingCreateRequestSchema>
@@ -114,3 +145,4 @@ export type PortProxyFetchRequest = z.infer<typeof PortProxyFetchRequestSchema>
 export type PortProxyFetchResponse = z.infer<typeof PortProxyFetchResponseSchema>
 export type PortProxyCheckRequest = z.infer<typeof PortProxyCheckRequestSchema>
 export type PortProxyCheckResponse = z.infer<typeof PortProxyCheckResponseSchema>
+export type StaticSiteProxyFetchRequest = z.infer<typeof StaticSiteProxyFetchRequestSchema>

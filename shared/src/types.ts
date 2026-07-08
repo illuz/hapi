@@ -76,11 +76,14 @@ export type {
     PortMappingEnableRequest,
     PortMappingListResponse,
     PortMappingMutationResponse,
+    PortMappingStaticPath,
     PortMappingStatus,
+    PortMappingTargetType,
     PortMappingUpdateRequest,
     PortMappingsUpdatedEvent,
     PortProxyCheckRequest,
     PortProxyCheckResponse,
     PortProxyFetchRequest,
-    PortProxyFetchResponse
+    PortProxyFetchResponse,
+    StaticSiteProxyFetchRequest
 } from './portMappings'

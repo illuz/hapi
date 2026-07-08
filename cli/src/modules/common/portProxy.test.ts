@@ -1,9 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import type { AddressInfo } from 'node:net'
-import { checkPortProxyTarget, fetchPortProxyTarget } from './portProxy'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { checkPortProxyTarget, fetchPortProxyTarget, fetchStaticSiteContent } from './portProxy'
 
 let server: Server | null = null
+let sandboxDir: string | null = null
 
 function readRequestBody(request: IncomingMessage): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -42,6 +46,10 @@ async function stopServer(): Promise<void> {
 
 afterEach(async () => {
     await stopServer()
+    if (sandboxDir) {
+        await rm(sandboxDir, { recursive: true, force: true })
+        sandboxDir = null
+    }
 })
 
 describe('portProxy', () => {
@@ -128,6 +136,77 @@ describe('portProxy', () => {
         })).resolves.toMatchObject({
             success: false,
             error: expect.stringContaining('Invalid proxy path')
+        })
+    })
+
+    it('serves static directories with index files and SPA fallback', async () => {
+        sandboxDir = await mkdtemp(join(tmpdir(), 'hapi-static-mapping-'))
+        const projectDir = join(sandboxDir, 'project')
+        const distDir = join(projectDir, 'dist')
+        await mkdir(join(distDir, 'assets'), { recursive: true })
+        await writeFile(join(distDir, 'index.html'), '<html>home</html>')
+        await writeFile(join(distDir, 'assets', 'main.js'), 'console.log("ok")')
+
+        const root = await fetchStaticSiteContent({
+            projectPath: projectDir,
+            staticPath: 'dist',
+            method: 'GET',
+            path: '/'
+        })
+        expect(root.success).toBe(true)
+        if (!root.success) return
+        expect(root.status).toBe(200)
+        expect(Buffer.from(root.bodyBase64 ?? '', 'base64').toString('utf8')).toBe('<html>home</html>')
+
+        const asset = await fetchStaticSiteContent({
+            projectPath: projectDir,
+            staticPath: 'dist',
+            method: 'GET',
+            path: '/assets/main.js'
+        })
+        expect(asset.success).toBe(true)
+        if (!asset.success) return
+        expect(asset.headers['content-type']).toContain('application/javascript')
+
+        const spa = await fetchStaticSiteContent({
+            projectPath: projectDir,
+            staticPath: 'dist',
+            method: 'GET',
+            path: '/dashboard/settings'
+        })
+        expect(spa.success).toBe(true)
+        if (!spa.success) return
+        expect(spa.status).toBe(200)
+        expect(Buffer.from(spa.bodyBase64 ?? '', 'base64').toString('utf8')).toBe('<html>home</html>')
+    })
+
+    it('blocks static mappings from escaping the project root and rejects unsupported methods', async () => {
+        sandboxDir = await mkdtemp(join(tmpdir(), 'hapi-static-mapping-'))
+        const projectDir = join(sandboxDir, 'project')
+        const distDir = join(projectDir, 'dist')
+        await mkdir(distDir, { recursive: true })
+        await writeFile(join(distDir, 'index.html'), '<html>home</html>')
+
+        const forbidden = await fetchStaticSiteContent({
+            projectPath: projectDir,
+            staticPath: '../outside',
+            method: 'GET',
+            path: '/'
+        })
+        expect(forbidden).toMatchObject({
+            success: true,
+            status: 403
+        })
+
+        const methodNotAllowed = await fetchStaticSiteContent({
+            projectPath: projectDir,
+            staticPath: 'dist',
+            method: 'POST',
+            path: '/'
+        })
+        expect(methodNotAllowed).toMatchObject({
+            success: true,
+            status: 405
         })
     })
 })

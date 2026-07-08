@@ -6,15 +6,23 @@ import { useProjectPortMappings } from '@/hooks/queries/useProjectPortMappings'
 
 const DEFAULT_DURATION_MINUTES = 30
 const DEFAULT_PORT = '8080'
+const DEFAULT_STATIC_PATH = 'dist'
 
 function getProjectName(projectPath: string): string {
     const parts = projectPath.split(/[\\/]+/).filter(Boolean)
     return parts[parts.length - 1] || 'project'
 }
 
-function buildDefaultAlias(projectPath: string, port: string): string {
-    const projectName = getProjectName(projectPath).replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'project'
-    return `${projectName}_${port || DEFAULT_PORT}`.slice(0, 80)
+function sanitizeAliasPart(value: string): string {
+    return value.replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '')
+}
+
+function buildDefaultAlias(projectPath: string, target: string): string {
+    const projectName = sanitizeAliasPart(getProjectName(projectPath)) || 'project'
+    const targetParts = target.split(/[\\/]+/).filter(Boolean)
+    const targetLeaf = targetParts[targetParts.length - 1] || 'static'
+    const targetName = sanitizeAliasPart(targetLeaf) || 'static'
+    return `${projectName}_${targetName}`.slice(0, 80)
 }
 
 function formatDuration(ms: number): string {
@@ -64,6 +72,32 @@ async function copyText(value: string): Promise<void> {
     textarea.remove()
 }
 
+function getMappingSummary(mapping: PortMapping): string {
+    if (mapping.targetType === 'static') {
+        return `${mapping.staticPath ?? '—'} → /ports/${mapping.alias}/ · ${getRemainingLabel(mapping)}`
+    }
+    return `127.0.0.1:${mapping.port ?? '—'} → /ports/${mapping.alias}/ · ${getRemainingLabel(mapping)}`
+}
+
+function getModeCopy(mode: PortMapping['targetType']) {
+    if (mode === 'static') {
+        return {
+            title: '静态文件映射',
+            helper: '把项目内的构建产物目录临时暴露成静态文件服务，默认有效 30 分钟。',
+            empty: '还没有静态文件映射。输入目录，例如 dist 或 build，创建后即可通过子路径访问。',
+            createSuccess: '静态文件映射已创建。',
+            renewSuccess: '静态文件映射已启用。',
+        }
+    }
+    return {
+        title: '端口映射',
+        helper: '把项目端口临时暴露出去，默认有效 30 分钟。访问链接会通过一次性 token 设置临时 cookie。',
+        empty: '还没有端口映射。输入端口，例如 8080，创建后即可通过子路径访问。',
+        createSuccess: '端口映射已创建。',
+        renewSuccess: '端口映射已启用。',
+    }
+}
+
 export function ProjectPortsPanel(props: {
     api: ApiClient | null
     machineId: string
@@ -73,8 +107,11 @@ export function ProjectPortsPanel(props: {
     const target = useMemo(() => ({ machineId: props.machineId, projectPath: props.projectPath }), [props.machineId, props.projectPath])
     const { mappings, isLoading, error, refetch } = useProjectPortMappings(props.api, target)
     const actions = useProjectPortMappingActions(props.api)
+    const [mode, setMode] = useState<PortMapping['targetType']>('port')
     const [port, setPort] = useState(DEFAULT_PORT)
-    const [alias, setAlias] = useState(() => buildDefaultAlias(props.projectPath, DEFAULT_PORT))
+    const [staticPath, setStaticPath] = useState(DEFAULT_STATIC_PATH)
+    const [portAlias, setPortAlias] = useState(() => buildDefaultAlias(props.projectPath, DEFAULT_PORT))
+    const [staticAlias, setStaticAlias] = useState(() => buildDefaultAlias(props.projectPath, DEFAULT_STATIC_PATH))
     const [durationMinutes, setDurationMinutes] = useState(String(DEFAULT_DURATION_MINUTES))
     const [message, setMessage] = useState<string | null>(null)
     const [actionError, setActionError] = useState<string | null>(null)
@@ -82,6 +119,11 @@ export function ProjectPortsPanel(props: {
     const [latestAccessUrl, setLatestAccessUrl] = useState<string | null>(null)
 
     const durationMs = Math.max(1, Number.parseInt(durationMinutes, 10) || DEFAULT_DURATION_MINUTES) * 60_000
+    const modeCopy = getModeCopy(mode)
+    const visibleMappings = useMemo(
+        () => mappings.filter((mapping) => mapping.targetType === mode),
+        [mappings, mode]
+    )
 
     const resetFeedback = () => {
         setMessage(null)
@@ -90,26 +132,49 @@ export function ProjectPortsPanel(props: {
 
     const createMapping = async () => {
         resetFeedback()
-        const parsedPort = Number.parseInt(port, 10)
-        if (!Number.isInteger(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
-            setActionError('请输入 1-65535 之间的端口。')
-            return
-        }
         try {
+            if (mode === 'port') {
+                const parsedPort = Number.parseInt(port, 10)
+                if (!Number.isInteger(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
+                    setActionError('请输入 1-65535 之间的端口。')
+                    return
+                }
+                const result = await actions.createPortMapping({
+                    ...target,
+                    targetType: 'port',
+                    port: parsedPort,
+                    alias: portAlias.trim() || undefined,
+                    durationMs
+                })
+                if (result.accessUrl) {
+                    setLastAccessUrls((prev) => ({ ...prev, [result.mapping.id]: result.accessUrl! }))
+                    setLatestAccessUrl(result.accessUrl)
+                }
+                setMessage(`${modeCopy.createSuccess} 有效期 ${formatDuration(durationMs)}。`)
+                setPortAlias(buildDefaultAlias(props.projectPath, port))
+                return
+            }
+
+            const trimmedStaticPath = staticPath.trim()
+            if (!trimmedStaticPath) {
+                setActionError('请输入项目内的静态目录，例如 dist。')
+                return
+            }
             const result = await actions.createPortMapping({
                 ...target,
-                port: parsedPort,
-                alias: alias.trim() || undefined,
+                targetType: 'static',
+                staticPath: trimmedStaticPath,
+                alias: staticAlias.trim() || undefined,
                 durationMs
             })
             if (result.accessUrl) {
                 setLastAccessUrls((prev) => ({ ...prev, [result.mapping.id]: result.accessUrl! }))
                 setLatestAccessUrl(result.accessUrl)
             }
-            setMessage(`端口映射已创建，有效期 ${formatDuration(durationMs)}。`)
-            setAlias(buildDefaultAlias(props.projectPath, port))
+            setMessage(`${modeCopy.createSuccess} 有效期 ${formatDuration(durationMs)}。`)
+            setStaticAlias(buildDefaultAlias(props.projectPath, staticPath))
         } catch (err) {
-            setActionError(err instanceof Error ? err.message : '创建端口映射失败。')
+            setActionError(err instanceof Error ? err.message : '创建映射失败。')
         }
     }
 
@@ -141,9 +206,9 @@ export function ProjectPortsPanel(props: {
                 setLatestAccessUrl(result.accessUrl)
                 if (openAfter) openAccessUrl(result.accessUrl)
             }
-            setMessage(`映射已启用，并续期 ${formatDuration(mapping.durationMs || durationMs)}。`)
+            setMessage(`${getModeCopy(mapping.targetType).renewSuccess} 并续期 ${formatDuration(mapping.durationMs || durationMs)}。`)
         } catch (err) {
-            setActionError(err instanceof Error ? err.message : '启用端口映射失败。')
+            setActionError(err instanceof Error ? err.message : '启用映射失败。')
         }
     }
 
@@ -189,9 +254,9 @@ export function ProjectPortsPanel(props: {
         resetFeedback()
         try {
             await actions.disablePortMapping({ ...target, mappingId: mapping.id })
-            setMessage('端口映射已禁用。')
+            setMessage('映射已禁用。')
         } catch (err) {
-            setActionError(err instanceof Error ? err.message : '禁用端口映射失败。')
+            setActionError(err instanceof Error ? err.message : '禁用映射失败。')
         }
     }
 
@@ -199,9 +264,9 @@ export function ProjectPortsPanel(props: {
         resetFeedback()
         try {
             await actions.deletePortMapping({ ...target, mappingId: mapping.id })
-            setMessage('端口映射已删除。')
+            setMessage('映射已删除。')
         } catch (err) {
-            setActionError(err instanceof Error ? err.message : '删除端口映射失败。')
+            setActionError(err instanceof Error ? err.message : '删除映射失败。')
         }
     }
 
@@ -209,7 +274,7 @@ export function ProjectPortsPanel(props: {
         <div className="flex h-full min-h-0 flex-col bg-[var(--app-bg)] text-[var(--app-fg)]">
             <div className="flex items-center gap-3 border-b border-[var(--app-border)] p-3 pt-[calc(0.75rem+env(safe-area-inset-top))]">
                 <div className="min-w-0 flex-1">
-                    <div className="text-sm font-semibold">端口映射</div>
+                    <div className="text-sm font-semibold">临时映射</div>
                     <div className="truncate text-xs text-[var(--app-hint)]">{props.projectPath}</div>
                 </div>
                 {props.onClose ? (
@@ -224,58 +289,124 @@ export function ProjectPortsPanel(props: {
             </div>
 
             <div className="border-b border-[var(--app-border)] p-3">
-                <div className="grid gap-2 sm:grid-cols-[1fr_1fr_1fr_auto_auto]">
-                    <label className="grid gap-1 text-xs text-[var(--app-hint)]">
-                        端口
-                        <input
-                            value={port}
-                            onChange={(event) => {
-                                setPort(event.target.value)
-                                setAlias(buildDefaultAlias(props.projectPath, event.target.value))
-                            }}
-                            inputMode="numeric"
-                            className="rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2 text-sm text-[var(--app-fg)] outline-none focus:border-[var(--app-link)]"
-                            placeholder="8080"
-                        />
-                    </label>
-                    <label className="grid gap-1 text-xs text-[var(--app-hint)]">
-                        子路径名
-                        <input
-                            value={alias}
-                            onChange={(event) => setAlias(event.target.value)}
-                            className="rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2 text-sm text-[var(--app-fg)] outline-none focus:border-[var(--app-link)]"
-                            placeholder="ProjectName_8080"
-                        />
-                    </label>
-                    <label className="grid gap-1 text-xs text-[var(--app-hint)]">
-                        有效期（分钟）
-                        <input
-                            value={durationMinutes}
-                            onChange={(event) => setDurationMinutes(event.target.value)}
-                            inputMode="numeric"
-                            className="rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2 text-sm text-[var(--app-fg)] outline-none focus:border-[var(--app-link)]"
-                            placeholder="30"
-                        />
-                    </label>
+                <div className="mb-3 flex flex-wrap gap-2">
                     <button
                         type="button"
-                        disabled={actions.isPending}
-                        onClick={() => void checkPort()}
-                        className="self-end rounded-lg border border-[var(--app-border)] px-3 py-2 text-sm text-[var(--app-fg)] transition-colors hover:bg-[var(--app-subtle-bg)] disabled:opacity-50"
+                        onClick={() => setMode('port')}
+                        className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${mode === 'port'
+                            ? 'bg-[var(--app-button)] text-[var(--app-button-text)]'
+                            : 'border border-[var(--app-border)] text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]'}`}
                     >
-                        检测
+                        端口
                     </button>
                     <button
                         type="button"
-                        disabled={actions.isPending}
-                        onClick={() => void createMapping()}
-                        className="self-end rounded-lg bg-[var(--app-button)] px-3 py-2 text-sm font-medium text-[var(--app-button-text)] disabled:opacity-50"
+                        onClick={() => setMode('static')}
+                        className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${mode === 'static'
+                            ? 'bg-[var(--app-button)] text-[var(--app-button-text)]'
+                            : 'border border-[var(--app-border)] text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]'}`}
                     >
-                        创建映射
+                        静态文件
                     </button>
                 </div>
+
+                <div className="mb-3 text-sm font-medium">{modeCopy.title}</div>
+                {mode === 'port' ? (
+                    <div className="grid gap-2 sm:grid-cols-[1fr_1fr_1fr_auto_auto]">
+                        <label className="grid gap-1 text-xs text-[var(--app-hint)]">
+                            端口
+                            <input
+                                value={port}
+                                onChange={(event) => {
+                                    setPort(event.target.value)
+                                    setPortAlias(buildDefaultAlias(props.projectPath, event.target.value || DEFAULT_PORT))
+                                }}
+                                inputMode="numeric"
+                                className="rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2 text-sm text-[var(--app-fg)] outline-none focus:border-[var(--app-link)]"
+                                placeholder="8080"
+                            />
+                        </label>
+                        <label className="grid gap-1 text-xs text-[var(--app-hint)]">
+                            子路径名
+                            <input
+                                value={portAlias}
+                                onChange={(event) => setPortAlias(event.target.value)}
+                                className="rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2 text-sm text-[var(--app-fg)] outline-none focus:border-[var(--app-link)]"
+                                placeholder="ProjectName_8080"
+                            />
+                        </label>
+                        <label className="grid gap-1 text-xs text-[var(--app-hint)]">
+                            有效期（分钟）
+                            <input
+                                value={durationMinutes}
+                                onChange={(event) => setDurationMinutes(event.target.value)}
+                                inputMode="numeric"
+                                className="rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2 text-sm text-[var(--app-fg)] outline-none focus:border-[var(--app-link)]"
+                                placeholder="30"
+                            />
+                        </label>
+                        <button
+                            type="button"
+                            disabled={actions.isPending}
+                            onClick={() => void checkPort()}
+                            className="self-end rounded-lg border border-[var(--app-border)] px-3 py-2 text-sm text-[var(--app-fg)] transition-colors hover:bg-[var(--app-subtle-bg)] disabled:opacity-50"
+                        >
+                            检测
+                        </button>
+                        <button
+                            type="button"
+                            disabled={actions.isPending}
+                            onClick={() => void createMapping()}
+                            className="self-end rounded-lg bg-[var(--app-button)] px-3 py-2 text-sm font-medium text-[var(--app-button-text)] disabled:opacity-50"
+                        >
+                            创建映射
+                        </button>
+                    </div>
+                ) : (
+                    <div className="grid gap-2 sm:grid-cols-[1.2fr_1fr_1fr_auto]">
+                        <label className="grid gap-1 text-xs text-[var(--app-hint)]">
+                            静态目录
+                            <input
+                                value={staticPath}
+                                onChange={(event) => {
+                                    setStaticPath(event.target.value)
+                                    setStaticAlias(buildDefaultAlias(props.projectPath, event.target.value || DEFAULT_STATIC_PATH))
+                                }}
+                                className="rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2 text-sm text-[var(--app-fg)] outline-none focus:border-[var(--app-link)]"
+                                placeholder="dist"
+                            />
+                        </label>
+                        <label className="grid gap-1 text-xs text-[var(--app-hint)]">
+                            子路径名
+                            <input
+                                value={staticAlias}
+                                onChange={(event) => setStaticAlias(event.target.value)}
+                                className="rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2 text-sm text-[var(--app-fg)] outline-none focus:border-[var(--app-link)]"
+                                placeholder="ProjectName_dist"
+                            />
+                        </label>
+                        <label className="grid gap-1 text-xs text-[var(--app-hint)]">
+                            有效期（分钟）
+                            <input
+                                value={durationMinutes}
+                                onChange={(event) => setDurationMinutes(event.target.value)}
+                                inputMode="numeric"
+                                className="rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2 text-sm text-[var(--app-fg)] outline-none focus:border-[var(--app-link)]"
+                                placeholder="30"
+                            />
+                        </label>
+                        <button
+                            type="button"
+                            disabled={actions.isPending}
+                            onClick={() => void createMapping()}
+                            className="self-end rounded-lg bg-[var(--app-button)] px-3 py-2 text-sm font-medium text-[var(--app-button-text)] disabled:opacity-50"
+                        >
+                            创建映射
+                        </button>
+                    </div>
+                )}
                 <div className="mt-2 text-xs text-[var(--app-hint)]">
-                    默认暴露 30 分钟。访问链接会通过一次性 token 设置临时 cookie，过期后代理自动拒绝访问。
+                    {modeCopy.helper}
                 </div>
             </div>
 
@@ -302,12 +433,12 @@ export function ProjectPortsPanel(props: {
 
             <div className="app-scroll-y flex-1 min-h-0 p-3">
                 <div className="mb-3 flex items-center justify-between">
-                    <h2 className="text-sm font-semibold">映射列表</h2>
+                    <h2 className="text-sm font-semibold">{modeCopy.title}列表</h2>
                     <button type="button" onClick={refetch} className="text-xs text-[var(--app-link)]">刷新</button>
                 </div>
-                {isLoading ? <div className="text-sm text-[var(--app-hint)]">Loading port mappings…</div> : null}
+                {isLoading ? <div className="text-sm text-[var(--app-hint)]">Loading mappings…</div> : null}
                 <div className="flex flex-col gap-3">
-                    {mappings.map((mapping) => (
+                    {visibleMappings.map((mapping) => (
                         <div key={mapping.id} className="rounded-xl border border-[var(--app-border)] p-3">
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
@@ -316,9 +447,12 @@ export function ProjectPortsPanel(props: {
                                         <span className={`rounded-full border px-2 py-0.5 text-[11px] ${getStatusClass(mapping.status)}`}>
                                             {mapping.status}
                                         </span>
+                                        <span className="rounded-full border border-[var(--app-border)] px-2 py-0.5 text-[11px] text-[var(--app-hint)]">
+                                            {mapping.targetType === 'static' ? 'static' : 'port'}
+                                        </span>
                                     </div>
                                     <div className="mt-1 text-xs text-[var(--app-hint)]">
-                                        127.0.0.1:{mapping.port} → /ports/{mapping.alias}/ · {getRemainingLabel(mapping)}
+                                        {getMappingSummary(mapping)}
                                     </div>
                                     <div className="mt-1 text-xs text-[var(--app-hint)]">
                                         到期：{formatTime(mapping.expiresAt)} · 默认有效期：{formatDuration(mapping.durationMs)}
@@ -349,9 +483,9 @@ export function ProjectPortsPanel(props: {
                             </div>
                         </div>
                     ))}
-                    {mappings.length === 0 && !isLoading ? (
+                    {visibleMappings.length === 0 && !isLoading ? (
                         <div className="rounded-xl border border-dashed border-[var(--app-border)] p-4 text-sm text-[var(--app-hint)]">
-                            还没有端口映射。输入端口，例如 8080，创建后即可通过子路径访问。
+                            {modeCopy.empty}
                         </div>
                     ) : null}
                 </div>

@@ -9,7 +9,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve as resolvePath }
 import { logger } from '@/ui/logger'
 import { configuration } from '@/configuration'
 import type { Update, UpdateMachineBody } from '@hapi/protocol'
-import { PortProxyCheckRequestSchema, PortProxyFetchRequestSchema } from '@hapi/protocol/portMappings'
+import { PortProxyCheckRequestSchema, PortProxyFetchRequestSchema, StaticSiteProxyFetchRequestSchema } from '@hapi/protocol/portMappings'
 import type { RunnerState, Machine, MachineMetadata } from './types'
 import { RunnerStateSchema, MachineMetadataSchema } from './types'
 import { backoff } from '@/utils/time'
@@ -27,7 +27,7 @@ import {
     listProjectTools,
     upsertProjectTool
 } from '../modules/common/projectToolsFs'
-import { checkPortProxyTarget, fetchPortProxyTarget } from '../modules/common/portProxy'
+import { checkPortProxyTarget, fetchPortProxyTarget, fetchStaticSiteContent } from '../modules/common/portProxy'
 import type { SpawnSessionOptions, SpawnSessionResult } from '../modules/common/rpcTypes'
 import { applyVersionedAck } from './versionedUpdate'
 import { buildSocketIoExtraHeaderOptions } from './hubExtraHeaders'
@@ -284,6 +284,14 @@ export class ApiMachineClient {
                 return { success: false, error: 'Invalid port proxy fetch request' }
             }
             return await fetchPortProxyTarget(parsed.data)
+        })
+
+        this.rpcHandlerManager.registerHandler('static-site:fetch', async (params: any) => {
+            const parsed = StaticSiteProxyFetchRequestSchema.safeParse(params)
+            if (!parsed.success) {
+                return { success: false, error: 'Invalid static site fetch request' }
+            }
+            return await fetchStaticSiteContent(parsed.data)
         })
 
         this.rpcHandlerManager.registerHandler('project-tools:list', async (params: any) => {

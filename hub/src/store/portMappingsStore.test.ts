@@ -31,25 +31,67 @@ describe('PortMappingsStore', () => {
         expect(indexes).toContain('idx_port_mappings_expiry')
     })
 
-    it('migrates a v14 database to add port mappings', () => {
+    it('migrates a v15 database to add static mapping columns', () => {
         const dir = mkdtempSync(join(tmpdir(), 'hapi-port-mapping-migration-'))
         const dbPath = join(dir, 'test.db')
         try {
             const existing = new Store(dbPath)
-            dbOf(existing).exec('DROP TABLE port_mappings; PRAGMA user_version = 14;')
+            dbOf(existing).exec(`
+                CREATE TABLE port_mappings_v15 (
+                    id TEXT PRIMARY KEY,
+                    namespace TEXT NOT NULL,
+                    machine_id TEXT NOT NULL,
+                    project_path TEXT NOT NULL,
+                    alias TEXT NOT NULL,
+                    port INTEGER NOT NULL,
+                    target_host TEXT NOT NULL DEFAULT '127.0.0.1',
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    duration_ms INTEGER NOT NULL,
+                    expires_at INTEGER,
+                    last_enabled_at INTEGER,
+                    access_token_hash TEXT NOT NULL UNIQUE,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    UNIQUE(namespace, alias)
+                );
+                INSERT INTO port_mappings_v15 (
+                    id, namespace, machine_id, project_path, alias, port, target_host,
+                    enabled, duration_ms, expires_at, last_enabled_at, access_token_hash,
+                    created_at, updated_at
+                )
+                SELECT
+                    id, namespace, machine_id, project_path, alias, port, target_host,
+                    enabled, duration_ms, expires_at, last_enabled_at, access_token_hash,
+                    created_at, updated_at
+                FROM port_mappings;
+                DROP TABLE port_mappings;
+                ALTER TABLE port_mappings_v15 RENAME TO port_mappings;
+                CREATE INDEX idx_port_mappings_namespace_project
+                    ON port_mappings(namespace, machine_id, project_path);
+                CREATE INDEX idx_port_mappings_alias
+                    ON port_mappings(alias);
+                CREATE INDEX idx_port_mappings_expiry
+                    ON port_mappings(enabled, expires_at);
+                PRAGMA user_version = 15;
+            `)
             dbOf(existing).close()
 
             const migrated = new Store(dbPath)
-            expect(tableNames(migrated)).toContain('port_mappings')
+            const columns = dbOf(migrated)
+                .prepare('PRAGMA table_info(port_mappings)')
+                .all()
+                .map((row) => (row as { name: string }).name)
+            expect(columns).toContain('target_type')
+            expect(columns).toContain('static_path')
             const version = dbOf(migrated).prepare('PRAGMA user_version').get() as { user_version: number }
-            expect(version.user_version).toBe(15)
+            expect(version.user_version).toBe(16)
             dbOf(migrated).close()
         } finally {
             rmSync(dir, { recursive: true, force: true })
         }
     })
 
-    it('creates, lists, updates, disables, enables, and expires mappings', () => {
+    it('creates, lists, updates, disables, enables, and expires port mappings', () => {
         const store = new Store(':memory:')
 
         const created = store.portMappings.create({
@@ -57,6 +99,7 @@ describe('PortMappingsStore', () => {
             machineId: 'machine-1',
             projectPath: '/repo',
             alias: 'repo_8080',
+            targetType: 'port',
             port: 8080,
             durationMs: 30 * 60_000,
             accessTokenHash: 'hash-1',
@@ -68,8 +111,10 @@ describe('PortMappingsStore', () => {
             machineId: 'machine-1',
             projectPath: '/repo',
             alias: 'repo_8080',
+            targetType: 'port',
             port: 8080,
             targetHost: '127.0.0.1',
+            staticPath: null,
             enabled: true,
             expiresAt: 1_801_000,
             lastEnabledAt: 1_000
@@ -85,6 +130,7 @@ describe('PortMappingsStore', () => {
         }, 2_000)
         expect(updated).toMatchObject({
             alias: 'repo_3000',
+            targetType: 'port',
             port: 3000,
             durationMs: 10 * 60_000,
             enabled: true,
@@ -114,6 +160,38 @@ describe('PortMappingsStore', () => {
         })
     })
 
+    it('creates static mappings with a static path and updates that path', () => {
+        const store = new Store(':memory:')
+        const created = store.portMappings.create({
+            namespace: 'default',
+            machineId: 'machine-1',
+            projectPath: '/repo',
+            alias: 'repo_dist',
+            targetType: 'static',
+            staticPath: 'dist',
+            durationMs: 30 * 60_000,
+            accessTokenHash: 'hash-static',
+            now: 1_000
+        })
+
+        expect(created).toMatchObject({
+            alias: 'repo_dist',
+            targetType: 'static',
+            staticPath: 'dist',
+            port: 0,
+            targetHost: ''
+        })
+
+        const updated = store.portMappings.update('default', created.id, {
+            staticPath: 'build'
+        }, 2_000)
+        expect(updated).toMatchObject({
+            targetType: 'static',
+            staticPath: 'build',
+            port: 0
+        })
+    })
+
     it('keeps aliases unique per namespace', () => {
         const store = new Store(':memory:')
         store.portMappings.create({
@@ -121,6 +199,7 @@ describe('PortMappingsStore', () => {
             machineId: 'machine-1',
             projectPath: '/repo',
             alias: 'repo_8080',
+            targetType: 'port',
             port: 8080,
             durationMs: 60_000,
             accessTokenHash: 'hash-1',
@@ -132,7 +211,8 @@ describe('PortMappingsStore', () => {
             machineId: 'machine-1',
             projectPath: '/other',
             alias: 'repo_8080',
-            port: 8080,
+            targetType: 'static',
+            staticPath: 'dist',
             durationMs: 60_000,
             accessTokenHash: 'hash-2',
             now: 1_000
@@ -143,6 +223,7 @@ describe('PortMappingsStore', () => {
             machineId: 'machine-1',
             projectPath: '/repo',
             alias: 'repo_8080',
+            targetType: 'port',
             port: 8080,
             durationMs: 60_000,
             accessTokenHash: 'hash-3',

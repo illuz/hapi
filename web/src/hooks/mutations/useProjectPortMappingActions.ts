@@ -22,12 +22,8 @@ export function useProjectPortMappingActions(api: ApiClient | null) {
     const createMutation = useMutation({
         mutationFn: async (input: Target & ProjectPortMappingCreatePayload): Promise<ProjectPortMappingMutationResponse> => {
             if (!api) throw new Error('Not connected')
-            const result = await api.createProjectPortMapping(input.machineId, {
-                projectPath: input.projectPath,
-                alias: input.alias,
-                port: input.port,
-                durationMs: input.durationMs
-            })
+            const { machineId, ...payload } = input
+            const result = await api.createProjectPortMapping(machineId, payload)
             await invalidate(input)
             return result
         }

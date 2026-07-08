@@ -34,8 +34,10 @@ function createMapping(overrides?: Partial<PortMapping>): PortMapping {
         machineId: 'machine-1',
         projectPath: '/repo',
         alias: 'repo_8080',
+        targetType: 'port',
         port: 8080,
         targetHost: '127.0.0.1',
+        staticPath: null,
         enabled: true,
         status: 'active',
         durationMs: 30 * 60_000,
@@ -72,7 +74,7 @@ function createApp(options?: {
 }
 
 describe('port mapping routes', () => {
-    it('creates a mapping with namespace, project path, default access URL, and access token', async () => {
+    it('creates port mappings with namespace, project path, access URL, and access token', async () => {
         const calls: unknown[] = []
         const app = createApp({
             engine: {
@@ -87,7 +89,7 @@ describe('port mapping routes', () => {
         const response = await app.request('/api/machines/machine-1/port-mappings', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ projectPath: '/repo', port: 8080 })
+            body: JSON.stringify({ targetType: 'port', projectPath: '/repo', port: 8080 })
         })
 
         expect(response.status).toBe(200)
@@ -99,7 +101,49 @@ describe('port mapping routes', () => {
             machineId: 'machine-1',
             projectPath: '/repo',
             alias: undefined,
+            targetType: 'port',
             port: 8080,
+            durationMs: undefined
+        }])
+    })
+
+    it('creates static mappings through the same endpoint', async () => {
+        const calls: unknown[] = []
+        const app = createApp({
+            engine: {
+                getMachine: () => createMachine(),
+                createPortMapping: (params: unknown) => {
+                    calls.push(params)
+                    return {
+                        type: 'success',
+                        mapping: createMapping({
+                            alias: 'repo_dist',
+                            targetType: 'static',
+                            port: null,
+                            targetHost: null,
+                            staticPath: 'dist'
+                        }),
+                        accessToken: 'static-token'
+                    }
+                }
+            } as Partial<SyncEngine>
+        })
+
+        const response = await app.request('/api/machines/machine-1/port-mappings', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ targetType: 'static', projectPath: '/repo', staticPath: 'dist' })
+        })
+
+        expect(response.status).toBe(200)
+        expect((await response.json() as { accessUrl: string }).accessUrl).toContain('static-token')
+        expect(calls).toEqual([{
+            namespace: 'default',
+            machineId: 'machine-1',
+            projectPath: '/repo',
+            alias: undefined,
+            targetType: 'static',
+            staticPath: 'dist',
             durationMs: undefined
         }])
     })
@@ -193,7 +237,7 @@ describe('port mapping routes', () => {
         expect(await response.text()).toContain('unauthorized')
     })
 
-    it('exchanges query tokens for cookies and proxies subsequent requests', async () => {
+    it('exchanges query tokens for cookies and proxies subsequent port requests', async () => {
         const mapping = createMapping()
         const calls: unknown[] = []
         const app = createApp({
@@ -246,9 +290,7 @@ describe('port mapping routes', () => {
         expect(proxyResponse.headers.get('location')).toBe('/ports/repo_8080/next?ok=1')
         expect(proxyResponse.headers.get('set-cookie')).toBe('sid=abc; Path=/ports/repo_8080')
         expect(calls).toContainEqual(['proxy', {
-            machineId: 'machine-1',
-            port: 8080,
-            targetHost: '127.0.0.1',
+            mapping,
             method: 'POST',
             path: '/path?x=1',
             headers: {
@@ -257,5 +299,46 @@ describe('port mapping routes', () => {
             },
             bodyBase64: Buffer.from('payload').toString('base64')
         }])
+    })
+
+    it('serves static mappings through the proxy route', async () => {
+        const mapping = createMapping({
+            alias: 'repo_dist',
+            targetType: 'static',
+            port: null,
+            targetHost: null,
+            staticPath: 'dist'
+        })
+        const app = createApp({
+            includeProxy: true,
+            engine: {
+                resolvePortProxyMapping: (_alias: string, tokens: string[]) => (
+                    tokens.includes('static-token')
+                        ? { mapping, stored: { id: mapping.id } as StoredPortMapping }
+                        : null
+                ),
+                getPortMappingCookieName: () => 'hapi_port_mapping_static',
+                proxyPortMappingFetch: async () => ({
+                    success: true,
+                    status: 200,
+                    statusText: 'OK',
+                    headers: {
+                        'content-type': 'text/html; charset=utf-8',
+                        location: '/next'
+                    },
+                    bodyBase64: Buffer.from('<html>static</html>').toString('base64')
+                })
+            } as Partial<SyncEngine>
+        })
+
+        const tokenResponse = await app.request(`/ports/repo_dist/?${PORT_MAPPING_TOKEN_QUERY_PARAM}=static-token`)
+        expect(tokenResponse.status).toBe(302)
+
+        const proxyResponse = await app.request('/ports/repo_dist/', {
+            headers: { cookie: 'hapi_port_mapping_static=static-token' }
+        })
+        expect(proxyResponse.status).toBe(200)
+        expect(await proxyResponse.text()).toBe('<html>static</html>')
+        expect(proxyResponse.headers.get('location')).toBe('/ports/repo_dist/next')
     })
 })

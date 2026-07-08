@@ -57,7 +57,9 @@ export type {
     PortMappingCreateRequest,
     PortMappingListResponse,
     PortMappingMutationResponse,
+    PortMappingStaticPath,
     PortMappingStatus,
+    PortMappingTargetType,
     PortMappingUpdateRequest,
     PortProxyCheckResponse
 } from '@hapi/protocol/portMappings'

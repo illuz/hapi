@@ -138,8 +138,10 @@ export type StoredPortMapping = {
     machineId: string
     projectPath: string
     alias: string
+    targetType: 'port' | 'static'
     port: number
     targetHost: string
+    staticPath: string | null
     enabled: boolean
     durationMs: number
     expiresAt: number | null

@@ -14,6 +14,7 @@ import type {
     ProjectCronConfig,
     ProjectToolKind
 } from '@hapi/protocol/projectTools'
+import type { PortMapping } from '@hapi/protocol/portMappings'
 import { getDefaultSessionTitle, resolveCrossFlavorPermissionMode } from '@hapi/protocol'
 import type { Server } from 'socket.io'
 import type { Store, CancelQueuedMessageResult } from '../store'
@@ -1312,11 +1313,14 @@ export class SyncEngine {
         return this.portMappingService.list(params)
     }
 
-    createPortMapping(params: { namespace: string; machineId: string; projectPath: string; alias?: string; port: number; durationMs?: number }) {
+    createPortMapping(params:
+        | { namespace: string; machineId: string; projectPath: string; alias?: string; durationMs?: number; targetType: 'port'; port: number }
+        | { namespace: string; machineId: string; projectPath: string; alias?: string; durationMs?: number; targetType: 'static'; staticPath: string }
+    ) {
         return this.portMappingService.create(params)
     }
 
-    updatePortMapping(params: { namespace: string; id: string; alias?: string; port?: number; durationMs?: number }) {
+    updatePortMapping(params: { namespace: string; id: string; alias?: string; port?: number; staticPath?: string; durationMs?: number }) {
         return this.portMappingService.update(params)
     }
 
@@ -1336,7 +1340,7 @@ export class SyncEngine {
         return this.portMappingService.check(params)
     }
 
-    proxyPortMappingFetch(params: { machineId: string; port: number; targetHost?: string; method: string; path: string; headers?: Record<string, string>; bodyBase64?: string }) {
+    proxyPortMappingFetch(params: { mapping: PortMapping; method: string; path: string; headers?: Record<string, string>; bodyBase64?: string }) {
         return this.portMappingService.proxyFetch(params)
     }
 

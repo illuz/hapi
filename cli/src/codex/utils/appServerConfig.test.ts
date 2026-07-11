@@ -50,7 +50,7 @@ describe('appServerConfig', () => {
         expect(params.approvalPolicy).toBe('never');
     });
 
-    it('keeps on-failure approvals for safe-yolo threads', () => {
+    it('keeps user-approved escalation for safe-yolo threads', () => {
         const params = buildThreadStartParams({
             cwd: '/workspace/project',
             mode: { permissionMode: 'safe-yolo', collaborationMode: 'default' },
@@ -58,7 +58,7 @@ describe('appServerConfig', () => {
         });
 
         expect(params.sandbox).toBe('workspace-write');
-        expect(params.approvalPolicy).toBe('on-failure');
+        expect(params.approvalPolicy).toBe('on-request');
     });
 
     it('concatenates custom developer instructions after base instructions', () => {
@@ -235,7 +235,7 @@ describe('appServerConfig', () => {
             cliOverrides: { sandbox: 'read-only', approvalPolicy: 'never' }
         });
 
-        expect(params.approvalPolicy).toBe('on-failure');
+        expect(params.approvalPolicy).toBe('on-request');
         expect(params.sandboxPolicy).toEqual({ type: 'workspaceWrite' });
         expect(params.collaborationMode).toEqual({
             mode: 'default',

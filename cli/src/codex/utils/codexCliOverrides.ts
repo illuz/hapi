@@ -1,6 +1,6 @@
 export type CodexCliOverrides = {
     sandbox?: 'read-only' | 'workspace-write' | 'danger-full-access';
-    approvalPolicy?: 'untrusted' | 'on-failure' | 'on-request' | 'never';
+    approvalPolicy?: 'untrusted' | 'on-request' | 'never';
 };
 
 const SANDBOX_VALUES = new Set<CodexCliOverrides['sandbox']>([
@@ -11,27 +11,57 @@ const SANDBOX_VALUES = new Set<CodexCliOverrides['sandbox']>([
 
 const APPROVAL_POLICY_VALUES = new Set<CodexCliOverrides['approvalPolicy']>([
     'untrusted',
-    'on-failure',
     'on-request',
     'never'
 ]);
 
-export function parseCodexCliOverrides(args?: string[]): CodexCliOverrides {
-    const overrides: CodexCliOverrides = {};
+export function normalizeCodexCliArgs(args?: string[]): string[] {
     if (!args || args.length === 0) {
-        return overrides;
+        return [];
     }
+
+    const normalized: string[] = [];
 
     for (let i = 0; i < args.length; i++) {
         const arg = args[i];
         if (arg === '--') {
+            normalized.push(...args.slice(i));
             break;
         }
 
         if (arg === '--full-auto') {
-            overrides.approvalPolicy = 'on-request';
-            overrides.sandbox = 'workspace-write';
+            normalized.push('--ask-for-approval', 'on-request', '--sandbox', 'workspace-write');
             continue;
+        }
+
+        if ((arg === '-a' || arg === '--ask-for-approval') && args[i + 1] === 'on-failure') {
+            normalized.push(arg, 'on-request');
+            i += 1;
+            continue;
+        }
+
+        if (arg === '--ask-for-approval=on-failure') {
+            normalized.push('--ask-for-approval=on-request');
+            continue;
+        }
+
+        normalized.push(arg);
+    }
+
+    return normalized;
+}
+
+export function parseCodexCliOverrides(args?: string[]): CodexCliOverrides {
+    const overrides: CodexCliOverrides = {};
+    const normalizedArgs = normalizeCodexCliArgs(args);
+    if (normalizedArgs.length === 0) {
+        return overrides;
+    }
+
+    for (let i = 0; i < normalizedArgs.length; i++) {
+        const arg = normalizedArgs[i];
+        if (arg === '--') {
+            break;
         }
 
         if (arg === '--yolo') {
@@ -47,7 +77,7 @@ export function parseCodexCliOverrides(args?: string[]): CodexCliOverrides {
         }
 
         if (arg === '-s' || arg === '--sandbox') {
-            const value = args[i + 1];
+            const value = normalizedArgs[i + 1];
             if (SANDBOX_VALUES.has(value as CodexCliOverrides['sandbox'])) {
                 overrides.sandbox = value as CodexCliOverrides['sandbox'];
                 i += 1;
@@ -64,7 +94,7 @@ export function parseCodexCliOverrides(args?: string[]): CodexCliOverrides {
         }
 
         if (arg === '-a' || arg === '--ask-for-approval') {
-            const value = args[i + 1];
+            const value = normalizedArgs[i + 1];
             if (APPROVAL_POLICY_VALUES.has(value as CodexCliOverrides['approvalPolicy'])) {
                 overrides.approvalPolicy = value as CodexCliOverrides['approvalPolicy'];
                 i += 1;

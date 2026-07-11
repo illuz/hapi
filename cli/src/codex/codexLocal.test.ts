@@ -93,7 +93,7 @@ describe('codexLocal', () => {
         expect(args).toContain("mcp_servers.hapi.args=['mcp','--url','http://127.0.0.1:63995/']");
     });
 
-    it('passes model and reasoning effort flags before raw Codex args', async () => {
+    it('passes managed model config before raw Codex args', async () => {
         const controller = new AbortController();
 
         await codexLocal({
@@ -102,6 +102,7 @@ describe('codexLocal', () => {
             path: '/tmp/project',
             model: 'gpt-5.5',
             modelReasoningEffort: 'xhigh',
+            serviceTier: 'priority',
             onSessionFound: vi.fn(),
             codexArgs: ['--sandbox', 'read-only']
         });
@@ -112,11 +113,42 @@ describe('codexLocal', () => {
         expect(spawnOptions.args).toEqual(expect.arrayContaining([
             '--model',
             'gpt-5.5',
-            '--model-reasoning-effort',
-            'xhigh',
+            '-c',
+            'model_reasoning_effort="xhigh"',
+            '-c',
+            'service_tier="priority"',
             '--sandbox',
             'read-only'
         ]));
+        expect(spawnOptions.args).not.toContain('--model-reasoning-effort');
+        expect(spawnOptions.args).not.toContain('--service-tier');
         expect(spawnOptions.args.indexOf('--model')).toBeLessThan(spawnOptions.args.indexOf('--sandbox'));
+        expect(spawnOptions.args.indexOf('model_reasoning_effort="xhigh"'))
+            .toBeLessThan(spawnOptions.args.indexOf('--sandbox'));
+    });
+
+    it('normalizes removed Codex convenience and approval options', async () => {
+        const controller = new AbortController();
+
+        await codexLocal({
+            abort: controller.signal,
+            sessionId: null,
+            path: '/tmp/project',
+            onSessionFound: vi.fn(),
+            codexArgs: ['--full-auto', '--ask-for-approval=on-failure']
+        });
+
+        const spawnOptions = spawnWithTerminalGuardMock.mock.calls[0][0] as {
+            args: string[];
+        };
+        expect(spawnOptions.args).toEqual(expect.arrayContaining([
+            '--ask-for-approval',
+            'on-request',
+            '--sandbox',
+            'workspace-write',
+            '--ask-for-approval=on-request'
+        ]));
+        expect(spawnOptions.args).not.toContain('--full-auto');
+        expect(spawnOptions.args).not.toContain('--ask-for-approval=on-failure');
     });
 });

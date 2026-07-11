@@ -1,5 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { parseCodexCliOverrides, stripCodexCliOverrides } from './codexCliOverrides';
+import { normalizeCodexCliArgs, parseCodexCliOverrides, stripCodexCliOverrides } from './codexCliOverrides';
+
+describe('normalizeCodexCliArgs', () => {
+    it('replaces removed convenience and approval options', () => {
+        expect(normalizeCodexCliArgs(['--full-auto', '-a', 'on-failure', '--ask-for-approval=on-failure']))
+            .toEqual([
+                '--ask-for-approval',
+                'on-request',
+                '--sandbox',
+                'workspace-write',
+                '-a',
+                'on-request',
+                '--ask-for-approval=on-request'
+            ]);
+    });
+
+    it('does not normalize values after the option terminator', () => {
+        expect(normalizeCodexCliArgs(['--', '--full-auto', '-a', 'on-failure']))
+            .toEqual(['--', '--full-auto', '-a', 'on-failure']);
+    });
+});
 
 describe('parseCodexCliOverrides', () => {
     it('parses sandbox and approval flags', () => {
@@ -39,7 +59,7 @@ describe('parseCodexCliOverrides', () => {
         });
 
         expect(parseCodexCliOverrides(['-a', 'untrusted', '-a', 'on-failure'])).toEqual({
-            approvalPolicy: 'on-failure'
+            approvalPolicy: 'on-request'
         });
     });
 

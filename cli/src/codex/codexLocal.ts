@@ -7,6 +7,7 @@ import {
 } from './utils/codexMcpConfig';
 import { codexSystemPrompt } from './utils/systemPrompt';
 import type { ReasoningEffort, ServiceTier } from './appServerTypes';
+import { normalizeCodexCliArgs } from './utils/codexCliOverrides';
 
 /**
  * Filter out 'resume' subcommand which is managed internally by hapi.
@@ -55,11 +56,11 @@ export async function codexLocal(opts: {
     }
 
     if (opts.modelReasoningEffort) {
-        args.push('--model-reasoning-effort', opts.modelReasoningEffort);
+        args.push('-c', `model_reasoning_effort="${opts.modelReasoningEffort}"`);
     }
 
     if (opts.serviceTier) {
-        args.push('--service-tier', opts.serviceTier);
+        args.push('-c', `service_tier="${opts.serviceTier}"`);
     }
 
     if (opts.sandbox) {
@@ -79,7 +80,7 @@ export async function codexLocal(opts: {
     args.push(...buildDeveloperInstructionsArg(codexSystemPrompt));
 
     if (opts.codexArgs) {
-        const safeArgs = filterResumeSubcommand(opts.codexArgs);
+        const safeArgs = normalizeCodexCliArgs(filterResumeSubcommand(opts.codexArgs));
         args.push(...safeArgs);
     }
 

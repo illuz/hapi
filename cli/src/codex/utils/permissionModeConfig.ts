@@ -26,8 +26,8 @@ export function resolveCodexPermissionModeConfig(mode: CodexPermissionMode): Cod
             };
         case 'safe-yolo':
             return {
-                // Keep escalation available when the workspace-write sandbox blocks a command.
-                approvalPolicy: 'on-failure',
+                // Codex removed on-failure; on-request preserves user-approved escalation.
+                approvalPolicy: 'on-request',
                 sandbox: 'workspace-write',
                 sandboxPolicy: { type: 'workspaceWrite' }
             };

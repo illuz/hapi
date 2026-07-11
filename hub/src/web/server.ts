@@ -58,7 +58,7 @@ function serveEmbeddedAsset(asset: EmbeddedWebAsset): Response {
     })
 }
 
-function createWebApp(options: {
+export function createWebApp(options: {
     getSyncEngine: () => SyncEngine | null
     getSseManager: () => SSEManager | null
     getVisibilityTracker: () => VisibilityTracker | null
@@ -106,6 +106,10 @@ function createWebApp(options: {
     app.route('/api', createPushRoutes(options.store, options.vapidPublicKey))
     app.route('/api', createVoiceRoutes())
     app.route('/', createPortProxyRoutes(options.getSyncEngine))
+
+    app.get('/', () => new Response('It works!', {
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+    }))
 
     // Skip static serving in relay mode, show helpful message on root
     if (options.relayMode) {

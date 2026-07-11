@@ -1,10 +1,10 @@
 import type { AgentType, CodexReasoningEffort } from './types'
-import { CODEX_REASONING_EFFORT_OPTIONS } from './types'
 import { useTranslation } from '@/lib/use-translation'
 
 export function ReasoningEffortSelector(props: {
     agent: AgentType
     value: CodexReasoningEffort
+    options: Array<{ value: CodexReasoningEffort; label: string }>
     isDisabled: boolean
     onChange: (value: CodexReasoningEffort) => void
 }) {
@@ -26,7 +26,7 @@ export function ReasoningEffortSelector(props: {
                 disabled={props.isDisabled}
                 className="w-full px-3 py-2 text-sm rounded-lg border border-[var(--app-divider)] bg-[var(--app-bg)] text-[var(--app-text)] focus:outline-none focus:ring-2 focus:ring-[var(--app-link)] disabled:opacity-50"
             >
-                {CODEX_REASONING_EFFORT_OPTIONS.map((option) => (
+                {props.options.map((option) => (
                     <option key={option.value} value={option.value}>
                         {option.label}
                     </option>

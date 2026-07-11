@@ -21,7 +21,7 @@ import { DEFAULT_CODEX_MODEL, DEFAULT_CODEX_REASONING_EFFORT } from '@hapi/proto
 
 export { emitReadyIfIdle } from './utils/emitReadyIfIdle';
 
-const REASONING_EFFORTS = new Set<ReasoningEffort>(['none', 'minimal', 'low', 'medium', 'high', 'xhigh'])
+const REASONING_EFFORTS = new Set<ReasoningEffort>(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'])
 const SERVICE_TIERS = new Set<ServiceTier>(['auto', 'default', 'flex', 'priority'])
 
 export async function runCodex(opts: {

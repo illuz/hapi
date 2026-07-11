@@ -475,10 +475,17 @@ export class ApiClient {
         })
     }
 
-    async setModelReasoningEffort(sessionId: string, modelReasoningEffort: string | null): Promise<void> {
+    async setModelReasoningEffort(
+        sessionId: string,
+        modelReasoningEffort: string | null,
+        options?: { model?: string | null }
+    ): Promise<void> {
         await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/model-reasoning-effort`, {
             method: 'POST',
-            body: JSON.stringify({ modelReasoningEffort })
+            body: JSON.stringify({
+                modelReasoningEffort,
+                ...(options?.model !== undefined ? { model: options.model } : {})
+            })
         })
     }
 

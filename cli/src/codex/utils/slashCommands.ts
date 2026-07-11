@@ -4,7 +4,7 @@ import type { ReasoningEffort, ServiceTier, ThreadGoal } from '../appServerTypes
 import type { EnhancedMode } from '../loop';
 import type { SlashCommand } from '@/modules/common/slashCommands';
 
-const REASONING_EFFORTS = new Set<ReasoningEffort>(['none', 'minimal', 'low', 'medium', 'high', 'xhigh']);
+const REASONING_EFFORTS = new Set<ReasoningEffort>(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']);
 const RESERVED_CODEX_CONTROL_COMMANDS = new Set(['clear', 'compact', 'goal']);
 
 const UNSUPPORTED_CODEX_BUILTIN_COMMANDS = new Set([
@@ -226,7 +226,7 @@ export function resolveCodexSlashCommand(
                 '/goal clear — clear current Codex thread goal',
                 '/status — show current Codex session config',
                 '/model [name|auto] — show or set model',
-                '/reasoning [low|medium|high|xhigh|default] — show or set reasoning effort',
+                '/reasoning [low|medium|high|xhigh|max|ultra|default] — show or set reasoning effort',
                 '/permissions [default|read-only|safe-yolo|yolo] — show or set permission mode',
                 'Custom /commands from .codex/prompts are expanded before sending, except /clear and /compact.'
             ].join('\n')

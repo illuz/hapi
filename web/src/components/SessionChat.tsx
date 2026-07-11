@@ -137,6 +137,7 @@ export function SessionChat(props: {
         setPermissionMode,
         setCollaborationMode,
         setModel,
+        setCodexModelAndReasoningEffort,
         setModelReasoningEffort,
         setEffort
     } = useSessionActions(
@@ -379,14 +380,39 @@ export function SessionChat(props: {
 
     const handleModelReasoningEffortChange = useCallback(async (modelReasoningEffort: string | null) => {
         try {
-            await setModelReasoningEffort(modelReasoningEffort)
+            const currentModel = agentFlavor === 'codex' ? (props.session.model?.trim() || null) : null
+            if (currentModel) {
+                await setCodexModelAndReasoningEffort({
+                    model: currentModel,
+                    modelReasoningEffort
+                })
+            } else {
+                await setModelReasoningEffort(modelReasoningEffort)
+            }
             haptic.notification('success')
             props.onRefresh()
         } catch (e) {
             haptic.notification('error')
             console.error('Failed to set model reasoning effort:', e)
+            addToast({
+                title: t('misc.reasoningEffort'),
+                body: e instanceof Error ? e.message : t('dialog.error.default'),
+                sessionId: props.session.id,
+                url: `/sessions/${props.session.id}`,
+                kind: 'failure'
+            })
         }
-    }, [setModelReasoningEffort, props.onRefresh, haptic])
+    }, [
+        agentFlavor,
+        props.session.model,
+        props.session.id,
+        props.onRefresh,
+        setCodexModelAndReasoningEffort,
+        setModelReasoningEffort,
+        haptic,
+        addToast,
+        t
+    ])
 
     const handleEffortChange = useCallback(async (effort: string | null) => {
         try {

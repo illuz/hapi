@@ -33,7 +33,8 @@ const modelSchema = z.object({
 })
 
 const modelReasoningEffortSchema = z.object({
-    modelReasoningEffort: z.string().trim().min(1).nullable()
+    modelReasoningEffort: z.string().trim().min(1).nullable(),
+    model: z.string().trim().min(1).nullable().optional()
 })
 
 const effortSchema = z.object({
@@ -653,6 +654,7 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
 
         try {
             await engine.applySessionConfig(sessionResult.sessionId, {
+                model: parsed.data.model,
                 modelReasoningEffort: parsed.data.modelReasoningEffort
             })
             return c.json({ ok: true })

@@ -12,7 +12,7 @@ import { useActiveSuggestions, type Suggestion } from '@/hooks/useActiveSuggesti
 import { useDirectorySuggestions } from '@/hooks/useDirectorySuggestions'
 import { useRecentPaths } from '@/hooks/useRecentPaths'
 import { useTranslation } from '@/lib/use-translation'
-import type { AgentType, ClaudeEffort, CodexReasoningEffort, SessionType } from './types'
+import { getCodexReasoningEffortOptions, type AgentType, type ClaudeEffort, type CodexReasoningEffort, type SessionType } from './types'
 import { ActionButtons } from './ActionButtons'
 import { AgentSelector } from './AgentSelector'
 import { DirectorySection } from './DirectorySection'
@@ -136,6 +136,26 @@ export function NewSession(props: {
         }
         return options
     }, [codexModelsState.models, model])
+    const codexReasoningEffortOptions = useMemo(
+        () => getCodexReasoningEffortOptions(model),
+        [model]
+    )
+
+    useEffect(() => {
+        if (agent !== 'codex') {
+            return
+        }
+
+        if (codexReasoningEffortOptions.some((option) => option.value === modelReasoningEffort)) {
+            return
+        }
+
+        const fallback = codexReasoningEffortOptions.find((option) => option.value === DEFAULT_CODEX_REASONING_EFFORT)
+            ?? codexReasoningEffortOptions[0]
+        if (fallback) {
+            setModelReasoningEffort(fallback.value)
+        }
+    }, [agent, codexReasoningEffortOptions, modelReasoningEffort])
 
     const recentPaths = useMemo(
         () => getRecentPaths(machineId),
@@ -441,6 +461,7 @@ export function NewSession(props: {
             <ReasoningEffortSelector
                 agent={agent}
                 value={modelReasoningEffort}
+                options={codexReasoningEffortOptions}
                 isDisabled={isFormDisabled}
                 onChange={setModelReasoningEffort}
             />

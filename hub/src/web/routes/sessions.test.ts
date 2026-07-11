@@ -384,6 +384,22 @@ describe('sessions routes', () => {
         ])
     })
 
+    it('applies model and model reasoning effort together for remote Codex sessions', async () => {
+        const { app, applySessionConfigCalls } = createApp(createSession())
+
+        const response = await app.request('/api/sessions/session-1/model-reasoning-effort', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ model: 'gpt-5.6-sol', modelReasoningEffort: 'ultra' })
+        })
+
+        expect(response.status).toBe(200)
+        expect(await response.json()).toEqual({ ok: true })
+        expect(applySessionConfigCalls).toEqual([
+            ['session-1', { model: 'gpt-5.6-sol', modelReasoningEffort: 'ultra' }]
+        ])
+    })
+
     it('applies model changes for remote Codex sessions', async () => {
         const { app, applySessionConfigCalls } = createApp(createSession())
 

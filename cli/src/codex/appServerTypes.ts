@@ -152,7 +152,7 @@ export type SandboxPolicy =
         excludeSlashTmp?: boolean;
     };
 
-export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
 export type ReasoningSummary = 'auto' | 'none' | 'brief' | 'detailed';
 export type ServiceTier = 'auto' | 'default' | 'flex' | 'priority';
 

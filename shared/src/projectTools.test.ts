@@ -29,7 +29,7 @@ describe('project tool config schemas', () => {
             name: 'Reviewer',
             prompt: 'Review the current diff.',
             agent: 'codex',
-            model: 'gpt-5.2',
+            model: 'gpt-5.5',
             modelReasoningEffort: 'medium',
             permissionMode: 'read-only',
             enabled: true,

@@ -21,6 +21,7 @@ export function useSessionActions(
     setPermissionMode: (mode: PermissionMode) => Promise<void>
     setCollaborationMode: (mode: CodexCollaborationMode) => Promise<void>
     setModel: (model: string | null) => Promise<void>
+    setCodexModelAndReasoningEffort: (args: { model: string; modelReasoningEffort: string | null }) => Promise<void>
     setModelReasoningEffort: (modelReasoningEffort: string | null) => Promise<void>
     setEffort: (effort: string | null) => Promise<void>
     renameSession: (name: string) => Promise<void>
@@ -145,6 +146,28 @@ export function useSessionActions(
         onSuccess: () => void invalidateSession(),
     })
 
+    const codexModelAndReasoningEffortMutation = useMutation({
+        mutationFn: async (args: { model: string; modelReasoningEffort: string | null }) => {
+            if (!api || !sessionId) {
+                throw new Error('Session unavailable')
+            }
+            if (agentFlavor !== 'codex') {
+                throw new Error('Model reasoning effort is only supported for Codex sessions')
+            }
+            if (!codexCollaborationModeSupported) {
+                throw new Error('Model reasoning effort is only supported for remote Codex sessions')
+            }
+
+            const model = args.model.trim()
+            if (!model) {
+                throw new Error('Model unavailable')
+            }
+
+            await api.setModelReasoningEffort(sessionId, args.modelReasoningEffort, { model })
+        },
+        onSuccess: () => void invalidateSession(),
+    })
+
     const effortMutation = useMutation({
         mutationFn: async (effort: string | null) => {
             if (!api || !sessionId) {
@@ -200,6 +223,7 @@ export function useSessionActions(
         setPermissionMode: permissionMutation.mutateAsync,
         setCollaborationMode: collaborationMutation.mutateAsync,
         setModel: modelMutation.mutateAsync,
+        setCodexModelAndReasoningEffort: codexModelAndReasoningEffortMutation.mutateAsync,
         setModelReasoningEffort: modelReasoningEffortMutation.mutateAsync,
         setEffort: effortMutation.mutateAsync,
         renameSession: renameMutation.mutateAsync,
@@ -213,6 +237,7 @@ export function useSessionActions(
             || permissionMutation.isPending
             || collaborationMutation.isPending
             || modelMutation.isPending
+            || codexModelAndReasoningEffortMutation.isPending
             || modelReasoningEffortMutation.isPending
             || effortMutation.isPending
             || renameMutation.isPending

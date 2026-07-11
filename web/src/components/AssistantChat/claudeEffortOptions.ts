@@ -3,11 +3,12 @@ export type ClaudeComposerEffortOption = {
     label: string
 }
 
-const CLAUDE_EFFORT_PRESETS = ['medium', 'high', 'max'] as const
+const CLAUDE_EFFORT_PRESETS = ['medium', 'high', 'max', 'ultra'] as const
 const CLAUDE_EFFORT_LABELS: Record<(typeof CLAUDE_EFFORT_PRESETS)[number], string> = {
     medium: 'Medium',
     high: 'High',
-    max: 'Max'
+    max: 'Max',
+    ultra: 'Ultra'
 }
 
 function normalizeClaudeComposerEffort(effort?: string | null): string | null {

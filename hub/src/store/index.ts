@@ -28,7 +28,13 @@ export type {
 export type { CancelQueuedMessageResult, LookupQueuedMessageResult } from './messages'
 export { CronRunsStore } from './cronRunsStore'
 export { HistoryStore } from './historyStore'
-export type { AddHistoryEntryInput, SearchHistoryOptions, SearchHistoryResult, HistorySearchScope } from './historyStore'
+export type {
+    AddHistoryEntryInput,
+    MergeHistoryEntriesResult,
+    SearchHistoryOptions,
+    SearchHistoryResult,
+    HistorySearchScope
+} from './historyStore'
 export { MachineStore } from './machineStore'
 export { MessageStore } from './messageStore'
 export { PortMappingsStore } from './portMappingsStore'

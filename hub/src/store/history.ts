@@ -56,6 +56,11 @@ export type SearchHistoryResult = {
     }
 }
 
+export type MergeHistoryEntriesResult = {
+    moved: number
+    duplicatesRemoved: number
+}
+
 function toStoredHistoryEntry(row: DbHistoryRow): StoredHistoryEntry {
     return {
         id: row.id,
@@ -139,6 +144,46 @@ export function addHistoryEntry(db: Database, input: AddHistoryEntryInput): Stor
     }
 
     return toStoredHistoryEntry(row)
+}
+
+export function mergeHistoryEntries(
+    db: Database,
+    fromSessionId: string,
+    toSessionId: string,
+    namespace: string
+): MergeHistoryEntriesResult {
+    if (fromSessionId === toSessionId) {
+        return { moved: 0, duplicatesRemoved: 0 }
+    }
+
+    try {
+        db.exec('BEGIN')
+
+        const duplicatesRemoved = db.prepare(`
+            DELETE FROM conversation_history
+            WHERE session_id = @fromSessionId
+              AND assistant_message_id IS NOT NULL
+              AND EXISTS (
+                  SELECT 1
+                  FROM conversation_history AS target
+                  WHERE target.session_id = @toSessionId
+                    AND target.assistant_message_id = conversation_history.assistant_message_id
+              )
+        `).run({ fromSessionId, toSessionId }).changes
+
+        const moved = db.prepare(`
+            UPDATE conversation_history
+            SET session_id = @toSessionId,
+                namespace = @namespace
+            WHERE session_id = @fromSessionId
+        `).run({ fromSessionId, toSessionId, namespace }).changes
+
+        db.exec('COMMIT')
+        return { moved, duplicatesRemoved }
+    } catch (error) {
+        db.exec('ROLLBACK')
+        throw error
+    }
 }
 
 export function searchHistory(db: Database, options: SearchHistoryOptions): SearchHistoryResult {

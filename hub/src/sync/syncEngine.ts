@@ -320,6 +320,13 @@ export class SyncEngine {
     }
 
     searchConversationHistory(options: Parameters<Store['history']['search']>[0]): ReturnType<Store['history']['search']> {
+        if (options.scope === 'session' && options.sessionId) {
+            try {
+                this.conversationHistoryService.backfillSession(options.sessionId)
+            } catch (error) {
+                console.error(`Failed to backfill conversation history for session ${options.sessionId}:`, error)
+            }
+        }
         return this.store.history.search(options)
     }
 

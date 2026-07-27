@@ -3,8 +3,8 @@ import type { Session } from '@hapi/protocol/types'
 import type { Store, StoredMessage } from '../store'
 
 const MAX_EXCERPT_LINES = 500
-const FALLBACK_EXCERPT_LINES = 100
 const BACKFILL_MESSAGE_LIMIT_PER_SESSION = 20_000
+const MESSAGE_PAGE_SIZE = 200
 
 function extractStrings(value: unknown, output: string[]): void {
     if (typeof value === 'string') {
@@ -60,52 +60,21 @@ function getMessageText(message: StoredMessage): string {
     return extractText(record?.content ?? message.content)
 }
 
-function findLatestTextAgentMessage(agentMessages: StoredMessage[]): StoredMessage | null {
-    for (let index = agentMessages.length - 1; index >= 0; index -= 1) {
-        const message = agentMessages[index]
-        if (getMessageText(message)) return message
-    }
-    return null
-}
-
 type TurnRecord = {
     userMessage: StoredMessage
-    agentMessages: StoredMessage[]
-}
-
-function buildTurnRecordFromTrailingMessages(messages: StoredMessage[]): TurnRecord | null {
-    const trailingAgentMessages: StoredMessage[] = []
-
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-        const message = messages[index]
-        const record = unwrapRoleWrappedRecordEnvelope(message.content)
-        if (!record) continue
-
-        if (record.role === 'user') {
-            return {
-                userMessage: message,
-                agentMessages: trailingAgentMessages.reverse()
-            }
-        }
-
-        if (record.role === 'agent') {
-            trailingAgentMessages.push(message)
-        }
-    }
-
-    return null
+    latestTextAgentMessage: StoredMessage | null
 }
 
 function buildTurnRecords(messages: StoredMessage[]): TurnRecord[] {
     const turns: TurnRecord[] = []
     let currentUser: StoredMessage | null = null
-    let agentMessages: StoredMessage[] = []
+    let latestTextAgentMessage: StoredMessage | null = null
 
     const flush = () => {
-        if (currentUser && agentMessages.length > 0) {
-            turns.push({ userMessage: currentUser, agentMessages })
+        if (currentUser && latestTextAgentMessage) {
+            turns.push({ userMessage: currentUser, latestTextAgentMessage })
         }
-        agentMessages = []
+        latestTextAgentMessage = null
     }
 
     for (const message of messages) {
@@ -118,8 +87,8 @@ function buildTurnRecords(messages: StoredMessage[]): TurnRecord[] {
             continue
         }
 
-        if (record.role === 'agent' && currentUser) {
-            agentMessages.push(message)
+        if (record.role === 'agent' && currentUser && getMessageText(message)) {
+            latestTextAgentMessage = message
         }
     }
 
@@ -128,6 +97,8 @@ function buildTurnRecords(messages: StoredMessage[]): TurnRecord[] {
 }
 
 export class ConversationHistoryService {
+    private readonly fullyBackfilledAtSeq = new Map<string, number>()
+
     constructor(
         private readonly store: Store,
         private readonly getSession: (sessionId: string) => Session | undefined
@@ -137,11 +108,68 @@ export class ConversationHistoryService {
         const session = this.getSession(sessionId)
         if (!session) return
 
-        const messages = this.store.messages.getMessages(sessionId, 200)
-        const turn = buildTurnRecordFromTrailingMessages(messages)
-        if (!turn || turn.agentMessages.length === 0) return
+        const turn = this.findTrailingTurn(sessionId)
+        if (!turn) return
 
-        this.recordTurn(session, turn)
+        if (this.recordTurn(session, turn) && this.fullyBackfilledAtSeq.has(sessionId)) {
+            this.fullyBackfilledAtSeq.set(sessionId, this.store.messages.getMaxSeq(sessionId))
+        }
+    }
+
+    backfillSession(sessionId: string): { entriesAttempted: number } {
+        const session = this.getSession(sessionId)
+        if (!session) return { entriesAttempted: 0 }
+
+        const latestSeq = this.store.messages.getMaxSeq(sessionId)
+        if (this.fullyBackfilledAtSeq.get(sessionId) === latestSeq) {
+            return { entriesAttempted: 0 }
+        }
+
+        let currentUser: StoredMessage | null = null
+        let latestTextAgentMessage: StoredMessage | null = null
+        let afterSeq = 0
+        let entriesAttempted = 0
+
+        const flush = () => {
+            if (currentUser && latestTextAgentMessage && this.recordTurn(session, {
+                userMessage: currentUser,
+                latestTextAgentMessage
+            })) {
+                entriesAttempted += 1
+            }
+            latestTextAgentMessage = null
+        }
+
+        while (true) {
+            const messages = this.store.messages.getMessagesAfter(sessionId, afterSeq, MESSAGE_PAGE_SIZE)
+            if (messages.length === 0) break
+
+            for (const message of messages) {
+                const record = unwrapRoleWrappedRecordEnvelope(message.content)
+                if (!record) continue
+
+                if (record.role === 'user') {
+                    flush()
+                    currentUser = message
+                    continue
+                }
+
+                if (record.role === 'agent' && currentUser && getMessageText(message)) {
+                    latestTextAgentMessage = message
+                }
+            }
+
+            const last = messages[messages.length - 1]
+            if (!last || messages.length < MESSAGE_PAGE_SIZE) break
+            afterSeq = last.seq
+        }
+
+        if (!session.thinking) {
+            flush()
+        }
+
+        this.fullyBackfilledAtSeq.set(sessionId, latestSeq)
+        return { entriesAttempted }
     }
 
     backfillRecent(sinceCreatedAt: number): { sessionsScanned: number; entriesAttempted: number } {
@@ -175,24 +203,9 @@ export class ConversationHistoryService {
         const userText = getMessageText(turn.userMessage)
         if (!userText) return false
 
-        const latestAgent = findLatestTextAgentMessage(turn.agentMessages)
-        let assistantExcerpt = ''
-        let assistantMessageId: string | null = null
-
-        if (latestAgent) {
-            assistantExcerpt = takeLastLines(getMessageText(latestAgent), MAX_EXCERPT_LINES)
-            assistantMessageId = latestAgent.id
-        }
-
-        if (!assistantExcerpt && turn.agentMessages.length > 0) {
-            const combined = turn.agentMessages
-                .map(getMessageText)
-                .filter(Boolean)
-                .join('\n')
-            assistantExcerpt = takeLastLines(combined, FALLBACK_EXCERPT_LINES)
-            assistantMessageId = turn.agentMessages[turn.agentMessages.length - 1]?.id ?? null
-        }
-
+        const latestAgent = turn.latestTextAgentMessage
+        if (!latestAgent) return false
+        const assistantExcerpt = takeLastLines(getMessageText(latestAgent), MAX_EXCERPT_LINES)
         if (!assistantExcerpt) return false
 
         try {
@@ -200,8 +213,8 @@ export class ConversationHistoryService {
                 namespace: session.namespace,
                 sessionId: session.id,
                 userMessageId: turn.userMessage.id,
-                assistantMessageId,
-                createdAt: latestAgent?.createdAt ?? turn.agentMessages[turn.agentMessages.length - 1]?.createdAt ?? Date.now(),
+                assistantMessageId: latestAgent.id,
+                createdAt: latestAgent.createdAt,
                 title: getSessionTitle(session),
                 projectPath: session.metadata?.path ?? null,
                 projectHost: getProjectHost(session),
@@ -213,6 +226,37 @@ export class ConversationHistoryService {
         } catch (error) {
             console.error('Failed to record conversation history:', error)
             return false
+        }
+    }
+
+    private findTrailingTurn(sessionId: string): TurnRecord | null {
+        let latestTextAgentMessage: StoredMessage | null = null
+        let beforeSeq: number | undefined
+
+        while (true) {
+            const messages = this.store.messages.getMessages(sessionId, MESSAGE_PAGE_SIZE, beforeSeq)
+            if (messages.length === 0) return null
+
+            for (let index = messages.length - 1; index >= 0; index -= 1) {
+                const message = messages[index]
+                const record = unwrapRoleWrappedRecordEnvelope(message.content)
+                if (!record) continue
+
+                if (record.role === 'user') {
+                    return {
+                        userMessage: message,
+                        latestTextAgentMessage
+                    }
+                }
+
+                if (record.role === 'agent' && !latestTextAgentMessage && getMessageText(message)) {
+                    latestTextAgentMessage = message
+                }
+            }
+
+            const first = messages[0]
+            if (!first || messages.length < MESSAGE_PAGE_SIZE) return null
+            beforeSeq = first.seq
         }
     }
 }

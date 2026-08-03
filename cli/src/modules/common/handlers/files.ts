@@ -3,7 +3,7 @@ import { readFile, stat, writeFile } from 'fs/promises'
 import { createHash } from 'crypto'
 import { resolve } from 'path'
 import type { RpcHandlerManager } from '@/api/rpc/RpcHandlerManager'
-import { validatePath } from '../pathSecurity'
+import { resolveReadPath, validatePath } from '../pathSecurity'
 import { getErrorMessage, rpcError } from '../rpcResponses'
 
 interface ReadFileRequest {
@@ -32,14 +32,13 @@ export function registerFileHandlers(rpcHandlerManager: RpcHandlerManager, worki
     rpcHandlerManager.registerHandler<ReadFileRequest, ReadFileResponse>('readFile', async (data) => {
         logger.debug('Read file request:', data.path)
 
-        const validation = validatePath(data.path, workingDirectory)
-        if (!validation.valid) {
-            return rpcError(validation.error ?? 'Invalid file path')
+        const resolution = await resolveReadPath(data.path, workingDirectory)
+        if (!resolution.valid) {
+            return rpcError(resolution.error)
         }
 
         try {
-            const resolvedPath = resolve(workingDirectory, data.path)
-            const buffer = await readFile(resolvedPath)
+            const buffer = await readFile(resolution.path)
             const content = buffer.toString('base64')
             return { success: true, content }
         } catch (error) {

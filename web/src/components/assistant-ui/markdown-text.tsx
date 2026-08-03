@@ -17,7 +17,7 @@ import { SyntaxHighlighter } from '@/components/assistant-ui/shiki-highlighter'
 import { MermaidDiagram } from '@/components/assistant-ui/mermaid-diagram'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
 import { CopyIcon, CheckIcon } from '@/components/icons'
-import { MarkdownAnchor } from '@/components/assistant-ui/markdown-link-behavior'
+import { MarkdownAnchor, useMarkdownLinkUrlTransform } from '@/components/assistant-ui/markdown-link-behavior'
 
 import type { MarkdownTextPrimitiveProps } from '@assistant-ui/react-markdown'
 
@@ -230,6 +230,8 @@ type MarkdownTextProps = {
 }
 
 export function MarkdownText(props: MarkdownTextProps) {
+    const urlTransform = useMarkdownLinkUrlTransform()
+
     return (
         <MarkdownTextPrimitive
             remarkPlugins={MARKDOWN_PLUGINS}
@@ -237,6 +239,7 @@ export function MarkdownText(props: MarkdownTextProps) {
             components={defaultComponents}
             componentsByLanguage={MARKDOWN_COMPONENTS_BY_LANGUAGE}
             preprocess={props.preprocess}
+            urlTransform={urlTransform}
             className={cn(MARKDOWN_CLASSNAME)}
         />
     )

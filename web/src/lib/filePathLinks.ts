@@ -18,6 +18,11 @@ const PATH_WITH_BOUNDARIES_REGEX = new RegExp(
     'gi'
 )
 const INLINE_CODE_REGEX = /(`+)([\s\S]*?)\1/g
+const URI_SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:/i
+const WINDOWS_ABSOLUTE_PATH_PATTERN = /^[A-Za-z]:[\\/]/
+const SOURCE_POSITION_SUFFIX_PATTERN = /:\d+(?::\d+)?$/
+const POSIX_SYSTEM_TEMP_PATH_PATTERN = /^\/(?:tmp|private\/tmp|var\/tmp|var\/folders\/[^/]+\/[^/]+\/T)(?:\/|$)/
+const WINDOWS_SYSTEM_TEMP_PATH_PATTERN = /^[A-Za-z]:\/(?:Windows\/Temp|Users\/[^/]+\/AppData\/Local\/Temp)(?:\/|$)/i
 
 function splitLinesWithEndings(value: string): string[] {
     return value.match(/[^\n]*\n|[^\n]+/g) ?? []
@@ -31,6 +36,136 @@ function buildSessionFileHref(sessionId: string, path: string): string {
     const encodedSessionId = encodeURIComponent(sessionId)
     const encodedPath = encodeURIComponent(encodeBase64(path))
     return `/sessions/${encodedSessionId}/file?path=${encodedPath}`
+}
+
+function decodeHrefPath(value: string): string | null {
+    try {
+        return decodeURIComponent(value)
+    } catch {
+        return null
+    }
+}
+
+function getLocalPathFromHref(href: string): string | null {
+    const value = href.trim()
+    if (!value || value.startsWith('#') || value.startsWith('?') || value.startsWith('//')) {
+        return null
+    }
+
+    if (/^file:/i.test(value)) {
+        try {
+            const url = new URL(value)
+            if (url.protocol !== 'file:' || (url.hostname && url.hostname !== 'localhost')) {
+                return null
+            }
+
+            const decodedPath = decodeHrefPath(url.pathname)
+            if (!decodedPath) return null
+            return /^\/[A-Za-z]:\//.test(decodedPath) ? decodedPath.slice(1) : decodedPath
+        } catch {
+            return null
+        }
+    }
+
+    const pathBeforePosition = value.replace(SOURCE_POSITION_SUFFIX_PATTERN, '')
+    const schemeCheckValue = pathBeforePosition.includes('.') ? pathBeforePosition : value
+    if (!WINDOWS_ABSOLUTE_PATH_PATTERN.test(value) && URI_SCHEME_PATTERN.test(schemeCheckValue)) {
+        return null
+    }
+
+    const suffixIndex = value.search(/[?#]/)
+    return decodeHrefPath(suffixIndex >= 0 ? value.slice(0, suffixIndex) : value)
+}
+
+function normalizeRelativeFilePath(value: string): string | null {
+    const normalized = value.replace(/\\/g, '/')
+    if (!normalized || normalized.startsWith('/') || normalized.startsWith('~/') || WINDOWS_ABSOLUTE_PATH_PATTERN.test(normalized)) {
+        return null
+    }
+
+    const segments: string[] = []
+    for (const segment of normalized.split('/')) {
+        if (!segment || segment === '.') continue
+        if (segment === '..') {
+            if (segments.length === 0) return null
+            segments.pop()
+            continue
+        }
+        segments.push(segment)
+    }
+
+    return segments.length > 0 ? segments.join('/') : null
+}
+
+function normalizeAbsoluteFilePath(value: string): string | null {
+    const normalized = value.replace(/\\/g, '/')
+    const driveMatch = /^([A-Za-z]:)\//.exec(normalized)
+    const isPosixAbsolute = normalized.startsWith('/')
+    if (!driveMatch && !isPosixAbsolute) return null
+
+    const prefix = driveMatch ? `${driveMatch[1]}/` : '/'
+    const remainder = driveMatch ? normalized.slice(driveMatch[0].length) : normalized.slice(1)
+    const segments: string[] = []
+
+    for (const segment of remainder.split('/')) {
+        if (!segment || segment === '.') continue
+        if (segment === '..') {
+            if (segments.length === 0) return null
+            segments.pop()
+            continue
+        }
+        segments.push(segment)
+    }
+
+    return `${prefix}${segments.join('/')}`
+}
+
+function makeSessionRelativePath(filePath: string, workingDirectory: string | null | undefined): string | null {
+    const normalizedFilePath = normalizeAbsoluteFilePath(filePath)
+    if (!normalizedFilePath || !workingDirectory) return null
+
+    const normalizedWorkingDirectory = normalizeAbsoluteFilePath(workingDirectory)
+    if (!normalizedWorkingDirectory) return null
+
+    const windowsPath = WINDOWS_ABSOLUTE_PATH_PATTERN.test(normalizedFilePath)
+    if (windowsPath !== WINDOWS_ABSOLUTE_PATH_PATTERN.test(normalizedWorkingDirectory)) {
+        return null
+    }
+
+    const comparableFilePath = windowsPath ? normalizedFilePath.toLowerCase() : normalizedFilePath
+    const comparableWorkingDirectory = windowsPath ? normalizedWorkingDirectory.toLowerCase() : normalizedWorkingDirectory
+    const workingDirectoryPrefix = comparableWorkingDirectory.endsWith('/')
+        ? comparableWorkingDirectory
+        : `${comparableWorkingDirectory}/`
+
+    if (!comparableFilePath.startsWith(workingDirectoryPrefix)) return null
+    return normalizedFilePath.slice(workingDirectoryPrefix.length) || null
+}
+
+function isSystemTemporaryPath(filePath: string): boolean {
+    return POSIX_SYSTEM_TEMP_PATH_PATTERN.test(filePath)
+        || WINDOWS_SYSTEM_TEMP_PATH_PATTERN.test(filePath)
+}
+
+export function resolveLocalFileHref(
+    href: string | undefined,
+    sessionId: string | undefined,
+    workingDirectory?: string | null
+): string | null {
+    if (!href || !sessionId) return null
+
+    const localPath = getLocalPathFromHref(href)
+    if (!localPath) return null
+
+    const pathWithoutPosition = localPath.replace(SOURCE_POSITION_SUFFIX_PATTERN, '')
+    const absolutePath = normalizeAbsoluteFilePath(pathWithoutPosition)
+    const previewPath = absolutePath
+        ? isSystemTemporaryPath(absolutePath)
+            ? absolutePath
+            : makeSessionRelativePath(absolutePath, workingDirectory)
+        : normalizeRelativeFilePath(pathWithoutPosition)
+
+    return previewPath ? buildSessionFileHref(sessionId, previewPath) : null
 }
 
 export function buildSessionFileMarkdownLink(sessionId: string, path: string): string {

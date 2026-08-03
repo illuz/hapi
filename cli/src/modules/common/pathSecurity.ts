@@ -1,9 +1,15 @@
+import { realpath } from 'fs/promises';
+import { tmpdir } from 'os';
 import { resolve, sep } from 'path';
 
 export interface PathValidationResult {
     valid: boolean;
     error?: string;
 }
+
+export type ReadPathResolution =
+    | { valid: true; path: string }
+    | { valid: false; error: string };
 
 export function isWithinPathRoot(targetPath: string, rootPath: string): boolean {
     const resolvedTarget = resolve(targetPath);
@@ -37,4 +43,40 @@ export function validatePath(targetPath: string, workingDirectory: string): Path
     }
 
     return { valid: true };
+}
+
+function getSystemTemporaryDirectories(): string[] {
+    const directories = [tmpdir()];
+    if (process.platform !== 'win32') {
+        directories.push('/tmp', '/var/tmp');
+    }
+    return [...new Set(directories.map((directory) => resolve(directory)))];
+}
+
+export async function resolveReadPath(targetPath: string, workingDirectory: string): Promise<ReadPathResolution> {
+    const resolvedTarget = resolve(workingDirectory, targetPath);
+    if (validatePath(resolvedTarget, workingDirectory).valid) {
+        return { valid: true, path: resolvedTarget };
+    }
+
+    try {
+        const canonicalTarget = await realpath(resolvedTarget);
+        for (const temporaryDirectory of getSystemTemporaryDirectories()) {
+            try {
+                const canonicalTemporaryDirectory = await realpath(temporaryDirectory);
+                if (isWithinPathRoot(canonicalTarget, canonicalTemporaryDirectory)) {
+                    return { valid: true, path: canonicalTarget };
+                }
+            } catch {
+                // Ignore unavailable temporary directory aliases.
+            }
+        }
+    } catch {
+        // Outside-workspace files must exist before their canonical location can be trusted.
+    }
+
+    return {
+        valid: false,
+        error: `Access denied: Path '${targetPath}' is outside the working and temporary directories`
+    };
 }

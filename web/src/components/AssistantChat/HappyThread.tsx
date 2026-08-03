@@ -981,7 +981,11 @@ export function HappyThread(props: {
             onRefresh: props.onRefresh,
             onRetryMessage: props.onRetryMessage
         }}>
-            <MarkdownLinkBehaviorProvider behavior="copy-non-file">
+            <MarkdownLinkBehaviorProvider
+                behavior="copy-non-file"
+                sessionId={props.sessionId}
+                workingDirectory={props.metadata?.path}
+            >
                 <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col relative">
                 <ThreadPrimitive.Viewport
                     asChild

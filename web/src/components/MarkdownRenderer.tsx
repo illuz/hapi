@@ -9,7 +9,7 @@ import {
     MARKDOWN_CLASSNAME,
 } from '@/components/assistant-ui/markdown-text'
 import { SyntaxHighlighter } from '@/components/assistant-ui/shiki-highlighter'
-import { MarkdownAnchor } from '@/components/assistant-ui/markdown-link-behavior'
+import { MarkdownAnchor, useMarkdownLinkUrlTransform } from '@/components/assistant-ui/markdown-link-behavior'
 import { CheckIcon, CopyIcon } from '@/components/icons'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
 import { cn } from '@/lib/utils'
@@ -241,6 +241,7 @@ const staticComponents = {
 } satisfies Components
 
 function MarkdownContent(props: MarkdownRendererProps) {
+    const urlTransform = useMarkdownLinkUrlTransform()
     const extraComponents = props.components as Components | undefined
     const mergedComponents = props.components
         ? { ...staticComponents, ...extraComponents }
@@ -252,6 +253,7 @@ function MarkdownContent(props: MarkdownRendererProps) {
                 remarkPlugins={MARKDOWN_PLUGINS}
                 rehypePlugins={MARKDOWN_REHYPE_PLUGINS}
                 components={mergedComponents}
+                urlTransform={urlTransform}
             >
                 {props.content}
             </ReactMarkdown>

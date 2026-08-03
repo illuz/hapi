@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { decodeBase64 } from '@/lib/utils'
-import { buildSessionFileMarkdownLink, linkAssistantFilePaths } from './filePathLinks'
+import { buildSessionFileMarkdownLink, linkAssistantFilePaths, resolveLocalFileHref } from './filePathLinks'
 
 function extractEncodedPath(markdownLink: string): string {
     const match = markdownLink.match(/[?&]path=([^)]*)/)
@@ -20,6 +20,53 @@ describe('buildSessionFileMarkdownLink', () => {
 
         expect(link).toContain('[.workflow/report.md](/sessions/session-1/file?path=')
         expect(decodeLinkPath(link)).toBe('.workflow/report.md')
+    })
+})
+
+describe('resolveLocalFileHref', () => {
+    it('resolves relative file links and removes source positions', () => {
+        const href = resolveLocalFileHref('src/components/App.tsx:42:7', 'session-1', '/workspace/project')
+        const basenameHref = resolveLocalFileHref('App.tsx:42', 'session-1', '/workspace/project')
+
+        expect(href).not.toBeNull()
+        expect(decodeLinkPath(`[file](${href})`)).toBe('src/components/App.tsx')
+        expect(basenameHref).not.toBeNull()
+        expect(decodeLinkPath(`[file](${basenameHref})`)).toBe('App.tsx')
+    })
+
+    it('resolves absolute paths inside the session working directory', () => {
+        const href = resolveLocalFileHref('/workspace/project/docs/guide.md#L12', 'session-1', '/workspace/project')
+
+        expect(href).not.toBeNull()
+        expect(decodeLinkPath(`[file](${href})`)).toBe('docs/guide.md')
+    })
+
+    it('keeps system temporary paths absolute for session file previews', () => {
+        const href = resolveLocalFileHref('/tmp/donation-certificate-detail-v3.png', 'session-1', '/workspace/project')
+
+        expect(href).not.toBeNull()
+        expect(decodeLinkPath(`[file](${href})`)).toBe('/tmp/donation-certificate-detail-v3.png')
+    })
+
+    it('resolves local file URLs with encoded characters', () => {
+        const href = resolveLocalFileHref('file:///workspace/project/docs/My%20Guide.md#L8', 'session-1', '/workspace/project')
+
+        expect(href).not.toBeNull()
+        expect(decodeLinkPath(`[file](${href})`)).toBe('docs/My Guide.md')
+    })
+
+    it('resolves Windows paths case-insensitively', () => {
+        const href = resolveLocalFileHref('c:\\WORKSPACE\\project\\src\\app.ts:9', 'session-1', 'C:\\workspace\\project')
+
+        expect(href).not.toBeNull()
+        expect(decodeLinkPath(`[file](${href})`)).toBe('src/app.ts')
+    })
+
+    it('does not resolve external URLs or paths outside the working directory', () => {
+        expect(resolveLocalFileHref('https://example.com/docs', 'session-1', '/workspace/project')).toBeNull()
+        expect(resolveLocalFileHref('urn:123', 'session-1', '/workspace/project')).toBeNull()
+        expect(resolveLocalFileHref('/etc/passwd', 'session-1', '/workspace/project')).toBeNull()
+        expect(resolveLocalFileHref('../secret.txt', 'session-1', '/workspace/project')).toBeNull()
     })
 })
 

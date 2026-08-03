@@ -96,6 +96,8 @@ vi.mock('@/lib/use-translation', () => ({
                 'sessions.timeFilter.1h': 'Last hour',
                 'sessions.timeFilter.6h': 'Last 6 hours',
                 'sessions.timeFilter.12h': 'Last 12 hours',
+                'sessions.timeFilter.last1d': 'Last 1 day',
+                'sessions.timeFilter.last3d': 'Last 3 days',
                 'sessions.timeFilter.1d': 'Older than 1 day',
                 'sessions.timeFilter.3d': 'Older than 3 days',
                 'sessions.timeFilter.10d': 'Older than 10 days',

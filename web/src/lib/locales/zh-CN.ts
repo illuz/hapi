@@ -96,6 +96,8 @@ export default {
   'sessions.timeFilter.1h': '最近 1 小时',
   'sessions.timeFilter.6h': '最近 6 小时',
   'sessions.timeFilter.12h': '最近 12 小时',
+  'sessions.timeFilter.last1d': '最近 1 天',
+  'sessions.timeFilter.last3d': '最近 3 天',
   'sessions.timeFilter.1d': '大于 1 天',
   'sessions.timeFilter.3d': '大于 3 天',
   'sessions.timeFilter.10d': '大于 10 天',

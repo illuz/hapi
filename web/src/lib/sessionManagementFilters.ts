@@ -7,6 +7,8 @@ export const SESSION_MANAGEMENT_UPDATE_WINDOW_OPTIONS = [
     { key: '1h', minutes: 60, direction: 'within' },
     { key: '6h', minutes: 360, direction: 'within' },
     { key: '12h', minutes: 720, direction: 'within' },
+    { key: 'last1d', minutes: 1440, direction: 'within' },
+    { key: 'last3d', minutes: 4320, direction: 'within' },
     { key: '1d', minutes: 1440, direction: 'olderThan' },
     { key: '3d', minutes: 4320, direction: 'olderThan' },
     { key: '10d', minutes: 14400, direction: 'olderThan' },

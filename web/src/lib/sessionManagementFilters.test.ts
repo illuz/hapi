@@ -33,7 +33,7 @@ describe('sessionManagementFilters', () => {
         expect(normalizeSessionManagementSearch('  HAPI  ')).toBe('hapi')
     })
 
-    it('matches by query, marker color, and older-than windows', () => {
+    it('matches by query, marker color, and update windows', () => {
         const day = 24 * 60 * 60 * 1000
         const oldSession = makeSession({
             id: 'old',
@@ -51,7 +51,20 @@ describe('sessionManagementFilters', () => {
         expect(sessionMatchesManagementQuery(oldSession, 'desktop', 'desktop')).toBe(true)
         expect(sessionMatchesManagementMarkerColor(oldSession, 'blue')).toBe(true)
         expect(sessionMatchesManagementMarkerColor(oldSession, 'red')).toBe(false)
+        expect(sessionMatchesManagementUpdateWindow(oldSession, 'last1d')).toBe(false)
+        expect(sessionMatchesManagementUpdateWindow(oldSession, 'last3d')).toBe(false)
         expect(sessionMatchesManagementUpdateWindow(oldSession, '3d')).toBe(true)
         expect(sessionMatchesManagementUpdateWindow(oldSession, '10m')).toBe(false)
+    })
+
+    it('matches sessions updated in the last 1 and 3 days', () => {
+        const day = 24 * 60 * 60 * 1000
+        const twoDayOldSession = makeSession({
+            id: 'two-days-old',
+            updatedAt: Date.now() - (2 * day),
+        })
+
+        expect(sessionMatchesManagementUpdateWindow(twoDayOldSession, 'last1d')).toBe(false)
+        expect(sessionMatchesManagementUpdateWindow(twoDayOldSession, 'last3d')).toBe(true)
     })
 })

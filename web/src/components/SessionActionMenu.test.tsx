@@ -61,7 +61,7 @@ describe('SessionActionMenu', () => {
         mockCopyToClipboard.mockResolvedValue(undefined)
     })
 
-    it('copies the session ID from the right-click menu', async () => {
+    it('copies the agent session ID from the right-click menu', async () => {
         const onClose = vi.fn()
 
         render(
@@ -69,7 +69,7 @@ describe('SessionActionMenu', () => {
                 isOpen
                 onClose={onClose}
                 sessionActive={false}
-                sessionId="session-123"
+                agentSessionId="codex-thread-123"
                 markerColor={null}
                 onSelectMarkerColor={vi.fn()}
                 onRename={vi.fn()}
@@ -82,7 +82,7 @@ describe('SessionActionMenu', () => {
         fireEvent.click(screen.getByRole('menuitem', { name: 'Copy ID' }))
 
         await waitFor(() => {
-            expect(mockCopyToClipboard).toHaveBeenCalledWith('session-123')
+            expect(mockCopyToClipboard).toHaveBeenCalledWith('codex-thread-123')
         })
         expect(mockHaptic.notification).toHaveBeenCalledWith('success')
         expect(onClose).toHaveBeenCalled()
@@ -97,7 +97,7 @@ describe('SessionActionMenu', () => {
                 isOpen
                 onClose={onClose}
                 sessionActive={false}
-                sessionId="session-123"
+                agentSessionId="codex-thread-123"
                 markerColor={null}
                 onSelectMarkerColor={vi.fn()}
                 onRename={vi.fn()}
@@ -110,10 +110,29 @@ describe('SessionActionMenu', () => {
         fireEvent.click(screen.getByRole('menuitem', { name: 'Copy ID' }))
 
         await waitFor(() => {
-            expect(mockCopyToClipboard).toHaveBeenCalledWith('session-123')
+            expect(mockCopyToClipboard).toHaveBeenCalledWith('codex-thread-123')
         })
         expect(mockHaptic.notification).toHaveBeenCalledWith('error')
         expect(onClose).toHaveBeenCalled()
+    })
+
+    it('does not expose the HAPI session ID when the agent session ID is unavailable', () => {
+        render(
+            <SessionActionMenu
+                isOpen
+                onClose={vi.fn()}
+                sessionActive={false}
+                markerColor={null}
+                onSelectMarkerColor={vi.fn()}
+                onRename={vi.fn()}
+                onArchive={vi.fn()}
+                onDelete={vi.fn()}
+                anchorPoint={{ x: 100, y: 100 }}
+            />,
+        )
+
+        expect(screen.queryByRole('menuitem', { name: 'Copy ID' })).not.toBeInTheDocument()
+        expect(mockCopyToClipboard).not.toHaveBeenCalled()
     })
 
     it('renders Codex and Claude new-session actions', async () => {
@@ -126,7 +145,7 @@ describe('SessionActionMenu', () => {
                 onClose={onClose}
                 canSpawnSessionFromConfig
                 sessionActive={false}
-                sessionId="session-123"
+                agentSessionId="codex-thread-123"
                 markerColor={null}
                 onSelectMarkerColor={vi.fn()}
                 onRename={vi.fn()}
@@ -157,7 +176,7 @@ describe('SessionActionMenu', () => {
                 onClose={onClose}
                 canSpawnSessionFromConfig
                 sessionActive={false}
-                sessionId="session-456"
+                agentSessionId="codex-thread-456"
                 markerColor={null}
                 onSelectMarkerColor={vi.fn()}
                 onRename={vi.fn()}

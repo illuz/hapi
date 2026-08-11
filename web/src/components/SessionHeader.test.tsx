@@ -76,7 +76,7 @@ function makeSession(overrides: Partial<Session> = {}): Session {
         markerColor: null,
         metadata: {
             flavor: 'codex',
-            agentSessionId: 'agent-1',
+            codexSessionId: 'codex-thread-1',
             path: '/tmp/hapi',
         },
         messages: [],
@@ -111,7 +111,7 @@ describe('SessionHeader', () => {
 
         expect(props.canForkSession).toBe(true)
         expect(props.canSpawnSessionFromConfig).toBe(true)
-        expect(props.sessionId).toBe('session-1')
+        expect(props.agentSessionId).toBe('codex-thread-1')
         expect(props.onForkSession).toEqual(expect.any(Function))
         expect(props.onSpawnSessionFromConfig).toEqual(expect.any(Function))
     })

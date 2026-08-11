@@ -1,7 +1,11 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SessionSummary } from '@/types/api'
 import { getProjectToolCountsKey, SessionList } from './SessionList'
+
+const { mockSessionActionMenu } = vi.hoisted(() => ({
+    mockSessionActionMenu: vi.fn(() => null),
+}))
 
 vi.mock('@tanstack/react-router', () => ({
     useNavigate: () => vi.fn(),
@@ -32,7 +36,7 @@ vi.mock('@/hooks/mutations/useSessionActions', () => ({
 }))
 
 vi.mock('@/components/SessionActionMenu', () => ({
-    SessionActionMenu: () => null,
+    SessionActionMenu: mockSessionActionMenu,
 }))
 
 vi.mock('@/components/RenameSessionDialog', () => ({
@@ -83,6 +87,10 @@ afterEach(() => {
     localStorage.clear()
 })
 
+beforeEach(() => {
+    mockSessionActionMenu.mockClear()
+})
+
 function makeSession(overrides: Partial<SessionSummary> = {}): SessionSummary {
     return {
         id: 'session-1',
@@ -103,6 +111,37 @@ function makeSession(overrides: Partial<SessionSummary> = {}): SessionSummary {
         ...overrides,
     }
 }
+
+describe('SessionList action menu', () => {
+    it('passes the agent session ID instead of the HAPI session ID', () => {
+        render(
+            <SessionList
+                sessions={[makeSession({
+                    id: 'hapi-session-1',
+                    metadata: {
+                        path: '/repo',
+                        machineId: 'machine-1',
+                        flavor: 'codex',
+                        agentSessionId: 'codex-thread-1',
+                    },
+                })]}
+                onSelect={vi.fn()}
+                onNewSession={vi.fn()}
+                onRefresh={vi.fn()}
+                isLoading={false}
+                renderHeader={false}
+                api={null}
+                machineLabelsById={{ 'machine-1': 'MacBook' }}
+            />
+        )
+
+        expect(mockSessionActionMenu).toHaveBeenCalled()
+        const calls = mockSessionActionMenu.mock.calls as unknown as Array<[Record<string, unknown>]>
+        const props = calls[calls.length - 1]?.[0]
+        expect(props?.agentSessionId).toBe('codex-thread-1')
+        expect(props).not.toHaveProperty('sessionId')
+    })
+})
 
 describe('SessionList project tools buttons', () => {
     it('renders Agents, Cron, and Ports buttons without toggling the project row', () => {

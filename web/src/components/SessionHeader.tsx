@@ -124,6 +124,12 @@ export function SessionHeader(props: {
     const markerTextColor = getSessionMarkerColorHex(session.markerColor)
     const forkSupported = canForkSession(session)
     const spawnFromConfigSupported = canSpawnSessionFromConfig(session)
+    const agentSessionId = session.metadata?.codexSessionId
+        ?? session.metadata?.claudeSessionId
+        ?? session.metadata?.geminiSessionId
+        ?? session.metadata?.opencodeSessionId
+        ?? session.metadata?.cursorSessionId
+        ?? null
     const sessionShareCount = (session as unknown as { shareCount?: unknown }).shareCount
     const activeShareCount = typeof sessionShareCount === 'number'
         ? sessionShareCount
@@ -387,7 +393,7 @@ export function SessionHeader(props: {
                 canForkSession={forkSupported}
                 canSpawnSessionFromConfig={spawnFromConfigSupported}
                 sessionActive={session.active}
-                sessionId={session.id}
+                agentSessionId={agentSessionId}
                 markerColor={session.markerColor}
                 onSelectMarkerColor={(markerColor) => { void setSessionMarkerColor(markerColor) }}
                 onRename={() => setRenameOpen(true)}

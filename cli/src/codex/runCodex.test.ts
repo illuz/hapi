@@ -120,4 +120,12 @@ describe('runCodex defaults', () => {
         expect(harness.loopArgs[0]?.model).toBeUndefined();
         expect(harness.loopArgs[0]?.modelReasoningEffort).toBeUndefined();
     });
+
+    it('publishes a resumed Codex thread ID in the initial session metadata', async () => {
+        await runCodex({ resumeSessionId: 'codex-thread-forked' });
+
+        expect(harness.bootstrapArgs[0]?.metadataOverrides).toEqual({
+            codexSessionId: 'codex-thread-forked'
+        });
+    });
 });

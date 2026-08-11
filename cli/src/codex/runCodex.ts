@@ -51,7 +51,10 @@ export async function runCodex(opts: {
         agentState: state,
         model: initialModel,
         modelReasoningEffort: initialModelReasoningEffort,
-        serviceTier: opts.serviceTier
+        serviceTier: opts.serviceTier,
+        metadataOverrides: opts.resumeSessionId
+            ? { codexSessionId: opts.resumeSessionId }
+            : undefined
     });
 
     const startingMode: 'local' | 'remote' = startedBy === 'runner' ? 'remote' : 'local';

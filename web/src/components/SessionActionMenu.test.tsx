@@ -32,7 +32,7 @@ vi.mock('@/lib/use-translation', () => ({
                 'session.action.setMarker': 'Set marker',
                 'session.action.clearMarker': 'Clear marker',
                 'session.action.rename': 'Rename',
-                'session.action.copyId': 'Copy ID',
+                'session.action.copyResumeCommand': 'Copy resume command',
                 'session.action.fork': 'Fork',
                 'session.action.newSession': 'New session',
                 'session.action.newSessionCx': 'New session',
@@ -61,7 +61,7 @@ describe('SessionActionMenu', () => {
         mockCopyToClipboard.mockResolvedValue(undefined)
     })
 
-    it('copies the agent session ID from the right-click menu', async () => {
+    it('copies the complete resume command from the right-click menu', async () => {
         const onClose = vi.fn()
 
         render(
@@ -69,7 +69,7 @@ describe('SessionActionMenu', () => {
                 isOpen
                 onClose={onClose}
                 sessionActive={false}
-                agentSessionId="codex-thread-123"
+                resumeCommand="codex resume codex-thread-123"
                 markerColor={null}
                 onSelectMarkerColor={vi.fn()}
                 onRename={vi.fn()}
@@ -79,10 +79,10 @@ describe('SessionActionMenu', () => {
             />,
         )
 
-        fireEvent.click(screen.getByRole('menuitem', { name: 'Copy ID' }))
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Copy resume command' }))
 
         await waitFor(() => {
-            expect(mockCopyToClipboard).toHaveBeenCalledWith('codex-thread-123')
+            expect(mockCopyToClipboard).toHaveBeenCalledWith('codex resume codex-thread-123')
         })
         expect(mockHaptic.notification).toHaveBeenCalledWith('success')
         expect(onClose).toHaveBeenCalled()
@@ -97,7 +97,7 @@ describe('SessionActionMenu', () => {
                 isOpen
                 onClose={onClose}
                 sessionActive={false}
-                agentSessionId="codex-thread-123"
+                resumeCommand="codex resume codex-thread-123"
                 markerColor={null}
                 onSelectMarkerColor={vi.fn()}
                 onRename={vi.fn()}
@@ -107,10 +107,10 @@ describe('SessionActionMenu', () => {
             />,
         )
 
-        fireEvent.click(screen.getByRole('menuitem', { name: 'Copy ID' }))
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Copy resume command' }))
 
         await waitFor(() => {
-            expect(mockCopyToClipboard).toHaveBeenCalledWith('codex-thread-123')
+            expect(mockCopyToClipboard).toHaveBeenCalledWith('codex resume codex-thread-123')
         })
         expect(mockHaptic.notification).toHaveBeenCalledWith('error')
         expect(onClose).toHaveBeenCalled()
@@ -131,7 +131,7 @@ describe('SessionActionMenu', () => {
             />,
         )
 
-        expect(screen.queryByRole('menuitem', { name: 'Copy ID' })).not.toBeInTheDocument()
+        expect(screen.queryByRole('menuitem', { name: 'Copy resume command' })).not.toBeInTheDocument()
         expect(mockCopyToClipboard).not.toHaveBeenCalled()
     })
 
@@ -145,7 +145,7 @@ describe('SessionActionMenu', () => {
                 onClose={onClose}
                 canSpawnSessionFromConfig
                 sessionActive={false}
-                agentSessionId="codex-thread-123"
+                resumeCommand="codex resume codex-thread-123"
                 markerColor={null}
                 onSelectMarkerColor={vi.fn()}
                 onRename={vi.fn()}
@@ -176,7 +176,7 @@ describe('SessionActionMenu', () => {
                 onClose={onClose}
                 canSpawnSessionFromConfig
                 sessionActive={false}
-                agentSessionId="codex-thread-456"
+                resumeCommand="codex resume codex-thread-456"
                 markerColor={null}
                 onSelectMarkerColor={vi.fn()}
                 onRename={vi.fn()}

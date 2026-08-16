@@ -197,7 +197,7 @@ export default {
   'session.action.archive': 'Archive',
   'session.action.delete': 'Delete',
   'session.action.copy': 'Copy',
-  'session.action.copyId': 'Copy ID',
+  'session.action.copyResumeCommand': 'Copy resume command',
 
   'session.action.share': 'Share',
   'share.dialog.title': 'Share session',

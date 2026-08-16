@@ -16,6 +16,7 @@ import { ShareIcon } from '@/components/icons'
 import { canForkSession, canSpawnSessionFromConfig } from '@/lib/sessionBranching'
 import { getSessionModelLabel } from '@/lib/sessionModelLabel'
 import { getSessionMarkerColorHex } from '@/lib/sessionMarkers'
+import { buildSessionResumeCommand } from '@/lib/sessionResumeCommand'
 import { getDisplaySessionTitle, getSessionTitle } from '@/lib/sessionTitle'
 import { useToast } from '@/lib/toast-context'
 import { useTranslation } from '@/lib/use-translation'
@@ -130,6 +131,7 @@ export function SessionHeader(props: {
         ?? session.metadata?.opencodeSessionId
         ?? session.metadata?.cursorSessionId
         ?? null
+    const resumeCommand = buildSessionResumeCommand(session.metadata?.flavor, agentSessionId)
     const sessionShareCount = (session as unknown as { shareCount?: unknown }).shareCount
     const activeShareCount = typeof sessionShareCount === 'number'
         ? sessionShareCount
@@ -393,7 +395,7 @@ export function SessionHeader(props: {
                 canForkSession={forkSupported}
                 canSpawnSessionFromConfig={spawnFromConfigSupported}
                 sessionActive={session.active}
-                agentSessionId={agentSessionId}
+                resumeCommand={resumeCommand}
                 markerColor={session.markerColor}
                 onSelectMarkerColor={(markerColor) => { void setSessionMarkerColor(markerColor) }}
                 onRename={() => setRenameOpen(true)}

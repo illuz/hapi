@@ -27,6 +27,7 @@ import {
 import { useSessionAttentionTokens } from '@/lib/sessionAttention'
 import { canForkSession, canSpawnSessionFromConfig } from '@/lib/sessionBranching'
 import { SESSION_MARKER_COLORS, getSessionMarkerColorHex } from '@/lib/sessionMarkers'
+import { buildSessionResumeCommand } from '@/lib/sessionResumeCommand'
 import { getDisplaySessionTitle, getSessionTitle as getBaseSessionTitle } from '@/lib/sessionTitle'
 import { useToast } from '@/lib/toast-context'
 import { CopyIcon, CheckIcon, ShareIcon } from '@/components/icons'
@@ -975,6 +976,7 @@ function SessionItem(props: {
     const markerTextColor = getSessionMarkerColorHex(s.markerColor)
     const forkSupported = canForkSession(s)
     const spawnFromConfigSupported = canSpawnSessionFromConfig(s)
+    const resumeCommand = buildSessionResumeCommand(s.metadata?.flavor, s.metadata?.agentSessionId)
 
     const showActionError = (title: string, error: unknown) => {
         addToast({
@@ -1092,7 +1094,7 @@ function SessionItem(props: {
                 canForkSession={forkSupported}
                 canSpawnSessionFromConfig={spawnFromConfigSupported}
                 sessionActive={s.active}
-                agentSessionId={s.metadata?.agentSessionId}
+                resumeCommand={resumeCommand}
                 markerColor={s.markerColor}
                 onSelectMarkerColor={(markerColor) => { void setSessionMarkerColor(markerColor) }}
                 onRename={() => setRenameOpen(true)}

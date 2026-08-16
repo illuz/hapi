@@ -111,7 +111,7 @@ describe('SessionHeader', () => {
 
         expect(props.canForkSession).toBe(true)
         expect(props.canSpawnSessionFromConfig).toBe(true)
-        expect(props.agentSessionId).toBe('codex-thread-1')
+        expect(props.resumeCommand).toBe('codex resume codex-thread-1')
         expect(props.onForkSession).toEqual(expect.any(Function))
         expect(props.onSpawnSessionFromConfig).toEqual(expect.any(Function))
     })

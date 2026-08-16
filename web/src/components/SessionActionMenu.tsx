@@ -22,7 +22,7 @@ type SessionActionMenuProps = {
     canForkSession?: boolean
     canSpawnSessionFromConfig?: boolean
     sessionActive: boolean
-    agentSessionId?: string | null
+    resumeCommand?: string | null
     markerColor: SessionMarkerColor | null
     onSelectMarkerColor: (markerColor: SessionMarkerColor | null) => void
     onRename: () => void
@@ -157,7 +157,7 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
         canForkSession = false,
         canSpawnSessionFromConfig = false,
         sessionActive,
-        agentSessionId,
+        resumeCommand,
         markerColor,
         onSelectMarkerColor,
         onRename,
@@ -224,11 +224,11 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
         }
     }
 
-    const handleCopySessionId = async () => {
-        if (!agentSessionId) return
+    const handleCopyResumeCommand = async () => {
+        if (!resumeCommand) return
 
         try {
-            await safeCopyToClipboard(agentSessionId)
+            await safeCopyToClipboard(resumeCommand)
             haptic.notification('success')
         } catch {
             haptic.notification('error')
@@ -391,16 +391,16 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                     {t('session.action.rename')}
                 </button>
 
-                {agentSessionId ? (
+                {resumeCommand ? (
                     <button
                         type="button"
                         role="menuitem"
                         disabled={pendingAction !== null}
                         className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
-                        onClick={handleCopySessionId}
+                        onClick={handleCopyResumeCommand}
                     >
                         <CopyIcon className="h-[18px] w-[18px] text-[var(--app-hint)]" />
-                        {t('session.action.copyId')}
+                        {t('session.action.copyResumeCommand')}
                     </button>
                 ) : null}
 

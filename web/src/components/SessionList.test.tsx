@@ -113,7 +113,7 @@ function makeSession(overrides: Partial<SessionSummary> = {}): SessionSummary {
 }
 
 describe('SessionList action menu', () => {
-    it('passes the agent session ID instead of the HAPI session ID', () => {
+    it('passes a native resume command instead of the HAPI session ID', () => {
         render(
             <SessionList
                 sessions={[makeSession({
@@ -138,7 +138,7 @@ describe('SessionList action menu', () => {
         expect(mockSessionActionMenu).toHaveBeenCalled()
         const calls = mockSessionActionMenu.mock.calls as unknown as Array<[Record<string, unknown>]>
         const props = calls[calls.length - 1]?.[0]
-        expect(props?.agentSessionId).toBe('codex-thread-1')
+        expect(props?.resumeCommand).toBe('codex resume codex-thread-1')
         expect(props).not.toHaveProperty('sessionId')
     })
 })

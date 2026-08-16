@@ -197,7 +197,7 @@ export default {
   'session.action.archive': '归档',
   'session.action.delete': '删除',
   'session.action.copy': '复制',
-  'session.action.copyId': '复制会话 ID',
+  'session.action.copyResumeCommand': '复制恢复命令',
 
   'session.action.share': '分享会话',
   'share.dialog.title': '分享会话',

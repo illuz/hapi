@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import FilePage, { isMarkdownFilePath, isPreviewableImageFilePath } from './file'
 
 const mockState = vi.hoisted(() => ({
@@ -12,9 +12,10 @@ const mockState = vi.hoisted(() => ({
         isLoading: false,
     },
     fileQuery: {
-        data: { success: true, content: '' },
+        data: undefined as { success: boolean; content?: string; error?: string } | undefined,
         isLoading: false,
     },
+    readSessionFile: vi.fn(),
     copy: vi.fn(),
     goBack: vi.fn(),
 }))
@@ -25,7 +26,11 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 
 vi.mock('@tanstack/react-query', () => ({
-    useQuery: (options: { queryKey: readonly unknown[] }) => {
+    useQuery: (options: {
+        queryKey: readonly unknown[]
+        queryFn: () => Promise<unknown>
+        enabled: boolean
+    }) => {
         const key = options.queryKey[0]
         if (key === 'git-file-diff') return mockState.diffQuery
         if (key === 'session-file') return mockState.fileQuery
@@ -37,7 +42,7 @@ vi.mock('@/lib/app-context', () => ({
     useAppContext: () => ({
         api: {
             getGitDiffFile: vi.fn(),
-            readSessionFile: vi.fn(),
+            readSessionFile: mockState.readSessionFile,
         },
     }),
 }))
@@ -70,6 +75,18 @@ vi.mock('@/components/MarkdownRenderer', () => ({
             </article>
         )
     },
+}))
+
+vi.mock('@/components/FilePreview/DocumentPreview', () => ({
+    default: (props: { fileName: string }) => (
+        <section role="region" aria-label={`${props.fileName} preview`} />
+    ),
+}))
+
+vi.mock('@/components/Spinner', () => ({
+    Spinner: (props: { label?: string | null }) => (
+        <span role={props.label === null ? undefined : 'status'} aria-label={props.label ?? undefined} />
+    ),
 }))
 
 afterEach(() => {
@@ -110,6 +127,14 @@ describe('isPreviewableImageFilePath', () => {
 describe('FilePage Markdown preview', () => {
     beforeEach(() => {
         vi.clearAllMocks()
+        Object.defineProperty(URL, 'createObjectURL', {
+            configurable: true,
+            value: vi.fn(() => 'blob:hapi-file-download'),
+        })
+        Object.defineProperty(URL, 'revokeObjectURL', {
+            configurable: true,
+            value: vi.fn(),
+        })
         mockState.search.staged = undefined
         mockState.diffQuery = {
             data: { success: true, stdout: '', error: undefined },
@@ -219,5 +244,50 @@ describe('FilePage Markdown preview', () => {
 
         expect(screen.getByText('This looks like a binary file. It cannot be displayed.')).toBeInTheDocument()
         expect(screen.queryByRole('img')).not.toBeInTheDocument()
+    })
+
+    it.each([
+        ['report.pdf', '%PDF-1.7\n\x00document'],
+        ['proposal.docx', 'PK\x03\x04\x00word-document'],
+        ['budget.xlsx', 'PK\x03\x04\x00excel-workbook'],
+    ])('renders a preview surface for %s', (path, content) => {
+        setFile(path, content)
+
+        render(<FilePage />)
+
+        expect(screen.getByRole('region', { name: `${path} preview` })).toBeInTheDocument()
+        expect(screen.queryByText('This looks like a binary file. It cannot be displayed.')).not.toBeInTheDocument()
+    })
+
+    it.each([
+        ['notes.txt', 'plain text'],
+        ['archives/data.zip', '\x00\x01zip'],
+        ['assets/diagram.png', '\x00\x01image'],
+    ])('downloads %s from the file toolbar', async (path, content) => {
+        const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+        setFile(path, content)
+
+        render(<FilePage />)
+        fireEvent.click(screen.getByRole('button', { name: 'Download file' }))
+
+        await waitFor(() => {
+            expect(URL.createObjectURL).toHaveBeenCalledOnce()
+            expect(anchorClick).toHaveBeenCalledOnce()
+        })
+    })
+
+    it('shows a visible error when a file download fails', async () => {
+        setFile('archives/data.zip', '\x00\x01zip')
+        mockState.fileQuery = {
+            data: { success: false, error: 'Permission denied' },
+            isLoading: false,
+        }
+        mockState.readSessionFile.mockResolvedValue({ success: false, error: 'Permission denied' })
+
+        render(<FilePage />)
+        fireEvent.click(screen.getByRole('button', { name: 'Download file' }))
+
+        expect(await screen.findByRole('alert')).toHaveTextContent('Download failed: Permission denied')
+        expect(URL.createObjectURL).not.toHaveBeenCalled()
     })
 })

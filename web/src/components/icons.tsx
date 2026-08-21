@@ -60,3 +60,14 @@ export function CheckIcon(props: IconProps) {
         2
     )
 }
+
+export function DownloadIcon(props: IconProps) {
+    return createIcon(
+        <>
+            <path d="M12 3v12m0 0 4-4m-4 4-4-4" />
+            <path d="M5 21h14" />
+        </>,
+        props,
+        2
+    )
+}

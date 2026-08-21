@@ -4,7 +4,9 @@ import { useParams, useSearch } from '@tanstack/react-router'
 import type { GitCommandResponse } from '@/types/api'
 import { FileIcon } from '@/components/FileIcon'
 import { MarkdownRenderer } from '@/components/MarkdownRenderer'
-import { CopyIcon, CheckIcon } from '@/components/icons'
+import { Spinner } from '@/components/Spinner'
+import DocumentPreview, { type DocumentPreviewKind } from '@/components/FilePreview/DocumentPreview'
+import { CopyIcon, CheckIcon, DownloadIcon } from '@/components/icons'
 import { useAppContext } from '@/lib/app-context'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
@@ -26,8 +28,35 @@ const IMAGE_MIME_TYPES = new Map<string, string>([
     ['svg', 'image/svg+xml'],
     ['webp', 'image/webp'],
 ])
+const DOCUMENT_PREVIEW_TYPES = new Map<string, DocumentPreviewKind>([
+    ['docx', 'word'],
+    ['pdf', 'pdf'],
+    ['xlsx', 'spreadsheet'],
+])
+const FILE_MIME_TYPES = new Map<string, string>([
+    ...IMAGE_MIME_TYPES,
+    ['css', 'text/css;charset=utf-8'],
+    ['csv', 'text/csv;charset=utf-8'],
+    ['doc', 'application/msword'],
+    ['docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+    ['gz', 'application/gzip'],
+    ['htm', 'text/html;charset=utf-8'],
+    ['html', 'text/html;charset=utf-8'],
+    ['js', 'text/javascript;charset=utf-8'],
+    ['json', 'application/json;charset=utf-8'],
+    ['md', 'text/markdown;charset=utf-8'],
+    ['mp3', 'audio/mpeg'],
+    ['mp4', 'video/mp4'],
+    ['pdf', 'application/pdf'],
+    ['tar', 'application/x-tar'],
+    ['txt', 'text/plain;charset=utf-8'],
+    ['xls', 'application/vnd.ms-excel'],
+    ['xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+    ['xml', 'application/xml;charset=utf-8'],
+    ['zip', 'application/zip'],
+])
 
-type FileDisplayMode = 'diff' | 'source' | 'rendered' | 'image'
+type FileDisplayMode = 'diff' | 'source' | 'rendered' | 'image' | 'document'
 
 function decodePath(value: string): string {
     if (!value) return ''
@@ -123,6 +152,34 @@ function getImageMimeType(path: string): string | null {
     return IMAGE_MIME_TYPES.get(getFileExtension(path)) ?? null
 }
 
+function getDocumentPreviewKind(path: string): DocumentPreviewKind | null {
+    return DOCUMENT_PREVIEW_TYPES.get(getFileExtension(path)) ?? null
+}
+
+function getFileMimeType(path: string): string {
+    return FILE_MIME_TYPES.get(getFileExtension(path)) ?? 'application/octet-stream'
+}
+
+function decodeBase64Bytes(value: string): Uint8Array<ArrayBuffer> | null {
+    try {
+        return Uint8Array.from(atob(value), (char) => char.charCodeAt(0))
+    } catch {
+        return null
+    }
+}
+
+function downloadBytes(bytes: Uint8Array<ArrayBuffer>, fileName: string, mimeType: string): void {
+    const objectUrl = URL.createObjectURL(new Blob([bytes], { type: mimeType }))
+    const anchor = document.createElement('a')
+    anchor.href = objectUrl
+    anchor.download = fileName
+    anchor.style.display = 'none'
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1_000)
+}
+
 function resolveLanguage(path: string): string | undefined {
     const ext = getFileExtension(path)
     if (!ext) return undefined
@@ -148,6 +205,11 @@ function extractCommandError(result: GitCommandResponse | undefined): string | n
     if (!result) return null
     if (result.success) return null
     return result.error ?? result.stderr ?? 'Failed to load diff'
+}
+
+function extractQueryError(error: unknown, fallback: string): string | null {
+    if (!error) return null
+    return error instanceof Error ? error.message : fallback
 }
 
 function DiffUnavailableNotice(props: { message: string }) {
@@ -280,13 +342,25 @@ function ImagePreview(props: {
     )
 }
 
-function getEffectiveDisplayMode(mode: FileDisplayMode, hasDiff: boolean, markdownFile: boolean, imageFile: boolean): FileDisplayMode {
+function getDefaultDisplayMode(markdownFile: boolean, imageFile: boolean, documentFile: boolean): FileDisplayMode {
+    if (imageFile) return 'image'
+    if (documentFile) return 'document'
+    return markdownFile ? 'rendered' : 'source'
+}
+
+function getEffectiveDisplayMode(
+    mode: FileDisplayMode,
+    hasDiff: boolean,
+    markdownFile: boolean,
+    imageFile: boolean,
+    documentFile: boolean
+): FileDisplayMode {
     if (mode === 'diff' && hasDiff) return 'diff'
     if (mode === 'rendered' && markdownFile) return 'rendered'
     if (mode === 'image' && imageFile) return 'image'
-    if (mode === 'source' && !imageFile) return 'source'
-    if (imageFile) return 'image'
-    return markdownFile ? 'rendered' : 'source'
+    if (mode === 'document' && documentFile) return 'document'
+    if (mode === 'source' && !imageFile && !documentFile) return 'source'
+    return getDefaultDisplayMode(markdownFile, imageFile, documentFile)
 }
 
 export default function FilePage() {
@@ -301,6 +375,8 @@ export default function FilePage() {
 
     const filePath = useMemo(() => decodePath(encodedPath), [encodedPath])
     const fileName = filePath.split('/').pop() || filePath || 'File'
+    const [isDownloading, setIsDownloading] = useState(false)
+    const [downloadError, setDownloadError] = useState<string | null>(null)
 
     const diffQuery = useQuery({
         queryKey: queryKeys.gitFileDiff(sessionId, filePath, staged),
@@ -332,22 +408,33 @@ export default function FilePage() {
     const markdownFile = useMemo(() => isMarkdownFilePath(filePath), [filePath])
     const imageFile = useMemo(() => isPreviewableImageFilePath(filePath), [filePath])
     const imageMimeType = useMemo(() => getImageMimeType(filePath), [filePath])
+    const documentKind = useMemo(() => getDocumentPreviewKind(filePath), [filePath])
+    const documentFile = documentKind !== null
 
     const fileContentResult = fileQuery.data
     const encodedContent = fileContentResult?.success ? (fileContentResult.content ?? '') : ''
-    const decodedContentResult = fileContentResult?.success && encodedContent && !imageFile
+    const decodedContentResult = fileContentResult?.success && encodedContent && !imageFile && !documentFile
         ? decodeBase64(encodedContent)
         : { text: '', ok: true }
     const decodedContent = decodedContentResult.text
     const binaryFile = fileContentResult?.success
-        ? !imageFile && (!decodedContentResult.ok || isBinaryContent(decodedContent))
+        ? !imageFile && !documentFile && (!decodedContentResult.ok || isBinaryContent(decodedContent))
         : false
+    const documentBytes = useMemo(
+        () => documentFile && fileContentResult?.success && typeof fileContentResult.content === 'string'
+            ? decodeBase64Bytes(fileContentResult.content)
+            : null,
+        [documentFile, fileContentResult]
+    )
     const imageDataUri = fileContentResult?.success && encodedContent && imageMimeType
         ? `data:${imageMimeType};base64,${encodedContent}`
         : null
 
-    const language = useMemo(() => imageFile ? undefined : resolveLanguage(filePath), [filePath, imageFile])
-    const highlighted = useShikiHighlighter(imageFile ? '' : decodedContent, language)
+    const language = useMemo(
+        () => imageFile || documentFile ? undefined : resolveLanguage(filePath),
+        [filePath, imageFile, documentFile]
+    )
+    const highlighted = useShikiHighlighter(imageFile || documentFile ? '' : decodedContent, language)
     const contentSizeBytes = useMemo(
         () => (decodedContent ? getUtf8ByteLength(decodedContent) : 0),
         [decodedContent]
@@ -358,37 +445,77 @@ export default function FilePage() {
         && contentSizeBytes <= MAX_COPYABLE_FILE_BYTES
 
     const [displayMode, setDisplayMode] = useState<FileDisplayMode>('diff')
+    const defaultDisplayMode = getDefaultDisplayMode(markdownFile, imageFile, documentFile)
 
     useEffect(() => {
-        setDisplayMode(imageFile ? 'image' : 'diff')
-    }, [filePath, staged, imageFile])
+        setDisplayMode(imageFile ? 'image' : documentFile ? 'document' : 'diff')
+        setDownloadError(null)
+    }, [filePath, staged, imageFile, documentFile])
 
     useEffect(() => {
         if (diffSuccess && !diffContent) {
-            setDisplayMode(imageFile ? 'image' : markdownFile ? 'rendered' : 'source')
+            setDisplayMode(defaultDisplayMode)
             return
         }
         if (diffFailed) {
-            setDisplayMode(imageFile ? 'image' : markdownFile ? 'rendered' : 'source')
+            setDisplayMode(defaultDisplayMode)
         }
-    }, [diffSuccess, diffFailed, diffContent, markdownFile, imageFile])
+    }, [diffSuccess, diffFailed, diffContent, defaultDisplayMode])
 
     useEffect(() => {
         if (!markdownFile && displayMode === 'rendered') {
-            setDisplayMode(imageFile ? 'image' : diffContent ? 'diff' : 'source')
+            setDisplayMode(diffContent ? 'diff' : defaultDisplayMode)
             return
         }
         if (!imageFile && displayMode === 'image') {
-            setDisplayMode(diffContent ? 'diff' : markdownFile ? 'rendered' : 'source')
+            setDisplayMode(diffContent ? 'diff' : defaultDisplayMode)
+            return
         }
-    }, [markdownFile, imageFile, displayMode, diffContent])
+        if (!documentFile && displayMode === 'document') {
+            setDisplayMode(diffContent ? 'diff' : defaultDisplayMode)
+            return
+        }
+        if ((imageFile || documentFile) && displayMode === 'source') {
+            setDisplayMode(diffContent ? 'diff' : defaultDisplayMode)
+        }
+    }, [markdownFile, imageFile, documentFile, displayMode, diffContent, defaultDisplayMode])
 
     const loading = diffQuery.isLoading || fileQuery.isLoading
     const fileError = fileContentResult && !fileContentResult.success
         ? (fileContentResult.error ?? 'Failed to read file')
         : null
+    const handleDownload = async () => {
+        if (!api || !sessionId || !filePath || isDownloading) return
+
+        setIsDownloading(true)
+        setDownloadError(null)
+        try {
+            const result = fileQuery.data?.success
+                ? fileQuery.data
+                : await api.readSessionFile(sessionId, filePath)
+            if (!result.success || typeof result.content !== 'string') {
+                throw new Error(result.error ?? 'Failed to read file')
+            }
+
+            const bytes = decodeBase64Bytes(result.content)
+            if (!bytes) {
+                throw new Error('Invalid file content')
+            }
+            downloadBytes(bytes, fileName, getFileMimeType(filePath))
+        } catch (error) {
+            setDownloadError(`Download failed: ${extractQueryError(error, 'Unknown error')}`)
+        } finally {
+            setIsDownloading(false)
+        }
+    }
     const missingPath = !filePath
-    const effectiveDisplayMode = getEffectiveDisplayMode(displayMode, Boolean(diffContent), markdownFile, imageFile)
+    const effectiveDisplayMode = getEffectiveDisplayMode(
+        displayMode,
+        Boolean(diffContent),
+        markdownFile,
+        imageFile,
+        documentFile
+    )
     const showModeSwitcher = Boolean(diffContent) || markdownFile
 
     return (
@@ -415,6 +542,18 @@ export default function FilePage() {
                     <span className="min-w-0 flex-1 truncate text-xs text-[var(--app-hint)]">{filePath}</span>
                     <button
                         type="button"
+                        onClick={() => void handleDownload()}
+                        disabled={!api || !sessionId || !filePath || isDownloading}
+                        aria-label="Download file"
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] disabled:cursor-wait disabled:opacity-50"
+                        title="Download file"
+                    >
+                        {isDownloading
+                            ? <Spinner size="sm" label={null} />
+                            : <DownloadIcon className="h-3.5 w-3.5" />}
+                    </button>
+                    <button
+                        type="button"
                         onClick={() => copyPath(filePath)}
                         className="shrink-0 rounded p-1 text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] transition-colors"
                         title="Copy path"
@@ -435,7 +574,7 @@ export default function FilePage() {
                                 Diff
                             </FileModeButton>
                         ) : null}
-                        {!imageFile ? (
+                        {!imageFile && !documentFile ? (
                             <FileModeButton
                                 active={effectiveDisplayMode === 'source'}
                                 onClick={() => setDisplayMode('source')}
@@ -459,12 +598,25 @@ export default function FilePage() {
                                 Preview
                             </FileModeButton>
                         ) : null}
+                        {documentFile ? (
+                            <FileModeButton
+                                active={effectiveDisplayMode === 'document'}
+                                onClick={() => setDisplayMode('document')}
+                            >
+                                Preview
+                            </FileModeButton>
+                        ) : null}
                     </div>
                 </div>
             ) : null}
 
             <div className="app-scroll-y flex-1 min-h-0">
                 <div className="mx-auto w-full max-w-content p-4">
+                    {downloadError ? (
+                        <div role="alert" className="mb-3 rounded-md border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-[var(--app-hint)]">
+                            {downloadError}
+                        </div>
+                    ) : null}
                     {diffError ? (
                         <DiffUnavailableNotice message={diffError} />
                     ) : null}
@@ -502,6 +654,16 @@ export default function FilePage() {
                             />
                         ) : (
                             <div className="text-sm text-[var(--app-hint)]">File is empty.</div>
+                        )
+                    ) : effectiveDisplayMode === 'document' && documentFile && documentKind ? (
+                        documentBytes ? (
+                            <DocumentPreview
+                                bytes={documentBytes}
+                                fileName={fileName}
+                                kind={documentKind}
+                            />
+                        ) : (
+                            <div className="text-sm text-[var(--app-hint)]">Failed to decode file content.</div>
                         )
                     ) : effectiveDisplayMode === 'source' ? (
                         decodedContent ? (

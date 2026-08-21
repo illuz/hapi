@@ -90,7 +90,7 @@ export default defineConfig({
                 ]
             },
             injectManifest: {
-                globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}']
+                globPatterns: ['**/*.{js,mjs,css,html,ico,png,svg,woff,woff2}']
             },
             devOptions: {
                 enabled: true,
@@ -102,7 +102,8 @@ export default defineConfig({
     resolve: {
         alias: {
             '@': resolve(__dirname, 'src')
-        }
+        },
+        dedupe: ['react', 'react-dom']
     },
     build: {
         outDir: 'dist',

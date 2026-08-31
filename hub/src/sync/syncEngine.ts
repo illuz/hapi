@@ -543,6 +543,10 @@ export class SyncEngine {
         await this.sessionCache.setSessionMarkerColor(sessionId, markerColor)
     }
 
+    async setSessionPinned(sessionId: string, pinned: boolean): Promise<void> {
+        await this.sessionCache.setSessionPinned(sessionId, pinned)
+    }
+
     async updateAutoContinueSettings(sessionId: string, settings: AutoContinueSettings): Promise<void> {
         await this.sessionCache.updateAutoContinueSettings(sessionId, settings)
     }

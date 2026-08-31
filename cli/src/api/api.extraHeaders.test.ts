@@ -135,6 +135,7 @@ describe('API extra headers integration', () => {
             thinkingAt: now,
             todos: [],
             markerColor: null,
+            pinned: false,
             model: null,
             modelReasoningEffort: null,
             effort: null,

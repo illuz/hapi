@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { isObject, toSessionSummary } from '@hapi/protocol'
+import { isObject, toSessionSummary, unwrapRoleWrappedRecordEnvelope } from '@hapi/protocol'
 import type {
     Machine,
     MachinesResponse,
@@ -32,7 +32,7 @@ const RECONNECT_MAX_DELAY_MS = 30_000
 const RECONNECT_JITTER_MS = 500
 const INVALIDATION_BATCH_MS = 16
 
-type SessionPatch = Partial<Pick<Session, 'active' | 'thinking' | 'activeAt' | 'updatedAt' | 'markerColor' | 'model' | 'modelReasoningEffort' | 'serviceTier' | 'effort' | 'permissionMode' | 'collaborationMode'>>
+type SessionPatch = Partial<Pick<Session, 'active' | 'thinking' | 'activeAt' | 'updatedAt' | 'markerColor' | 'pinned' | 'model' | 'modelReasoningEffort' | 'serviceTier' | 'effort' | 'permissionMode' | 'collaborationMode'>>
 type SessionPatchWithAttention = SessionPatch & { shareConfirmedAt?: number; shareLabel?: string | null }
 
 function sortSessionSummaries(left: SessionSummary, right: SessionSummary): number {
@@ -88,6 +88,10 @@ function getSessionPatch(value: unknown): SessionPatch | null {
         patch.markerColor = value.markerColor as Session['markerColor']
         hasKnownPatch = true
     }
+    if (typeof value.pinned === 'boolean') {
+        patch.pinned = value.pinned
+        hasKnownPatch = true
+    }
     if (value.model === null || typeof value.model === 'string') {
         patch.model = value.model
         hasKnownPatch = true
@@ -128,7 +132,7 @@ function hasUnknownSessionPatchKeys(value: unknown): boolean {
     if (!hasRecordShape(value)) {
         return false
     }
-    const knownKeys = new Set(['active', 'thinking', 'activeAt', 'updatedAt', 'markerColor', 'model', 'modelReasoningEffort', 'serviceTier', 'effort', 'permissionMode', 'collaborationMode', 'shareConfirmedAt', 'shareLabel'])
+    const knownKeys = new Set(['active', 'thinking', 'activeAt', 'updatedAt', 'markerColor', 'pinned', 'model', 'modelReasoningEffort', 'serviceTier', 'effort', 'permissionMode', 'collaborationMode', 'shareConfirmedAt', 'shareLabel'])
     return Object.keys(value).some((key) => !knownKeys.has(key))
 }
 
@@ -507,6 +511,7 @@ export function useSSE(options: {
                     thinking: patch.thinking ?? current.thinking,
                     activeAt: patch.activeAt ?? current.activeAt,
                     updatedAt: patch.updatedAt ?? current.updatedAt,
+                    pinned: Object.prototype.hasOwnProperty.call(patch, 'pinned') ? patch.pinned === true : current.pinned,
                     model: Object.prototype.hasOwnProperty.call(patch, 'model') ? patch.model ?? null : current.model,
                     effort: Object.prototype.hasOwnProperty.call(patch, 'effort') ? patch.effort ?? null : current.effort
                 }
@@ -616,6 +621,9 @@ export function useSSE(options: {
 
             if (event.type === 'messages-consumed') {
                 markMessagesConsumed(event.sessionId, event.localIds, event.invokedAt)
+                void queryClient.invalidateQueries({
+                    queryKey: queryKeys.conversationOutline(event.sessionId)
+                })
             }
 
             if (event.type === 'message-cancelled') {
@@ -626,12 +634,25 @@ export function useSSE(options: {
 
             if (event.type === 'message-received') {
                 ingestIncomingMessages(event.sessionId, [event.message])
+                const record = unwrapRoleWrappedRecordEnvelope(event.message.content)
+                if (record?.role === 'user' && event.message.invokedAt !== null) {
+                    void queryClient.invalidateQueries({
+                        queryKey: queryKeys.conversationOutline(event.sessionId)
+                    })
+                }
+            }
+
+            if (event.type === 'messages-invalidated') {
+                void queryClient.invalidateQueries({
+                    queryKey: queryKeys.conversationOutline(event.sessionId)
+                })
             }
 
             if (event.type === 'session-added' || event.type === 'session-updated' || event.type === 'session-removed') {
                 if (event.type === 'session-removed') {
                     removeSessionSummary(event.sessionId)
                     void queryClient.removeQueries({ queryKey: queryKeys.session(event.sessionId) })
+                    void queryClient.removeQueries({ queryKey: queryKeys.conversationOutline(event.sessionId) })
                     clearMessageWindow(event.sessionId)
                     clearComposerDraft(event.sessionId)
                 } else if (hasRecordShape(event.data) && typeof event.data.shareConfirmedAt === 'number') {

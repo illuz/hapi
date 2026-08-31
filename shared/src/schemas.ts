@@ -188,6 +188,7 @@ export const SessionSchema = z.object({
     todos: TodosSchema.optional(),
     teamState: TeamStateSchema.optional(),
     markerColor: SessionMarkerColorSchema.nullable().default(null),
+    pinned: z.boolean().default(false),
     model: z.string().nullable().optional().default(null),
     modelReasoningEffort: z.string().nullable().optional().default(null),
     serviceTier: z.string().nullable().optional(),

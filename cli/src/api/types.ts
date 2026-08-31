@@ -118,6 +118,7 @@ export const CreateSessionResponseSchema = z.object({
         thinkingAt: z.number(),
         todos: TodosSchema.optional(),
         markerColor: SessionMarkerColorSchema.nullable().optional().default(null),
+        pinned: z.boolean().default(false),
         model: z.string().nullable().optional().default(null),
         modelReasoningEffort: z.string().nullable().optional().default(null),
         serviceTier: z.string().nullable().optional().default(null),

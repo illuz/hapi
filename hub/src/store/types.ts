@@ -22,6 +22,7 @@ export type StoredSession = {
     teamState: unknown | null
     teamStateUpdatedAt: number | null
     markerColor: SessionMarkerColor | null
+    pinned: boolean
     active: boolean
     activeAt: number | null
     seq: number

@@ -31,6 +31,8 @@ vi.mock('@/lib/use-translation', () => ({
                 'session.action.marker': 'Marker',
                 'session.action.setMarker': 'Set marker',
                 'session.action.clearMarker': 'Clear marker',
+                'session.action.pin': 'Pin to top',
+                'session.action.unpin': 'Unpin from top',
                 'session.action.rename': 'Rename',
                 'session.action.copyResumeCommand': 'Copy resume command',
                 'session.action.fork': 'Fork',
@@ -133,6 +135,31 @@ describe('SessionActionMenu', () => {
 
         expect(screen.queryByRole('menuitem', { name: 'Copy resume command' })).not.toBeInTheDocument()
         expect(mockCopyToClipboard).not.toHaveBeenCalled()
+    })
+
+    it('toggles pin state from the menu', () => {
+        const onClose = vi.fn()
+        const onTogglePinned = vi.fn()
+
+        render(
+            <SessionActionMenu
+                isOpen
+                onClose={onClose}
+                sessionActive={false}
+                pinned={false}
+                onTogglePinned={onTogglePinned}
+                markerColor={null}
+                onSelectMarkerColor={vi.fn()}
+                onRename={vi.fn()}
+                onArchive={vi.fn()}
+                onDelete={vi.fn()}
+                anchorPoint={{ x: 100, y: 100 }}
+            />,
+        )
+
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Pin to top' }))
+        expect(onTogglePinned).toHaveBeenCalledOnce()
+        expect(onClose).toHaveBeenCalledOnce()
     })
 
     it('renders Codex and Claude new-session actions', async () => {

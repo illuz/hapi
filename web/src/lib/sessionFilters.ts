@@ -8,5 +8,5 @@ export function filterSessionsByActivityOrMarker(
         return sessions
     }
 
-    return sessions.filter((session) => session.active || Boolean(session.markerColor))
+    return sessions.filter((session) => session.active || Boolean(session.markerColor) || session.pinned === true)
 }

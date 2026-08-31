@@ -22,6 +22,7 @@ function createSession(overrides: Partial<Session> = {}): Session {
         thinking: false,
         thinkingAt: 0,
         markerColor: null,
+        pinned: false,
         model: null,
         modelReasoningEffort: null,
         effort: null,

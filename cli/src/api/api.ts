@@ -79,6 +79,7 @@ export class ApiClient {
             thinkingAt: raw.thinkingAt,
             todos: raw.todos,
             markerColor: raw.markerColor,
+            pinned: raw.pinned,
             model: raw.model,
             modelReasoningEffort: raw.modelReasoningEffort,
             serviceTier: raw.serviceTier,

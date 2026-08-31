@@ -137,6 +137,7 @@ describe('project tool metadata propagation', () => {
             thinking: false,
             thinkingAt: 2,
             markerColor: null,
+            pinned: false,
             model: null,
             modelReasoningEffort: null,
             effort: null

@@ -43,4 +43,13 @@ describe('filterSessionsByActivityOrMarker', () => {
             'inactive-marked'
         ])
     })
+
+    it('keeps pinned sessions when the activity filter is enabled', () => {
+        const sessions = [
+            makeSession({ id: 'pinned', pinned: true }),
+            makeSession({ id: 'inactive' })
+        ]
+
+        expect(filterSessionsByActivityOrMarker(sessions, true).map((session) => session.id)).toEqual(['pinned'])
+    })
 })

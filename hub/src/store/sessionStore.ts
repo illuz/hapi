@@ -17,6 +17,7 @@ import {
     setSessionTeamState,
     setSessionTodos,
     setSessionMarkerColor,
+    setSessionPinned,
     touchSessionUpdatedAt,
     updateSessionAgentState,
     updateSessionMetadata
@@ -101,6 +102,10 @@ export class SessionStore {
 
     setSessionMarkerColor(id: string, markerColor: SessionMarkerColor | null, namespace: string): boolean {
         return setSessionMarkerColor(this.db, id, markerColor, namespace)
+    }
+
+    setSessionPinned(id: string, pinned: boolean, namespace: string): boolean {
+        return setSessionPinned(this.db, id, pinned, namespace)
     }
 
     touchSessionUpdatedAt(id: string, updatedAt: number, namespace: string): boolean {

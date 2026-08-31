@@ -154,6 +154,7 @@ export class SessionCache {
             todos,
             teamState,
             markerColor: stored.markerColor,
+            pinned: stored.pinned,
             model: stored.model,
             modelReasoningEffort: stored.modelReasoningEffort,
             serviceTier: stored.serviceTier,
@@ -487,6 +488,27 @@ export class SessionCache {
         this.publisher.emit({ type: 'session-updated', sessionId, data: session })
     }
 
+    async setSessionPinned(sessionId: string, pinned: boolean): Promise<void> {
+        const session = this.sessions.get(sessionId)
+        if (!session) {
+            throw new Error('Session not found')
+        }
+
+        const updated = this.store.sessions.setSessionPinned(sessionId, pinned, session.namespace)
+        if (!updated && session.pinned !== pinned) {
+            throw new Error('Failed to update session pinned state')
+        }
+
+        // 数据库对重复设置当前值视为无操作，缓存版本和事件流也应保持不变。
+        if (!updated) {
+            return
+        }
+
+        session.pinned = pinned
+        session.seq += 1
+        this.publisher.emit({ type: 'session-updated', sessionId, data: session })
+    }
+
     async renameSession(sessionId: string, name: string): Promise<void> {
         const session = this.sessions.get(sessionId)
         if (!session) {
@@ -642,6 +664,13 @@ export class SessionCache {
             const updated = this.store.sessions.setSessionMarkerColor(newSessionId, oldStored.markerColor, namespace)
             if (!updated) {
                 throw new Error('Failed to preserve session marker color during merge')
+            }
+        }
+
+        if (!newStored.pinned && oldStored.pinned) {
+            const updated = this.store.sessions.setSessionPinned(newSessionId, true, namespace)
+            if (!updated) {
+                throw new Error('Failed to preserve session pinned state during merge')
             }
         }
 

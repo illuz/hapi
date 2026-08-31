@@ -23,6 +23,8 @@ type SessionActionMenuProps = {
     canSpawnSessionFromConfig?: boolean
     sessionActive: boolean
     resumeCommand?: string | null
+    pinned?: boolean
+    onTogglePinned?: () => void
     markerColor: SessionMarkerColor | null
     onSelectMarkerColor: (markerColor: SessionMarkerColor | null) => void
     onRename: () => void
@@ -51,6 +53,29 @@ function EditIcon(props: { className?: string }) {
         >
             <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
             <path d="m15 5 4 4" />
+        </svg>
+    )
+}
+
+function PinIcon(props: { className?: string; slashed?: boolean }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={props.className}
+        >
+            <path d="m14 4 6 6" />
+            <path d="m18 8-8.5 8.5" />
+            <path d="M7 21 3 17" />
+            <path d="m5 19 6-6" />
+            {props.slashed ? <path d="m4 4 16 16" /> : null}
         </svg>
     )
 }
@@ -158,6 +183,8 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
         canSpawnSessionFromConfig = false,
         sessionActive,
         resumeCommand,
+        pinned = false,
+        onTogglePinned,
         markerColor,
         onSelectMarkerColor,
         onRename,
@@ -180,6 +207,12 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
     const handleRename = () => {
         onClose()
         onRename()
+    }
+
+    const handleTogglePinned = () => {
+        if (!onTogglePinned) return
+        onClose()
+        onTogglePinned()
     }
 
     const handleArchive = () => {
@@ -343,6 +376,19 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                 aria-labelledby={headingId}
                 className="flex flex-col gap-1"
             >
+                {onTogglePinned ? (
+                    <button
+                        type="button"
+                        role="menuitem"
+                        disabled={pendingAction !== null}
+                        className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
+                        onClick={handleTogglePinned}
+                    >
+                        <PinIcon className="text-[var(--app-link)]" slashed={!pinned} />
+                        {pinned ? t('session.action.unpin') : t('session.action.pin')}
+                    </button>
+                ) : null}
+
                 <div className="px-3 pt-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--app-hint)]">
                     {t('session.action.marker')}
                 </div>

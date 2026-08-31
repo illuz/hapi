@@ -23,6 +23,7 @@ export type SessionSummary = {
     todoProgress: { completed: number; total: number } | null
     pendingRequestsCount: number
     markerColor: Session['markerColor']
+    pinned?: boolean
     model: string | null
     effort: string | null
     shareCount?: number
@@ -64,6 +65,7 @@ export function toSessionSummary(session: Session, options?: { shareCount?: numb
         todoProgress,
         pendingRequestsCount,
         markerColor: session.markerColor,
+        pinned: session.pinned === true,
         model: session.model,
         effort: session.effort,
         shareCount: options?.shareCount

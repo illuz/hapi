@@ -33,6 +33,7 @@ function createSession(overrides?: Partial<Session>): Session {
         thinking: false,
         thinkingAt: 10,
         markerColor: null,
+        pinned: false,
         model: 'gpt-5.4',
         modelReasoningEffort: null,
         serviceTier: null,

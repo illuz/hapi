@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionSummary } from '@/types/api'
-import { deduplicateSessionsByAgentId, expandSelectedSessionCollapseOverrides, getVisibleSessionPreview, normalizeSearch, sessionMatchesMarkerColor, sessionMatchesQuery } from './SessionList'
+import { deduplicateSessionsByAgentId, expandSelectedSessionCollapseOverrides, getPinnedSessionProjectSuffix, getVisibleSessionPreview, normalizeSearch, sessionMatchesMarkerColor, sessionMatchesQuery } from './SessionList'
 
 function makeSession(overrides: Partial<SessionSummary> & { id: string }): SessionSummary {
     return {
@@ -107,6 +107,17 @@ describe('session list search helpers', () => {
         expect(sessionMatchesMarkerColor(session, null)).toBe(true)
         expect(sessionMatchesMarkerColor(session, 'blue')).toBe(true)
         expect(sessionMatchesMarkerColor(session, 'red')).toBe(false)
+    })
+
+    it('extracts the project suffix for pinned rows on POSIX and Windows paths', () => {
+        expect(getPinnedSessionProjectSuffix(makeSession({
+            id: 'posix',
+            metadata: { path: '/workspace/hapi' }
+        }))).toBe('hapi')
+        expect(getPinnedSessionProjectSuffix(makeSession({
+            id: 'windows',
+            metadata: { path: 'C:\\workspace\\hapi' }
+        }))).toBe('hapi')
     })
 })
 

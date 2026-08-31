@@ -44,6 +44,7 @@ function buildRuntimeSession(session: PublicSharedSession | null, fallbackId: st
         thinking: session?.thinking ?? false,
         thinkingAt: now,
         markerColor: null,
+        pinned: false,
         model: null,
         modelReasoningEffort: null,
         serviceTier: null,

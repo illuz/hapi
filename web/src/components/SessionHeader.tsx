@@ -155,6 +155,7 @@ export function SessionHeader(props: {
         archiveSession,
         renameSession,
         setSessionMarkerColor,
+        setSessionPinned,
         deleteSession,
         forkSession,
         spawnSessionFromConfig,
@@ -396,6 +397,20 @@ export function SessionHeader(props: {
                 canSpawnSessionFromConfig={spawnFromConfigSupported}
                 sessionActive={session.active}
                 resumeCommand={resumeCommand}
+                pinned={session.pinned === true}
+                onTogglePinned={() => {
+                    if (typeof setSessionPinned === 'function') {
+                        void Promise.resolve(setSessionPinned(session.pinned !== true)).catch((error: unknown) => {
+                            addToast({
+                                title: session.pinned === true ? t('session.action.unpin') : t('session.action.pin'),
+                                body: error instanceof Error ? error.message : t('dialog.error.default'),
+                                sessionId: session.id,
+                                url: `/sessions/${session.id}`,
+                                kind: 'failure'
+                            })
+                        })
+                    }
+                }}
                 markerColor={session.markerColor}
                 onSelectMarkerColor={(markerColor) => { void setSessionMarkerColor(markerColor) }}
                 onRename={() => setRenameOpen(true)}

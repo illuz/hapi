@@ -43,7 +43,7 @@ export { SessionShareStore } from './sessionShareStore'
 export { SessionStore } from './sessionStore'
 export { UserStore } from './userStore'
 
-const SCHEMA_VERSION: number = 16
+const SCHEMA_VERSION: number = 17
 const REQUIRED_TABLES = [
     'sessions',
     'machines',
@@ -139,6 +139,7 @@ export class Store {
             13: () => this.migrateFromV13ToV14(),
             14: () => this.migrateFromV14ToV15(),
             15: () => this.migrateFromV15ToV16(),
+            16: () => this.migrateFromV16ToV17(),
         })
 
         if (currentVersion === 0) {
@@ -257,6 +258,7 @@ export class Store {
                 team_state TEXT,
                 team_state_updated_at INTEGER,
                 marker_color TEXT,
+                pinned INTEGER NOT NULL DEFAULT 0,
                 active INTEGER DEFAULT 0,
                 active_at INTEGER,
                 seq INTEGER DEFAULT 0
@@ -652,6 +654,24 @@ export class Store {
         this.ensurePortMappingColumns()
     }
 
+    private migrateFromV16ToV17(): void {
+        const columns = this.getSessionColumnNames()
+        if (columns.size === 0) {
+            throw new Error('SQLite schema missing sessions table for v16 to v17 migration.')
+        }
+
+        if (!columns.has('pinned')) {
+            this.db.exec('ALTER TABLE sessions ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0')
+        }
+
+        // 兼容仍保留旧 starred 列的数据库，将旧标记迁移为置顶状态。
+        if (columns.has('starred')) {
+            // Consume the legacy flag so a later schema repair cannot re-pin a
+            // session that the user explicitly unpinned after migration.
+            this.db.exec('UPDATE sessions SET pinned = 1, starred = 0 WHERE starred = 1')
+        }
+    }
+
     private getMessageColumnNames(): Set<string> {
         const rows = this.db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>
         return new Set(rows.map((row) => row.name))
@@ -671,6 +691,14 @@ export class Store {
             }
             if (!sessionColumns.has('service_tier')) {
                 this.db.exec('ALTER TABLE sessions ADD COLUMN service_tier TEXT')
+            }
+            if (!sessionColumns.has('pinned')) {
+                this.db.exec('ALTER TABLE sessions ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0')
+            }
+            if (sessionColumns.has('starred')) {
+                // Consume the legacy flag so a later schema repair cannot re-pin
+                // a session that the user explicitly unpinned after migration.
+                this.db.exec('UPDATE sessions SET pinned = 1, starred = 0 WHERE starred = 1')
             }
         }
 

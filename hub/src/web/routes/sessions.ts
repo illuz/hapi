@@ -43,8 +43,9 @@ const effortSchema = z.object({
 
 const updateSessionSchema = z.object({
     name: z.string().min(1).max(255).optional(),
-    markerColor: SessionMarkerColorSchema.nullable().optional()
-}).refine((value) => value.name !== undefined || value.markerColor !== undefined, {
+    markerColor: SessionMarkerColorSchema.nullable().optional(),
+    pinned: z.boolean().optional()
+}).refine((value) => value.name !== undefined || value.markerColor !== undefined || value.pinned !== undefined, {
     message: 'At least one field is required'
 })
 
@@ -718,6 +719,9 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
             }
             if (parsed.data.markerColor !== undefined) {
                 await engine.setSessionMarkerColor(sessionResult.sessionId, parsed.data.markerColor)
+            }
+            if (parsed.data.pinned !== undefined) {
+                await engine.setSessionPinned(sessionResult.sessionId, parsed.data.pinned)
             }
             return c.json({ ok: true })
         } catch (error) {

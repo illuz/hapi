@@ -418,6 +418,29 @@ function PlusIcon(props: { className?: string }) {
     )
 }
 
+function PinIcon(props: { className?: string; slashed?: boolean }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={props.className}
+        >
+            <path d="m14 4 6 6" />
+            <path d="m18 8-8.5 8.5" />
+            <path d="M7 21 3 17" />
+            <path d="m5 19 6-6" />
+            {props.slashed ? <path d="m4 4 16 16" /> : null}
+        </svg>
+    )
+}
+
 function ClockIcon(props: { className?: string }) {
     return (
         <svg
@@ -499,6 +522,13 @@ function ChevronIcon(props: { className?: string; collapsed?: boolean }) {
 
 export function getSessionTitle(session: SessionSummary): string {
     return getBaseSessionTitle(session)
+}
+
+export function getPinnedSessionProjectSuffix(session: SessionSummary): string {
+    const path = session.metadata?.worktree?.basePath ?? session.metadata?.path
+    if (!path) return 'Other'
+    const parts = path.split(/[\\/]+/).filter(Boolean)
+    return parts[parts.length - 1] ?? path
 }
 
 function getTodoProgress(session: SessionSummary): { completed: number; total: number } | null {
@@ -922,6 +952,118 @@ function formatRelativeTime(value: number, t: (key: string, params?: Record<stri
     return new Date(ms).toLocaleDateString()
 }
 
+function PinnedSessionRow(props: {
+    session: SessionSummary
+    onSelect: (sessionId: string) => void
+    resolveMachineLabel: (machineId: string | null) => string
+    api: ApiClient | null
+    selected?: boolean
+}) {
+    const { t } = useTranslation()
+    const { addToast } = useToast()
+    const { session, onSelect, resolveMachineLabel, api, selected = false } = props
+    const { setSessionPinned, isPending } = useSessionActions(
+        api,
+        session.id,
+        session.metadata?.flavor ?? null
+    )
+
+    const handleUnpin = () => {
+        if (typeof setSessionPinned !== 'function' || isPending) return
+        void Promise.resolve(setSessionPinned(false)).catch((error: unknown) => {
+            addToast({
+                title: t('session.action.unpin'),
+                body: error instanceof Error ? error.message : t('dialog.error.default'),
+                sessionId: session.id,
+                url: `/sessions/${session.id}`,
+                kind: 'failure'
+            })
+        })
+    }
+
+    const machineLabel = resolveMachineLabel(session.metadata?.machineId ?? null)
+    const projectSuffix = getPinnedSessionProjectSuffix(session)
+    const title = getSessionTitle(session)
+    const displayTitle = getDisplaySessionTitle(session)
+
+    return (
+        <div className="flex min-w-0 items-stretch gap-1 rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] transition-colors hover:border-[var(--app-link)]">
+            <button
+                type="button"
+                data-session-id={session.id}
+                aria-current={selected ? 'page' : undefined}
+                onClick={() => onSelect(session.id)}
+                className={`grid min-w-0 flex-1 grid-cols-[minmax(0,0.8fr)_minmax(0,0.85fr)_minmax(0,1.35fr)] items-center gap-2 rounded-l-lg px-2.5 py-2 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] ${selected ? 'bg-[var(--app-secondary-bg)]' : 'hover:bg-[var(--app-subtle-bg)]'}`}
+            >
+                <span className="flex min-w-0 items-center gap-1.5 text-[var(--app-hint)]" title={machineLabel}>
+                    <MachineIcon className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{machineLabel}</span>
+                </span>
+                <span className="truncate text-[var(--app-hint)]" title={projectSuffix}>
+                    {projectSuffix}
+                </span>
+                <span className="flex min-w-0 items-center gap-1.5 font-medium text-[var(--app-fg)]" title={title}>
+                    <span className="truncate">{displayTitle}</span>
+                </span>
+            </button>
+            <button
+                type="button"
+                onClick={handleUnpin}
+                disabled={isPending}
+                aria-label={t('session.action.unpin')}
+                title={t('session.action.unpin')}
+                className="flex w-8 shrink-0 items-center justify-center rounded-r-lg text-[var(--app-link)] transition-colors hover:bg-[var(--app-subtle-bg)] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]"
+            >
+                <PinIcon className="h-3.5 w-3.5" />
+            </button>
+        </div>
+    )
+}
+
+function PinnedSessionsSection(props: {
+    sessions: SessionSummary[]
+    onSelect: (sessionId: string) => void
+    resolveMachineLabel: (machineId: string | null) => string
+    api: ApiClient | null
+    selectedSessionId?: string | null
+}) {
+    const { t } = useTranslation()
+    const sortedSessions = useMemo(
+        () => [...props.sessions].sort((a, b) => {
+            if (a.active !== b.active) return a.active ? -1 : 1
+            return b.updatedAt - a.updatedAt
+        }),
+        [props.sessions]
+    )
+
+    if (sortedSessions.length === 0) return null
+
+    return (
+        <section
+            aria-label={t('sessions.pinned.title')}
+            className="px-2 pb-2"
+        >
+            <div className="flex items-center gap-1.5 px-1.5 pb-1 text-xs font-semibold text-[var(--app-fg)]">
+                <PinIcon className="h-3.5 w-3.5 text-[var(--app-link)]" />
+                <span>{t('sessions.pinned.title')}</span>
+                <span className="text-[11px] tabular-nums text-[var(--app-hint)]">({sortedSessions.length})</span>
+            </div>
+            <div className="flex flex-col gap-1">
+                {sortedSessions.map((session) => (
+                    <PinnedSessionRow
+                        key={session.id}
+                        session={session}
+                        onSelect={props.onSelect}
+                        resolveMachineLabel={props.resolveMachineLabel}
+                        api={props.api}
+                        selected={session.id === props.selectedSessionId}
+                    />
+                ))}
+            </div>
+        </section>
+    )
+}
+
 function SessionItem(props: {
     session: SessionSummary
     onSelect: (sessionId: string) => void
@@ -946,6 +1088,7 @@ function SessionItem(props: {
         archiveSession,
         renameSession,
         setSessionMarkerColor,
+        setSessionPinned,
         deleteSession,
         forkSession,
         spawnSessionFromConfig,
@@ -985,6 +1128,13 @@ function SessionItem(props: {
             sessionId: s.id,
             url: `/sessions/${s.id}`,
             kind: 'failure'
+        })
+    }
+
+    const handleTogglePinned = () => {
+        if (typeof setSessionPinned !== 'function') return
+        void Promise.resolve(setSessionPinned(s.pinned !== true)).catch((error: unknown) => {
+            showActionError(s.pinned === true ? t('session.action.unpin') : t('session.action.pin'), error)
         })
     }
 
@@ -1050,6 +1200,9 @@ function SessionItem(props: {
                             >
                                 {displaySessionName}
                             </div>
+                            {s.pinned === true ? (
+                                <PinIcon className="h-3.5 w-3.5 shrink-0 text-[var(--app-link)]" />
+                            ) : null}
                             {s.active && s.thinking ? (
                                 <LoaderIcon className="h-3.5 w-3.5 shrink-0 text-[var(--app-hint)] animate-spin-slow" />
                             ) : null}
@@ -1095,6 +1248,8 @@ function SessionItem(props: {
                 canSpawnSessionFromConfig={spawnFromConfigSupported}
                 sessionActive={s.active}
                 resumeCommand={resumeCommand}
+                pinned={s.pinned === true}
+                onTogglePinned={handleTogglePinned}
                 markerColor={s.markerColor}
                 onSelectMarkerColor={(markerColor) => { void setSessionMarkerColor(markerColor) }}
                 onRename={() => setRenameOpen(true)}
@@ -1186,7 +1341,7 @@ export function SessionList(props: {
         if (!root) return
         const items = Array.from(root.querySelectorAll<HTMLElement>('[data-session-id]'))
         if (items.length === 0) return
-        const ids = items.map(el => el.dataset.sessionId ?? '')
+        const ids = Array.from(new Set(items.map(el => el.dataset.sessionId ?? '').filter(Boolean)))
         // 当前位置：优先取当前聚焦的会话项，其次取选中会话
         let currentIndex = -1
         const active = document.activeElement
@@ -1275,6 +1430,10 @@ export function SessionList(props: {
             )
             : allSessions,
         [allSessions, isFilteringSessions, markerColorFilter, updateWindow, normalizedQuery, machineLabelsById] // eslint-disable-line react-hooks/exhaustive-deps
+    )
+    const pinnedSessions = useMemo(
+        () => allSessions.filter((session) => session.pinned === true),
+        [allSessions]
     )
     const allGroups = useMemo(
         () => groupSessionsByDirectory(allSessions),
@@ -1426,6 +1585,14 @@ export function SessionList(props: {
                     onUpdateWindowChange={setUpdateWindow}
                 />
             ) : null}
+
+            <PinnedSessionsSection
+                sessions={pinnedSessions}
+                onSelect={props.onSelect}
+                resolveMachineLabel={resolveMachineLabel}
+                api={api}
+                selectedSessionId={selectedSessionId}
+            />
 
             {props.sessions.length === 0 && (
                 <SessionsEmptyState

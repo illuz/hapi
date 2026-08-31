@@ -27,6 +27,7 @@ type DbSessionRow = {
     team_state: string | null
     team_state_updated_at: number | null
     marker_color: SessionMarkerColor | null
+    pinned: number | null
     active: number
     active_at: number | null
     seq: number
@@ -54,6 +55,7 @@ function toStoredSession(row: DbSessionRow): StoredSession {
         teamState: safeJsonParse(row.team_state),
         teamStateUpdatedAt: row.team_state_updated_at,
         markerColor: row.marker_color,
+        pinned: row.pinned === 1,
         active: row.active === 1,
         activeAt: row.active_at,
         seq: row.seq
@@ -97,6 +99,7 @@ export function getOrCreateSession(
             permission_mode,
             todos, todos_updated_at,
             marker_color,
+            pinned,
             active, active_at, seq
         ) VALUES (
             @id, @tag, @namespace, NULL, @created_at, @updated_at,
@@ -109,6 +112,7 @@ export function getOrCreateSession(
             @permission_mode,
             NULL, NULL,
             NULL,
+            0,
             0, NULL, 0
         )
     `).run({
@@ -463,6 +467,32 @@ export function setSessionMarkerColor(
             id,
             namespace,
             marker_color: markerColor
+        })
+
+        return result.changes === 1
+    } catch {
+        return false
+    }
+}
+
+export function setSessionPinned(
+    db: Database,
+    id: string,
+    pinned: boolean,
+    namespace: string
+): boolean {
+    try {
+        const result = db.prepare(`
+            UPDATE sessions
+            SET pinned = @pinned,
+                seq = seq + 1
+            WHERE id = @id
+              AND namespace = @namespace
+              AND pinned IS NOT @pinned
+        `).run({
+            id,
+            namespace,
+            pinned: pinned ? 1 : 0
         })
 
         return result.changes === 1

@@ -1,10 +1,11 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SessionSummary } from '@/types/api'
 import { getProjectToolCountsKey, SessionList } from './SessionList'
 
-const { mockSessionActionMenu } = vi.hoisted(() => ({
+const { mockSessionActionMenu, mockSetSessionPinned } = vi.hoisted(() => ({
     mockSessionActionMenu: vi.fn(() => null),
+    mockSetSessionPinned: vi.fn(),
 }))
 
 vi.mock('@tanstack/react-router', () => ({
@@ -28,6 +29,7 @@ vi.mock('@/hooks/mutations/useSessionActions', () => ({
         archiveSession: vi.fn(),
         renameSession: vi.fn(),
         setSessionMarkerColor: vi.fn(),
+        setSessionPinned: mockSetSessionPinned,
         deleteSession: vi.fn(),
         forkSession: vi.fn(),
         spawnSessionFromConfig: vi.fn(),
@@ -57,6 +59,7 @@ vi.mock('@/lib/use-translation', () => ({
             const map: Record<string, string> = {
                 'sessions.count': `${params?.n ?? 0} sessions in ${params?.m ?? 0} projects`,
                 'sessions.search.placeholder': 'Search',
+                'sessions.pinned.title': 'Pinned sessions',
                 'sessions.colorFilter.title': 'Filter marker color',
                 'sessions.colorFilter.all': 'All sessions',
                 'sessions.colorFilter.clear': 'Clear marker color filter',
@@ -76,6 +79,8 @@ vi.mock('@/lib/use-translation', () => ({
                 'session.time.justNow': 'just now',
                 'session.marker.red': 'Focus',
                 'session.marker.blue': 'In progress',
+                'session.action.pin': 'Pin to top',
+                'session.action.unpin': 'Unpin from top',
             }
             return map[key] ?? key
         },
@@ -89,6 +94,7 @@ afterEach(() => {
 
 beforeEach(() => {
     mockSessionActionMenu.mockClear()
+    mockSetSessionPinned.mockClear()
 })
 
 function makeSession(overrides: Partial<SessionSummary> = {}): SessionSummary {
@@ -140,6 +146,45 @@ describe('SessionList action menu', () => {
         const props = calls[calls.length - 1]?.[0]
         expect(props?.resumeCommand).toBe('codex resume codex-thread-1')
         expect(props).not.toHaveProperty('sessionId')
+    })
+})
+
+describe('SessionList pinned sessions', () => {
+    it('renders pinned sessions below search and lets users unpin them', () => {
+        const onSelect = vi.fn()
+        render(
+            <SessionList
+                sessions={[makeSession({
+                    id: 'pinned-session',
+                    pinned: true,
+                    metadata: {
+                        path: '/workspace/project',
+                        machineId: 'machine-1',
+                        flavor: 'codex',
+                        name: 'Pinned task',
+                    },
+                })]}
+                onSelect={onSelect}
+                onNewSession={vi.fn()}
+                onRefresh={vi.fn()}
+                isLoading={false}
+                renderHeader={false}
+                api={null}
+                machineLabelsById={{ 'machine-1': 'MacBook' }}
+            />
+        )
+
+        const pinnedRegion = screen.getByRole('region', { name: 'Pinned sessions' })
+        expect(pinnedRegion).toBeInTheDocument()
+        expect(within(pinnedRegion).getByText('MacBook')).toBeInTheDocument()
+        expect(within(pinnedRegion).getByText('project')).toBeInTheDocument()
+        expect(within(pinnedRegion).getByText(/Pinned task/)).toBeInTheDocument()
+
+        fireEvent.click(screen.getByRole('button', { name: 'Unpin from top' }))
+        expect(mockSetSessionPinned).toHaveBeenCalledWith(false)
+
+        fireEvent.click(within(pinnedRegion).getByText(/Pinned task/))
+        expect(onSelect).toHaveBeenCalledWith('pinned-session')
     })
 })
 

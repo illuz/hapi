@@ -30,7 +30,7 @@ import { SESSION_MARKER_COLORS, getSessionMarkerColorHex } from '@/lib/sessionMa
 import { buildSessionResumeCommand } from '@/lib/sessionResumeCommand'
 import { getDisplaySessionTitle, getSessionTitle as getBaseSessionTitle } from '@/lib/sessionTitle'
 import { useToast } from '@/lib/toast-context'
-import { CopyIcon, CheckIcon, ShareIcon } from '@/components/icons'
+import { CopyIcon, CheckIcon, PinIcon, PinOffIcon, ShareIcon } from '@/components/icons'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/lib/use-translation'
 
@@ -414,29 +414,6 @@ function PlusIcon(props: { className?: string }) {
         >
             <line x1="12" y1="5" x2="12" y2="19" />
             <line x1="5" y1="12" x2="19" y2="12" />
-        </svg>
-    )
-}
-
-function PinIcon(props: { className?: string; slashed?: boolean }) {
-    return (
-        <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className={props.className}
-        >
-            <path d="m14 4 6 6" />
-            <path d="m18 8-8.5 8.5" />
-            <path d="M7 21 3 17" />
-            <path d="m5 19 6-6" />
-            {props.slashed ? <path d="m4 4 16 16" /> : null}
         </svg>
     )
 }
@@ -987,7 +964,7 @@ function PinnedSessionRow(props: {
     const displayTitle = getDisplaySessionTitle(session)
 
     return (
-        <div className="flex min-w-0 items-stretch gap-1 rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] transition-colors hover:border-[var(--app-link)]">
+        <div className="flex min-w-0 items-stretch gap-1 rounded-lg border border-[var(--app-pinned-border)] bg-[var(--app-bg)] transition-colors hover:border-[var(--app-pinned-fg)]">
             <button
                 type="button"
                 data-session-id={session.id}
@@ -1012,9 +989,9 @@ function PinnedSessionRow(props: {
                 disabled={isPending}
                 aria-label={t('session.action.unpin')}
                 title={t('session.action.unpin')}
-                className="flex w-8 shrink-0 items-center justify-center rounded-r-lg text-[var(--app-link)] transition-colors hover:bg-[var(--app-subtle-bg)] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]"
+                className="flex w-8 shrink-0 items-center justify-center rounded-r-lg text-[var(--app-pinned-fg)] transition-colors hover:bg-[var(--app-pinned-bg-strong)] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-pinned-fg)]"
             >
-                <PinIcon className="h-3.5 w-3.5" />
+                <PinOffIcon className="h-4 w-4" />
             </button>
         </div>
     )
@@ -1041,12 +1018,12 @@ function PinnedSessionsSection(props: {
     return (
         <section
             aria-label={t('sessions.pinned.title')}
-            className="px-2 pb-2"
+            className="mb-2 border-y border-[var(--app-pinned-border)] bg-[var(--app-pinned-bg)] px-2 py-2"
         >
-            <div className="flex items-center gap-1.5 px-1.5 pb-1 text-xs font-semibold text-[var(--app-fg)]">
-                <PinIcon className="h-3.5 w-3.5 text-[var(--app-link)]" />
+            <div className="flex items-center gap-1.5 px-1.5 pb-1.5 text-xs font-semibold text-[var(--app-pinned-fg)]">
+                <PinIcon className="h-3.5 w-3.5" />
                 <span>{t('sessions.pinned.title')}</span>
-                <span className="text-[11px] tabular-nums text-[var(--app-hint)]">({sortedSessions.length})</span>
+                <span className="text-[11px] tabular-nums opacity-70">({sortedSessions.length})</span>
             </div>
             <div className="flex flex-col gap-1">
                 {sortedSessions.map((session) => (

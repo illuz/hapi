@@ -176,6 +176,8 @@ describe('SessionList pinned sessions', () => {
 
         const pinnedRegion = screen.getByRole('region', { name: 'Pinned sessions' })
         expect(pinnedRegion).toBeInTheDocument()
+        expect(pinnedRegion).toHaveClass('bg-[var(--app-pinned-bg)]')
+        expect(pinnedRegion).toHaveClass('border-[var(--app-pinned-border)]')
         expect(within(pinnedRegion).getByText('MacBook')).toBeInTheDocument()
         expect(within(pinnedRegion).getByText('project')).toBeInTheDocument()
         expect(within(pinnedRegion).getByText(/Pinned task/)).toBeInTheDocument()

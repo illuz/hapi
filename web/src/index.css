@@ -41,6 +41,10 @@
     --app-link-muted: rgba(17, 24, 39, 0.18);
     --app-scrollbar-thumb: rgba(107, 114, 128, 0.34);
     --app-scrollbar-thumb-hover: rgba(107, 114, 128, 0.5);
+    --app-pinned-bg: rgba(245, 158, 11, 0.08);
+    --app-pinned-bg-strong: rgba(245, 158, 11, 0.16);
+    --app-pinned-border: rgba(217, 119, 6, 0.28);
+    --app-pinned-fg: #9a6700;
 
     /* Theme-aware colors (light mode defaults) */
     --app-border: rgba(15, 23, 42, 0.08);
@@ -119,6 +123,10 @@
     --app-link-muted: rgba(255, 255, 255, 0.2);
     --app-scrollbar-thumb: rgba(196, 203, 214, 0.28);
     --app-scrollbar-thumb-hover: rgba(196, 203, 214, 0.42);
+    --app-pinned-bg: rgba(251, 191, 36, 0.1);
+    --app-pinned-bg-strong: rgba(251, 191, 36, 0.18);
+    --app-pinned-border: rgba(251, 191, 36, 0.3);
+    --app-pinned-fg: #fbbf24;
 
     --app-border: rgba(255, 255, 255, 0.08);
     --app-divider: rgba(255, 255, 255, 0.08);

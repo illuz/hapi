@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SessionSummary } from '@/types/api'
 import { getProjectToolCountsKey, SessionList } from './SessionList'
+import { clearSessionAttention, triggerSessionAttention } from '@/lib/sessionAttention'
 
 const { mockSessionActionMenu, mockSetSessionPinned } = vi.hoisted(() => ({
     mockSessionActionMenu: vi.fn(() => null),
@@ -90,6 +91,7 @@ vi.mock('@/lib/use-translation', () => ({
 afterEach(() => {
     cleanup()
     localStorage.clear()
+    clearSessionAttention()
 })
 
 beforeEach(() => {
@@ -187,6 +189,58 @@ describe('SessionList pinned sessions', () => {
 
         fireEvent.click(within(pinnedRegion).getByText(/Pinned task/))
         expect(onSelect).toHaveBeenCalledWith('pinned-session')
+    })
+
+    it('hides reference sessions from the pinned section', () => {
+        render(
+            <SessionList
+                sessions={[makeSession({ pinned: true, markerColor: 'purple' })]}
+                onSelect={vi.fn()}
+                onNewSession={vi.fn()}
+                onRefresh={vi.fn()}
+                isLoading={false}
+                renderHeader={false}
+                api={null}
+            />
+        )
+
+        expect(screen.queryByRole('region', { name: 'Pinned sessions' })).not.toBeInTheDocument()
+    })
+
+    it('shows the thinking spinner in a pinned session row', () => {
+        render(
+            <SessionList
+                sessions={[makeSession({ pinned: true, thinking: true })]}
+                onSelect={vi.fn()}
+                onNewSession={vi.fn()}
+                onRefresh={vi.fn()}
+                isLoading={false}
+                renderHeader={false}
+                api={null}
+            />
+        )
+
+        const pinnedRegion = screen.getByRole('region', { name: 'Pinned sessions' })
+        expect(pinnedRegion.querySelector('.animate-spin-slow')).toBeInTheDocument()
+    })
+
+    it('shows the attention flash in a pinned session row', () => {
+        triggerSessionAttention('session-1')
+
+        render(
+            <SessionList
+                sessions={[makeSession({ pinned: true })]}
+                onSelect={vi.fn()}
+                onNewSession={vi.fn()}
+                onRefresh={vi.fn()}
+                isLoading={false}
+                renderHeader={false}
+                api={null}
+            />
+        )
+
+        const pinnedRegion = screen.getByRole('region', { name: 'Pinned sessions' })
+        expect(pinnedRegion.querySelector('.session-list-item-attention')).toBeInTheDocument()
     })
 })
 

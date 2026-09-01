@@ -935,10 +935,11 @@ function PinnedSessionRow(props: {
     resolveMachineLabel: (machineId: string | null) => string
     api: ApiClient | null
     selected?: boolean
+    attentionToken?: number
 }) {
     const { t } = useTranslation()
     const { addToast } = useToast()
-    const { session, onSelect, resolveMachineLabel, api, selected = false } = props
+    const { session, onSelect, resolveMachineLabel, api, selected = false, attentionToken } = props
     const { setSessionPinned, isPending } = useSessionActions(
         api,
         session.id,
@@ -964,13 +965,20 @@ function PinnedSessionRow(props: {
     const displayTitle = getDisplaySessionTitle(session)
 
     return (
-        <div className="flex min-w-0 items-stretch gap-1 rounded-lg border border-[var(--app-pinned-border)] bg-[var(--app-bg)] transition-colors hover:border-[var(--app-pinned-fg)]">
+        <div className="relative flex min-w-0 items-stretch gap-1 overflow-hidden rounded-lg border border-[var(--app-pinned-border)] bg-[var(--app-bg)] transition-colors hover:border-[var(--app-pinned-fg)]">
+            {attentionToken ? (
+                <span
+                    key={attentionToken}
+                    aria-hidden="true"
+                    className="session-list-item-attention pointer-events-none absolute inset-0 z-0 rounded-lg"
+                />
+            ) : null}
             <button
                 type="button"
                 data-session-id={session.id}
                 aria-current={selected ? 'page' : undefined}
                 onClick={() => onSelect(session.id)}
-                className={`grid min-w-0 flex-1 grid-cols-[minmax(0,0.8fr)_minmax(0,0.85fr)_minmax(0,1.35fr)] items-center gap-2 rounded-l-lg px-2.5 py-2 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] ${selected ? 'bg-[var(--app-secondary-bg)]' : 'hover:bg-[var(--app-subtle-bg)]'}`}
+                className={`relative z-10 grid min-w-0 flex-1 grid-cols-[minmax(0,0.8fr)_minmax(0,0.85fr)_minmax(0,1.35fr)] items-center gap-2 rounded-l-lg px-2.5 py-2 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] ${selected ? 'bg-[var(--app-secondary-bg)]' : 'hover:bg-[var(--app-subtle-bg)]'}`}
             >
                 <span className="flex min-w-0 items-center gap-1.5 text-[var(--app-hint)]" title={machineLabel}>
                     <MachineIcon className="h-3.5 w-3.5 shrink-0" />
@@ -981,6 +989,9 @@ function PinnedSessionRow(props: {
                 </span>
                 <span className="flex min-w-0 items-center gap-1.5 font-medium text-[var(--app-fg)]" title={title}>
                     <span className="truncate">{displayTitle}</span>
+                    {session.active && session.thinking ? (
+                        <LoaderIcon className="h-3.5 w-3.5 shrink-0 text-[var(--app-pinned-fg)] animate-spin-slow" />
+                    ) : null}
                 </span>
             </button>
             <button
@@ -989,7 +1000,7 @@ function PinnedSessionRow(props: {
                 disabled={isPending}
                 aria-label={t('session.action.unpin')}
                 title={t('session.action.unpin')}
-                className="flex w-8 shrink-0 items-center justify-center rounded-r-lg text-[var(--app-pinned-fg)] transition-colors hover:bg-[var(--app-pinned-bg-strong)] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-pinned-fg)]"
+                className="relative z-10 flex w-8 shrink-0 items-center justify-center rounded-r-lg text-[var(--app-pinned-fg)] transition-colors hover:bg-[var(--app-pinned-bg-strong)] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-pinned-fg)]"
             >
                 <PinOffIcon className="h-4 w-4" />
             </button>
@@ -1003,6 +1014,7 @@ function PinnedSessionsSection(props: {
     resolveMachineLabel: (machineId: string | null) => string
     api: ApiClient | null
     selectedSessionId?: string | null
+    attentionTokens: Readonly<Record<string, number>>
 }) {
     const { t } = useTranslation()
     const sortedSessions = useMemo(
@@ -1034,6 +1046,7 @@ function PinnedSessionsSection(props: {
                         resolveMachineLabel={props.resolveMachineLabel}
                         api={props.api}
                         selected={session.id === props.selectedSessionId}
+                        attentionToken={props.attentionTokens[session.id]}
                     />
                 ))}
             </div>
@@ -1409,7 +1422,7 @@ export function SessionList(props: {
         [allSessions, isFilteringSessions, markerColorFilter, updateWindow, normalizedQuery, machineLabelsById] // eslint-disable-line react-hooks/exhaustive-deps
     )
     const pinnedSessions = useMemo(
-        () => allSessions.filter((session) => session.pinned === true),
+        () => allSessions.filter((session) => session.pinned === true && session.markerColor !== 'purple'),
         [allSessions]
     )
     const allGroups = useMemo(
@@ -1569,6 +1582,7 @@ export function SessionList(props: {
                 resolveMachineLabel={resolveMachineLabel}
                 api={api}
                 selectedSessionId={selectedSessionId}
+                attentionTokens={attentionTokens}
             />
 
             {props.sessions.length === 0 && (

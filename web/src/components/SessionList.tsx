@@ -26,6 +26,10 @@ import {
 } from '@/lib/sessionManagementFilters'
 import { useSessionAttentionTokens } from '@/lib/sessionAttention'
 import { canForkSession, canSpawnSessionFromConfig } from '@/lib/sessionBranching'
+import {
+    buildSessionSearchScoreIndex,
+    sortSessionsBySearchRelevance
+} from '@/lib/sessionListSearch'
 import { SESSION_MARKER_COLORS, getSessionMarkerColorHex } from '@/lib/sessionMarkers'
 import { buildSessionResumeCommand } from '@/lib/sessionResumeCommand'
 import { getDisplaySessionTitle, getSessionTitle as getBaseSessionTitle } from '@/lib/sessionTitle'
@@ -1370,6 +1374,12 @@ export function SessionList(props: {
         () => getMarkerColorCounts(allSessions),
         [allSessions]
     )
+    const searchScoreIndex = useMemo(
+        () => isSearching
+            ? buildSessionSearchScoreIndex(allSessions, normalizedQuery, resolveMachineLabel)
+            : null,
+        [allSessions, isSearching, normalizedQuery, machineLabelsById] // eslint-disable-line react-hooks/exhaustive-deps
+    )
     useEffect(() => {
         saveSessionColorFilterPreference(markerColorFilter)
     }, [markerColorFilter])
@@ -1407,8 +1417,8 @@ export function SessionList(props: {
         }
         return counts
     }, [allSessions])
-    const visibleSessions = useMemo(
-        () => isFilteringSessions
+    const visibleSessions = useMemo(() => {
+        const filtered = isFilteringSessions
             ? allSessions.filter(session =>
                 sessionMatchesMarkerColor(session, markerColorFilter)
                 && sessionMatchesUpdateWindow(session, updateWindow)
@@ -1418,9 +1428,21 @@ export function SessionList(props: {
                     resolveMachineLabel(session.metadata?.machineId ?? null)
                 )
             )
-            : allSessions,
-        [allSessions, isFilteringSessions, markerColorFilter, updateWindow, normalizedQuery, machineLabelsById] // eslint-disable-line react-hooks/exhaustive-deps
-    )
+            : allSessions
+        if (!isSearching || !searchScoreIndex) {
+            return filtered
+        }
+        return sortSessionsBySearchRelevance(filtered, searchScoreIndex)
+    }, [
+        allSessions,
+        isFilteringSessions,
+        isSearching,
+        markerColorFilter,
+        normalizedQuery,
+        searchScoreIndex,
+        updateWindow,
+        machineLabelsById
+    ])
     const pinnedSessions = useMemo(
         () => allSessions.filter((session) => session.pinned === true && session.markerColor !== 'purple'),
         [allSessions]
@@ -1429,10 +1451,26 @@ export function SessionList(props: {
         () => groupSessionsByDirectory(allSessions),
         [allSessions]
     )
-    const groups = useMemo(
-        () => groupSessionsByDirectory(visibleSessions),
-        [visibleSessions]
-    )
+    const groups = useMemo(() => {
+        const grouped = groupSessionsByDirectory(visibleSessions)
+        if (!isSearching || !searchScoreIndex) {
+            return grouped
+        }
+        const ranked = grouped.map((group) => ({
+            ...group,
+            sessions: sortSessionsBySearchRelevance(group.sessions, searchScoreIndex)
+        }))
+        const maxScore = (group: SessionGroup): number => Math.max(
+            0,
+            ...group.sessions.map(session => searchScoreIndex.scores.get(session.id) ?? 0)
+        )
+        return ranked.sort((a, b) => {
+            const scoreDifference = maxScore(b) - maxScore(a)
+            if (scoreDifference !== 0) return scoreDifference
+            if (a.hasActiveSession !== b.hasActiveSession) return a.hasActiveSession ? -1 : 1
+            return b.latestUpdatedAt - a.latestUpdatedAt
+        })
+    }, [isSearching, searchScoreIndex, visibleSessions])
     const [collapseOverrides, setCollapseOverrides] = useState<Map<string, boolean>>(
         () => new Map()
     )

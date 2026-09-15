@@ -15,6 +15,7 @@
         "./modes": "./src/modes.ts",
         "./projectTools": "./src/projectTools.ts",
         "./portMappings": "./src/portMappings.ts",
+        "./rpcMethods": "./src/rpcMethods.ts",
         "./schemas": "./src/schemas.ts",
         "./types": "./src/types.ts",
         "./voice": "./src/voice.ts"

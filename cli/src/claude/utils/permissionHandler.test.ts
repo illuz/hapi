@@ -2,17 +2,24 @@ import { describe, expect, it, vi } from 'vitest';
 import { PermissionHandler } from './permissionHandler';
 import { PLAN_FAKE_REJECT, PLAN_FAKE_RESTART } from '../sdk/prompts';
 import type { Session } from '../session';
+import type { AgentState } from '@/api/types';
 import { resolveToolAutoApprovalDecision } from '@/modules/common/permission/BasePermissionHandler';
 
 function createFakeSession() {
     const queueItems: { message: string; mode: unknown }[] = [];
+    let agentState: AgentState = { requests: {}, completedRequests: {} };
+    let rpcHandler: ((response: { id: string }) => Promise<void>) | undefined;
 
     const session = {
         client: {
             rpcHandlerManager: {
-                registerHandler: vi.fn(),
+                registerHandler: vi.fn((_method: string, handler: (response: { id: string }) => Promise<void>) => {
+                    rpcHandler = handler;
+                }),
             },
-            updateAgentState: vi.fn(),
+            updateAgentState: vi.fn((fn: (state: AgentState) => AgentState) => {
+                agentState = fn(agentState);
+            }),
         },
         queue: {
             unshift: vi.fn((message: string, mode: unknown) => {
@@ -22,7 +29,12 @@ function createFakeSession() {
         setPermissionMode: vi.fn(),
     } as unknown as Session;
 
-    return { session, queueItems };
+    return {
+        session,
+        queueItems,
+        getAgentState: () => agentState,
+        deliverRpcResponse: (response: { id: string }) => rpcHandler!(response),
+    };
 }
 
 describe('PermissionHandler — YOLO plan mode', () => {
@@ -125,5 +137,37 @@ describe('PermissionHandler — project tools write detection', () => {
             'mcp__hapi__list_project_agents',
             'tool-call-3'
         )).toBe('approved');
+    });
+});
+
+describe('PermissionHandler — canceled request finalization', () => {
+    it('finalizes an aborted request and rejects a late answer', async () => {
+        const { session, getAgentState, deliverRpcResponse } = createFakeSession();
+        const handler = new PermissionHandler(session);
+
+        handler.onMessage({
+            type: 'assistant',
+            message: {
+                role: 'assistant',
+                content: [{ type: 'tool_use', id: 'tc-1', name: 'AskUserQuestion', input: { questions: [] } }],
+            },
+        } as any);
+
+        const controller = new AbortController();
+        const resultPromise = handler.handleToolCall(
+            'AskUserQuestion',
+            { questions: [] },
+            { permissionMode: 'default' } as any,
+            { signal: controller.signal }
+        );
+
+        expect(Object.keys(getAgentState().requests ?? {})).toEqual(['tc-1']);
+        controller.abort();
+        await expect(resultPromise).rejects.toThrow('Permission request aborted');
+        expect(getAgentState().requests?.['tc-1']).toBeUndefined();
+        expect(getAgentState().completedRequests?.['tc-1']).toMatchObject({ status: 'canceled' });
+        await expect(deliverRpcResponse({ id: 'tc-1' })).rejects.toThrow(
+            'Permission request not found or already resolved'
+        );
     });
 });

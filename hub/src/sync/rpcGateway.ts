@@ -1,3 +1,4 @@
+import { PERMISSION_REQUEST_NOT_FOUND_MESSAGE } from '@hapi/protocol/rpcMethods'
 import type { CodexCollaborationMode, PermissionMode } from '@hapi/protocol/types'
 import type {
     ProjectToolKind,
@@ -146,6 +147,19 @@ export type RpcProjectToolMutationResponse = {
     error: string
 }
 
+/** The CLI no longer has the permission request pending. */
+export class PermissionRequestNotFoundError extends Error {
+    constructor(requestId: string) {
+        super(`Permission request is no longer active: ${requestId}`)
+        this.name = 'PermissionRequestNotFoundError'
+    }
+}
+
+function isPermissionRequestNotFoundResponse(response: unknown): boolean {
+    if (!response || typeof response !== 'object') return false
+    return (response as Record<string, unknown>).error === PERMISSION_REQUEST_NOT_FOUND_MESSAGE
+}
+
 export class RpcGateway {
     constructor(
         private readonly io: Server,
@@ -161,7 +175,7 @@ export class RpcGateway {
         decision?: 'approved' | 'approved_for_session' | 'denied' | 'abort',
         answers?: Record<string, string[]> | Record<string, { answers: string[] }>
     ): Promise<void> {
-        await this.sessionRpc(sessionId, 'permission', {
+        const response = await this.sessionRpc(sessionId, 'permission', {
             id: requestId,
             approved: true,
             mode,
@@ -169,6 +183,9 @@ export class RpcGateway {
             decision,
             answers
         })
+        if (isPermissionRequestNotFoundResponse(response)) {
+            throw new PermissionRequestNotFoundError(requestId)
+        }
     }
 
     async denyPermission(
@@ -176,11 +193,14 @@ export class RpcGateway {
         requestId: string,
         decision?: 'approved' | 'approved_for_session' | 'denied' | 'abort'
     ): Promise<void> {
-        await this.sessionRpc(sessionId, 'permission', {
+        const response = await this.sessionRpc(sessionId, 'permission', {
             id: requestId,
             approved: false,
             decision
         })
+        if (isPermissionRequestNotFoundResponse(response)) {
+            throw new PermissionRequestNotFoundError(requestId)
+        }
     }
 
     async abortSession(sessionId: string): Promise<void> {

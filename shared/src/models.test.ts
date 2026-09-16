@@ -94,6 +94,16 @@ describe('getCodexReasoningEffortPresets', () => {
             'ultra'
         ])
     })
+
+    test('uses model metadata when supported efforts are provided', () => {
+        expect(getCodexReasoningEffortPresets('gpt-6-astra', [
+            'minimal',
+            'high',
+            'ultra',
+            'HIGH',
+            'future-value'
+        ])).toEqual(['minimal', 'high', 'ultra'])
+    })
 })
 
 describe('model constants consistency', () => {
@@ -125,6 +135,8 @@ describe('model constants consistency', () => {
     })
 
     test('Codex reasoning presets include max and ultra', () => {
+        expect(CODEX_REASONING_EFFORT_PRESETS).toContain('none')
+        expect(CODEX_REASONING_EFFORT_PRESETS).toContain('minimal')
         expect(CODEX_REASONING_EFFORT_PRESETS).toContain('max')
         expect(CODEX_REASONING_EFFORT_PRESETS).toContain('ultra')
     })

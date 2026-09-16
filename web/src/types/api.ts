@@ -441,6 +441,20 @@ export type CodexModelsResponse = {
     error?: string
 }
 
+export type CustomCodexModel = {
+    id: string
+    displayName: string | null
+    supportedReasoningEfforts: string[]
+}
+
+export type CustomCodexModelsResponse = {
+    models: CustomCodexModel[]
+}
+
+export type CustomCodexModelResponse = {
+    model: CustomCodexModel
+}
+
 export type OpencodeModelSummary = {
     modelId: string
     name?: string

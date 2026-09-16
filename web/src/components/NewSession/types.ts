@@ -31,10 +31,13 @@ export const MODEL_OPTIONS: Record<AgentType, { value: string; label: string }[]
     opencode: [],
 }
 
-export function getCodexReasoningEffortOptions(model?: string | null): { value: CodexReasoningEffort; label: string }[] {
+export function getCodexReasoningEffortOptions(
+    model?: string | null,
+    supportedReasoningEfforts?: readonly string[]
+): { value: CodexReasoningEffort; label: string }[] {
     return [
         { value: 'default', label: 'Default' },
-        ...getCodexReasoningEffortPresets(model).map((effort) => ({
+        ...getCodexReasoningEffortPresets(model, supportedReasoningEfforts).map((effort) => ({
             value: effort,
             label: CODEX_REASONING_EFFORT_LABELS[effort]
         }))

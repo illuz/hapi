@@ -23,6 +23,7 @@ import { createCliRoutes } from './routes/cli'
 import { createPushRoutes } from './routes/push'
 import { createVoiceRoutes } from './routes/voice'
 import { createSessionShareRoutes } from './routes/sessionShares'
+import { createSettingsRoutes } from './routes/settings'
 import type { SSEManager } from '../sse/sseManager'
 import type { VisibilityTracker } from '../visibility/visibilityTracker'
 import type { Server as BunServer } from 'bun'
@@ -105,6 +106,7 @@ export function createWebApp(options: {
     app.route('/api', createGitRoutes(options.getSyncEngine))
     app.route('/api', createPushRoutes(options.store, options.vapidPublicKey))
     app.route('/api', createVoiceRoutes())
+    app.route('/api', createSettingsRoutes(options.store))
     app.route('/', createPortProxyRoutes(options.getSyncEngine))
 
     app.get('/', () => new Response('It works!', {

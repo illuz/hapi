@@ -14,6 +14,8 @@ import type {
     MessagesResponse,
     ConversationHistoryResponse,
     CodexModelsResponse,
+    CustomCodexModelResponse,
+    CustomCodexModelsResponse,
     CronRunsResponse,
     OpencodeModelsResponse,
     PermissionMode,
@@ -777,6 +779,28 @@ export class ApiClient {
         return await this.request<CodexModelsResponse>(
             `/api/sessions/${encodeURIComponent(sessionId)}/codex-models`
         )
+    }
+
+    async getCustomCodexModels(): Promise<CustomCodexModelsResponse> {
+        return await this.request<CustomCodexModelsResponse>('/api/settings/codex-models')
+    }
+
+    async saveCustomCodexModel(input: {
+        id: string
+        displayName?: string | null
+        supportedReasoningEfforts?: string[]
+    }): Promise<CustomCodexModelResponse> {
+        return await this.request<CustomCodexModelResponse>('/api/settings/codex-models', {
+            method: 'POST',
+            body: JSON.stringify(input)
+        })
+    }
+
+    async deleteCustomCodexModel(id: string): Promise<void> {
+        await this.request('/api/settings/codex-models', {
+            method: 'DELETE',
+            body: JSON.stringify({ id })
+        })
     }
 
     async getSessionOpencodeModels(sessionId: string): Promise<OpencodeModelsResponse> {

@@ -7,6 +7,17 @@ import SettingsPage from './index'
 
 vi.mock('@hapi/protocol', () => ({
     PROTOCOL_VERSION: 1,
+    CODEX_REASONING_EFFORT_PRESETS: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+    CODEX_REASONING_EFFORT_LABELS: {
+        none: 'None',
+        minimal: 'Minimal',
+        low: 'Low',
+        medium: 'Medium',
+        high: 'High',
+        xhigh: 'XHigh',
+        max: 'Max',
+        ultra: 'Ultra',
+    },
 }))
 
 // Mock the router hooks
@@ -164,5 +175,15 @@ describe('SettingsPage', () => {
         expect(calledKeys).toContain('settings.chat.title')
         expect(calledKeys).toContain('settings.chat.enterBehavior')
         expect(calledKeys).toContain('settings.chat.enterBehavior.send')
+    })
+
+    it('renders custom Codex model fields and reasoning effort options', () => {
+        renderWithProviders(<SettingsPage />)
+
+        expect(screen.getAllByText('Codex Models').length).toBeGreaterThanOrEqual(1)
+        expect(screen.getAllByLabelText('Model ID').length).toBeGreaterThanOrEqual(1)
+        expect(screen.getAllByLabelText('Display name').length).toBeGreaterThanOrEqual(1)
+        expect(screen.getAllByLabelText('Minimal').length).toBeGreaterThanOrEqual(1)
+        expect(screen.getAllByLabelText('Ultra').length).toBeGreaterThanOrEqual(1)
     })
 })

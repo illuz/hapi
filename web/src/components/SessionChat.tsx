@@ -31,6 +31,7 @@ import { AutoContinueDialog } from '@/components/AutoContinueDialog'
 import { usePlatform } from '@/hooks/usePlatform'
 import { useSessionActions } from '@/hooks/mutations/useSessionActions'
 import { useCodexModels } from '@/hooks/queries/useCodexModels'
+import { useCustomCodexModels } from '@/hooks/queries/useCustomCodexModels'
 import { useOpencodeModels } from '@/hooks/queries/useOpencodeModels'
 import { useVoiceOptional } from '@/lib/voice-context'
 import { useToast } from '@/lib/toast-context'
@@ -40,6 +41,7 @@ import { RealtimeVoiceSession, registerSessionStore, registerVoiceHooksStore, vo
 import { isRemoteTerminalSupported } from '@/utils/terminalSupport'
 import { allocateContinueRoundWithSource } from '@/lib/continueRounds'
 import { findUnsupportedCodexBuiltinSlashCommand } from '@/lib/codexSlashCommands'
+import { mergeCodexModelOptions } from '@/lib/codexModelOptions'
 import {
     AUTO_CONTINUE_DEFAULT_REMAINING,
     AUTO_CONTINUE_DEFAULT_KEYWORDS,
@@ -99,20 +101,32 @@ export function SessionChat(props: {
         sessionId: props.session.id,
         enabled: agentFlavor === 'codex' && props.session.active && !controlledByUser
     })
+    const customCodexModelsState = useCustomCodexModels({
+        api: props.api,
+        enabled: agentFlavor === 'codex'
+    })
     const codexModelOptions = useMemo(() => {
         if (agentFlavor !== 'codex') {
             return undefined
         }
 
-        const options: Array<{ value: string | null; label: string }> = []
-        for (const codexModel of codexModelsState.models) {
+        const options: Array<{
+            value: string | null
+            label: string
+            supportedReasoningEfforts?: string[]
+        }> = []
+        for (const codexModel of mergeCodexModelOptions(
+            codexModelsState.models,
+            customCodexModelsState.models
+        )) {
             options.push({
-                value: codexModel.id,
-                label: codexModel.displayName
+                value: codexModel.value,
+                label: codexModel.label,
+                supportedReasoningEfforts: codexModel.supportedReasoningEfforts
             })
         }
         return options
-    }, [agentFlavor, codexModelsState.models])
+    }, [agentFlavor, codexModelsState.models, customCodexModelsState.models])
     const opencodeModelsState = useOpencodeModels({
         api: props.api,
         sessionId: props.session.id,
@@ -792,7 +806,7 @@ export function SessionChat(props: {
                         onPermissionModeChange={handlePermissionModeChange}
                         onModelChange={
                             agentFlavor === 'codex'
-                                ? (props.session.active && !controlledByUser && !codexModelsState.error ? handleModelChange : undefined)
+                                ? (props.session.active && !controlledByUser ? handleModelChange : undefined)
                                 : handleModelChange
                         }
                         onModelReasoningEffortChange={

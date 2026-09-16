@@ -3,6 +3,7 @@ import { chmodSync, closeSync, existsSync, mkdirSync, openSync } from 'node:fs'
 import { dirname } from 'node:path'
 
 import { CronRunsStore } from './cronRunsStore'
+import { CustomCodexModelStore } from './customCodexModels'
 import { HistoryStore } from './historyStore'
 import { MachineStore } from './machineStore'
 import { MessageStore } from './messageStore'
@@ -15,6 +16,7 @@ import { UserStore } from './userStore'
 export type {
     StoredCronProject,
     StoredCronRun,
+    StoredCustomCodexModel,
     StoredHistoryEntry,
     StoredMachine,
     StoredMessage,
@@ -27,6 +29,8 @@ export type {
 } from './types'
 export type { CancelQueuedMessageResult, LookupQueuedMessageResult } from './messages'
 export { CronRunsStore } from './cronRunsStore'
+export { CustomCodexModelStore } from './customCodexModels'
+export type { CustomCodexModelInput } from './customCodexModels'
 export { HistoryStore } from './historyStore'
 export type {
     AddHistoryEntryInput,
@@ -43,7 +47,7 @@ export { SessionShareStore } from './sessionShareStore'
 export { SessionStore } from './sessionStore'
 export { UserStore } from './userStore'
 
-const SCHEMA_VERSION: number = 17
+const SCHEMA_VERSION: number = 18
 const REQUIRED_TABLES = [
     'sessions',
     'machines',
@@ -54,7 +58,8 @@ const REQUIRED_TABLES = [
     'cron_runs',
     'conversation_history',
     'session_shares',
-    'port_mappings'
+    'port_mappings',
+    'custom_codex_models'
 ] as const
 
 export class Store {
@@ -69,6 +74,7 @@ export class Store {
     readonly push: PushStore
     readonly sessionShares: SessionShareStore
     readonly cronRuns: CronRunsStore
+    readonly customCodexModels: CustomCodexModelStore
     readonly history: HistoryStore
 
     constructor(dbPath: string) {
@@ -114,6 +120,7 @@ export class Store {
         this.push = new PushStore(this.db)
         this.sessionShares = new SessionShareStore(this.db)
         this.cronRuns = new CronRunsStore(this.db)
+        this.customCodexModels = new CustomCodexModelStore(this.db)
         this.history = new HistoryStore(this.db)
     }
 
@@ -140,6 +147,7 @@ export class Store {
             14: () => this.migrateFromV14ToV15(),
             15: () => this.migrateFromV15ToV16(),
             16: () => this.migrateFromV16ToV17(),
+            17: () => this.migrateFromV17ToV18(),
         })
 
         if (currentVersion === 0) {
@@ -422,6 +430,7 @@ export class Store {
             CREATE INDEX IF NOT EXISTS idx_session_shares_active
                 ON session_shares(namespace, session_id, revoked_at, expires_at);
         `)
+        this.createCustomCodexModelSchema()
     }
 
     private migrateLegacySchemaIfNeeded(): void {
@@ -672,6 +681,10 @@ export class Store {
         }
     }
 
+    private migrateFromV17ToV18(): void {
+        this.createCustomCodexModelSchema()
+    }
+
     private getMessageColumnNames(): Set<string> {
         const rows = this.db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>
         return new Set(rows.map((row) => row.name))
@@ -863,6 +876,22 @@ export class Store {
                 ON session_shares(namespace, session_id, created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_session_shares_active
                 ON session_shares(namespace, session_id, revoked_at, expires_at);
+        `)
+    }
+
+    private createCustomCodexModelSchema(): void {
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS custom_codex_models (
+                namespace TEXT NOT NULL,
+                model_id TEXT NOT NULL,
+                display_name TEXT,
+                supported_reasoning_efforts TEXT,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                PRIMARY KEY (namespace, model_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_custom_codex_models_namespace
+                ON custom_codex_models(namespace, created_at, model_id);
         `)
     }
 

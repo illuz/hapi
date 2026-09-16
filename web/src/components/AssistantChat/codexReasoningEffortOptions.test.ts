@@ -34,4 +34,19 @@ describe('getCodexComposerReasoningEffortOptions', () => {
             { value: 'xhigh', label: 'XHigh' }
         ])
     })
+
+    it('uses reasoning efforts reported for the selected model', () => {
+        expect(getCodexComposerReasoningEffortOptions(null, 'gpt-6-astra', [
+            'none',
+            'minimal',
+            'high',
+            'ultra'
+        ])).toEqual([
+            { value: null, label: 'Default' },
+            { value: 'none', label: 'None' },
+            { value: 'minimal', label: 'Minimal' },
+            { value: 'high', label: 'High' },
+            { value: 'ultra', label: 'Ultra' }
+        ])
+    })
 })

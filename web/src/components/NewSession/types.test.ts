@@ -56,4 +56,13 @@ describe('Codex reasoning options', () => {
             { value: 'ultra', label: 'Ultra' },
         ])
     })
+
+    it('uses reasoning efforts reported for the selected model', () => {
+        expect(getCodexReasoningEffortOptions('gpt-6-astra', ['minimal', 'high', 'ultra'])).toEqual([
+            { value: 'default', label: 'Default' },
+            { value: 'minimal', label: 'Minimal' },
+            { value: 'high', label: 'High' },
+            { value: 'ultra', label: 'Ultra' },
+        ])
+    })
 })

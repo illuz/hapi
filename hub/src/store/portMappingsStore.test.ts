@@ -84,7 +84,7 @@ describe('PortMappingsStore', () => {
             expect(columns).toContain('target_type')
             expect(columns).toContain('static_path')
             const version = dbOf(migrated).prepare('PRAGMA user_version').get() as { user_version: number }
-            expect(version.user_version).toBe(16)
+            expect(version.user_version).toBe(18)
             dbOf(migrated).close()
         } finally {
             rmSync(dir, { recursive: true, force: true })

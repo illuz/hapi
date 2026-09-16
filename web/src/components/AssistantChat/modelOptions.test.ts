@@ -53,6 +53,10 @@ describe('getModelOptionsForFlavor', () => {
         expect(options).toEqual([])
     })
 
+    it('returns an empty list for Codex before models are discovered (no Claude fallback)', () => {
+        expect(getModelOptionsForFlavor('codex', null)).toEqual([])
+    })
+
     it('includes the current opencode model when it is missing from explicit options', () => {
         const options = getModelOptionsForFlavor('opencode', 'ollama/legacy', [
             { value: 'ollama/exaone:4.5-33b-q8', label: 'Ollama EXAONE' }
@@ -104,5 +108,10 @@ describe('getNextModelForFlavor', () => {
     it('returns null for opencode without a current model and without dynamic options (no Claude fallback)', () => {
         const next = getNextModelForFlavor('opencode', null, [])
         expect(next).toBeNull()
+    })
+
+    it('keeps the current Codex model when the dynamic list is unavailable', () => {
+        expect(getNextModelForFlavor('codex', 'gpt-6-astra')).toBe('gpt-6-astra')
+        expect(getNextModelForFlavor('codex', null)).toBeNull()
     })
 })

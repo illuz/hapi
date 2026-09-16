@@ -91,6 +91,15 @@ export type StoredUser = {
     createdAt: number
 }
 
+export type StoredCustomCodexModel = {
+    namespace: string
+    modelId: string
+    displayName: string | null
+    supportedReasoningEfforts: string[]
+    createdAt: number
+    updatedAt: number
+}
+
 export type StoredPushSubscription = {
     id: number
     namespace: string

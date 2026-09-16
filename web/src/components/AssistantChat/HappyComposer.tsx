@@ -149,7 +149,11 @@ export function HappyComposer(props: {
     contextWindow?: number | null
     controlledByUser?: boolean
     agentFlavor?: string | null
-    availableModelOptions?: Array<{ value: string | null; label: string }>
+    availableModelOptions?: Array<{
+        value: string | null
+        label: string
+        supportedReasoningEfforts?: string[]
+    }>
     onCollaborationModeChange?: (mode: CodexCollaborationMode) => void
     onPermissionModeChange?: (mode: PermissionMode) => void
     onModelChange?: (model: string | null) => void
@@ -616,9 +620,21 @@ export function HappyComposer(props: {
         () => getModelOptionsForFlavor(agentFlavor, model, availableModelOptions),
         [agentFlavor, model, availableModelOptions]
     )
+    const selectedCodexModel = useMemo(
+        () => agentFlavor === 'codex'
+            ? availableModelOptions?.find((option) => option.value === model)
+            : undefined,
+        [agentFlavor, availableModelOptions, model]
+    )
     const codexReasoningEffortOptions = useMemo(
-        () => agentFlavor === 'codex' ? getCodexComposerReasoningEffortOptions(modelReasoningEffort, model) : [],
-        [agentFlavor, modelReasoningEffort, model]
+        () => agentFlavor === 'codex'
+            ? getCodexComposerReasoningEffortOptions(
+                modelReasoningEffort,
+                model,
+                selectedCodexModel?.supportedReasoningEfforts
+            )
+            : [],
+        [agentFlavor, modelReasoningEffort, model, selectedCodexModel?.supportedReasoningEfforts]
     )
     const claudeEffortOptions = useMemo(
         () => getClaudeComposerEffortOptions(effort),

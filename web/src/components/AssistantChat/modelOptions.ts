@@ -56,6 +56,11 @@ export function getModelOptionsForFlavor(
     if (flavor === 'gemini') {
         return getGeminiModelOptions(currentModel)
     }
+    // Codex models are discovered by the app-server or supplied through the
+    // synced custom-model settings. Never fall back to Claude presets.
+    if (flavor === 'codex') {
+        return []
+    }
     // OpenCode discovers models dynamically via the listOpencodeModels RPC. Until
     // those options arrive, render an empty list rather than the Claude fallback —
     // the latter would surface unrelated Claude models in an OpenCode session.
@@ -80,6 +85,9 @@ export function getNextModelForFlavor(
     }
     if (flavor === 'gemini') {
         return getNextGeminiModel(currentModel)
+    }
+    if (flavor === 'codex') {
+        return normalizeCurrentModel(currentModel)
     }
     // OpenCode discovers models dynamically via the listOpencodeModels RPC. Until
     // those options arrive, pressing the Ctrl/Cmd+M shortcut must not fall through

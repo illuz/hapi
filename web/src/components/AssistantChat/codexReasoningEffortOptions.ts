@@ -21,10 +21,11 @@ function formatCodexReasoningEffortLabel(effort: string): string {
 
 export function getCodexComposerReasoningEffortOptions(
     currentEffort?: string | null,
-    model?: string | null
+    model?: string | null,
+    supportedReasoningEfforts?: readonly string[]
 ): CodexComposerReasoningEffortOption[] {
     const normalizedCurrentEffort = normalizeCodexComposerReasoningEffort(currentEffort)
-    const supportedEfforts = getCodexReasoningEffortPresets(model)
+    const supportedEfforts = getCodexReasoningEffortPresets(model, supportedReasoningEfforts)
     const options: CodexComposerReasoningEffortOption[] = [
         { value: null, label: 'Default' }
     ]

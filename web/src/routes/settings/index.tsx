@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, type FormEvent } from 'react'
 import { useTranslation, type Locale } from '@/lib/use-translation'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
 import { getElevenLabsSupportedLanguages, getLanguageDisplayName, type Language } from '@/lib/languages'
@@ -17,7 +17,16 @@ import {
     type SoundPlaybackMode,
     type SoundVariant,
 } from '@/lib/readySound'
-import { PROTOCOL_VERSION } from '@hapi/protocol'
+import {
+    CODEX_REASONING_EFFORT_LABELS,
+    CODEX_REASONING_EFFORT_PRESETS,
+    PROTOCOL_VERSION,
+    type CodexReasoningEffortPreset
+} from '@hapi/protocol'
+import type { CustomCodexModel } from '@/types/api'
+import { useOptionalAppContext } from '@/lib/app-context'
+import { queryClient } from '@/lib/query-client'
+import { queryKeys } from '@/lib/query-keys'
 
 const locales: { value: Locale; nativeLabel: string }[] = [
     { value: 'en', nativeLabel: 'English' },
@@ -83,8 +92,29 @@ function ChevronDownIcon(props: { className?: string }) {
     )
 }
 
+function RemoveIcon(props: { className?: string }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={props.className}
+        >
+            <line x1="5" y1="12" x2="19" y2="12" />
+        </svg>
+    )
+}
+
 export default function SettingsPage() {
     const { t, locale, setLocale } = useTranslation()
+    const appContext = useOptionalAppContext()
+    const settingsApi = appContext?.api ?? null
     const goBack = useAppGoBack()
     const [isOpen, setIsOpen] = useState(false)
     const [isAppearanceOpen, setIsAppearanceOpen] = useState(false)
@@ -126,6 +156,49 @@ export default function SettingsPage() {
     const [messageSound, setMessageSound] = useState<SoundVariant>(() => getStoredEventSound('message'))
     const [failureSound, setFailureSound] = useState<SoundVariant>(() => getStoredEventSound('failure'))
     const [generalSound, setGeneralSound] = useState<SoundVariant>(() => getStoredEventSound('general'))
+    const [customCodexModels, setCustomCodexModels] = useState<CustomCodexModel[]>([])
+    const [customCodexModelId, setCustomCodexModelId] = useState('')
+    const [customCodexModelName, setCustomCodexModelName] = useState('')
+    const [customCodexReasoningEfforts, setCustomCodexReasoningEfforts] = useState<CodexReasoningEffortPreset[]>([])
+    const [customCodexModelsLoading, setCustomCodexModelsLoading] = useState(false)
+    const [customCodexModelsSaving, setCustomCodexModelsSaving] = useState(false)
+    const [customCodexModelRemoving, setCustomCodexModelRemoving] = useState<string | null>(null)
+    const [customCodexModelsError, setCustomCodexModelsError] = useState<string | null>(null)
+
+    useEffect(() => {
+        let cancelled = false
+        if (!settingsApi) {
+            setCustomCodexModels([])
+            setCustomCodexModelsLoading(false)
+            return () => {
+                cancelled = true
+            }
+        }
+
+        setCustomCodexModelsLoading(true)
+        setCustomCodexModelsError(null)
+        settingsApi.getCustomCodexModels()
+            .then((response) => {
+                if (!cancelled) {
+                    setCustomCodexModels(response.models)
+                    queryClient.setQueryData(queryKeys.customCodexModels, response)
+                }
+            })
+            .catch((error) => {
+                if (!cancelled) {
+                    setCustomCodexModelsError(error instanceof Error ? error.message : t('settings.codexModels.loadFailed'))
+                }
+            })
+            .finally(() => {
+                if (!cancelled) {
+                    setCustomCodexModelsLoading(false)
+                }
+            })
+
+        return () => {
+            cancelled = true
+        }
+    }, [settingsApi, t])
 
     const fontScaleOptions = getFontScaleOptions()
     const terminalFontSizeOptions = getTerminalFontSizeOptions()
@@ -215,6 +288,70 @@ export default function SettingsPage() {
         setGeneralSound(value)
         setStoredEventSound('general', value)
         setIsGeneralSoundOpen(false)
+    }
+
+    const handleAddCustomCodexModel = async (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault()
+        if (!settingsApi || customCodexModelsSaving) {
+            return
+        }
+
+        const id = customCodexModelId.trim()
+        if (!id || /\s/.test(id)) {
+            setCustomCodexModelsError(t('settings.codexModels.invalidId'))
+            return
+        }
+
+        setCustomCodexModelsSaving(true)
+        setCustomCodexModelsError(null)
+        try {
+            const response = await settingsApi.saveCustomCodexModel({
+                id,
+                displayName: customCodexModelName.trim() || null,
+                supportedReasoningEfforts: customCodexReasoningEfforts
+            })
+            const nextModels = [
+                ...customCodexModels.filter((model) => model.id !== response.model.id),
+                response.model
+            ]
+            setCustomCodexModels(nextModels)
+            queryClient.setQueryData(queryKeys.customCodexModels, { models: nextModels })
+            setCustomCodexModelId('')
+            setCustomCodexModelName('')
+            setCustomCodexReasoningEfforts([])
+        } catch (error) {
+            setCustomCodexModelsError(error instanceof Error ? error.message : t('settings.codexModels.saveFailed'))
+        } finally {
+            setCustomCodexModelsSaving(false)
+        }
+    }
+
+    const handleCustomCodexReasoningEffortChange = (
+        effort: CodexReasoningEffortPreset,
+        checked: boolean
+    ) => {
+        setCustomCodexReasoningEfforts((current) => checked
+            ? [...current, effort]
+            : current.filter((entry) => entry !== effort))
+    }
+
+    const handleRemoveCustomCodexModel = async (model: CustomCodexModel) => {
+        if (!settingsApi || customCodexModelRemoving) {
+            return
+        }
+
+        setCustomCodexModelRemoving(model.id)
+        setCustomCodexModelsError(null)
+        try {
+            await settingsApi.deleteCustomCodexModel(model.id)
+            const nextModels = customCodexModels.filter((entry) => entry.id !== model.id)
+            setCustomCodexModels(nextModels)
+            queryClient.setQueryData(queryKeys.customCodexModels, { models: nextModels })
+        } catch (error) {
+            setCustomCodexModelsError(error instanceof Error ? error.message : t('settings.codexModels.removeFailed'))
+        } finally {
+            setCustomCodexModelRemoving(null)
+        }
     }
 
     const handleTestSound = async (value: SoundVariant) => {
@@ -1000,6 +1137,120 @@ export default function SettingsPage() {
                             >
                                 {t('settings.sound.testGeneral')}
                             </button>
+                        </div>
+                    </div>
+
+                    {/* Codex model section */}
+                    <div className="border-b border-[var(--app-divider)]">
+                        <div className="px-3 py-2 text-xs font-semibold text-[var(--app-hint)] uppercase tracking-wide">
+                            {t('settings.codexModels.title')}
+                        </div>
+                        <div className="px-3 py-3">
+                            <form onSubmit={(event) => void handleAddCustomCodexModel(event)} className="flex flex-col gap-2">
+                                <label htmlFor="custom-codex-model-id" className="text-xs font-medium text-[var(--app-hint)]">
+                                    {t('settings.codexModels.modelId')}
+                                </label>
+                                <input
+                                    id="custom-codex-model-id"
+                                    value={customCodexModelId}
+                                    onChange={(event) => setCustomCodexModelId(event.target.value)}
+                                    placeholder="gpt-6-astra"
+                                    autoComplete="off"
+                                    spellCheck={false}
+                                    disabled={!settingsApi || customCodexModelsSaving}
+                                    className="w-full rounded-lg border border-[var(--app-divider)] bg-[var(--app-bg)] px-3 py-2 text-sm text-[var(--app-fg)] outline-none focus:border-[var(--app-link)] disabled:opacity-50"
+                                />
+                                <label htmlFor="custom-codex-model-name" className="text-xs font-medium text-[var(--app-hint)]">
+                                    {t('settings.codexModels.displayName')}
+                                </label>
+                                <input
+                                    id="custom-codex-model-name"
+                                    value={customCodexModelName}
+                                    onChange={(event) => setCustomCodexModelName(event.target.value)}
+                                    placeholder={t('settings.codexModels.displayNamePlaceholder')}
+                                    autoComplete="off"
+                                    disabled={!settingsApi || customCodexModelsSaving}
+                                    className="w-full rounded-lg border border-[var(--app-divider)] bg-[var(--app-bg)] px-3 py-2 text-sm text-[var(--app-fg)] outline-none focus:border-[var(--app-link)] disabled:opacity-50"
+                                />
+                                <fieldset disabled={!settingsApi || customCodexModelsSaving} className="mt-1">
+                                    <legend className="mb-2 text-xs font-medium text-[var(--app-hint)]">
+                                        {t('settings.codexModels.reasoningEfforts')}
+                                    </legend>
+                                    <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
+                                        {CODEX_REASONING_EFFORT_PRESETS.map((effort) => (
+                                            <label
+                                                key={effort}
+                                                className="flex min-h-8 items-center gap-2 text-sm text-[var(--app-fg)]"
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    checked={customCodexReasoningEfforts.includes(effort)}
+                                                    onChange={(event) => handleCustomCodexReasoningEffortChange(
+                                                        effort,
+                                                        event.target.checked
+                                                    )}
+                                                    className="h-4 w-4 accent-[var(--app-link)]"
+                                                />
+                                                <span>{CODEX_REASONING_EFFORT_LABELS[effort]}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                </fieldset>
+                                <div>
+                                    <button
+                                        type="submit"
+                                        disabled={!settingsApi || customCodexModelsSaving || customCodexModelId.trim().length === 0}
+                                        className="rounded-lg bg-[var(--app-link)] px-3 py-2 text-sm text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                        {customCodexModelsSaving ? t('settings.codexModels.saving') : t('settings.codexModels.add')}
+                                    </button>
+                                </div>
+                            </form>
+
+                            {customCodexModelsError ? (
+                                <div className="mt-2 text-sm text-red-600">{customCodexModelsError}</div>
+                            ) : null}
+
+                            <div className="mt-3 divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]">
+                                {customCodexModelsLoading ? (
+                                    <div className="py-3 text-sm text-[var(--app-hint)]">{t('settings.codexModels.loading')}</div>
+                                ) : customCodexModels.length === 0 ? (
+                                    <div className="py-3 text-sm text-[var(--app-hint)]">{t('settings.codexModels.empty')}</div>
+                                ) : (
+                                    customCodexModels.map((model) => (
+                                        <div key={model.id} className="flex items-center gap-3 py-2">
+                                            <div className="min-w-0 flex-1">
+                                                <div className="truncate text-sm text-[var(--app-fg)]">
+                                                    {model.displayName || model.id}
+                                                </div>
+                                                {model.displayName ? (
+                                                    <div className="truncate text-xs text-[var(--app-hint)]">{model.id}</div>
+                                                ) : null}
+                                                {model.supportedReasoningEfforts.length > 0 ? (
+                                                    <div className="truncate text-xs text-[var(--app-hint)]">
+                                                        {t('settings.codexModels.reasoningEfforts')}: {' '}
+                                                        {model.supportedReasoningEfforts
+                                                            .map((effort) => CODEX_REASONING_EFFORT_LABELS[
+                                                                effort as CodexReasoningEffortPreset
+                                                            ] ?? effort)
+                                                            .join(', ')}
+                                                    </div>
+                                                ) : null}
+                                            </div>
+                                            <button
+                                                type="button"
+                                                aria-label={`${t('settings.codexModels.remove')} ${model.displayName || model.id}`}
+                                                title={t('settings.codexModels.remove')}
+                                                onClick={() => void handleRemoveCustomCodexModel(model)}
+                                                disabled={!settingsApi || customCodexModelRemoving !== null}
+                                                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                            >
+                                                <RemoveIcon />
+                                            </button>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
                         </div>
                     </div>
 

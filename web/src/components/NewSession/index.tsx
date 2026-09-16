@@ -6,6 +6,7 @@ import { usePlatform } from '@/hooks/usePlatform'
 import { useMachinePathsExists } from '@/hooks/useMachinePathsExists'
 import { useSpawnSession } from '@/hooks/mutations/useSpawnSession'
 import { useCodexModels } from '@/hooks/queries/useCodexModels'
+import { useCustomCodexModels } from '@/hooks/queries/useCustomCodexModels'
 import { useOpencodeModelsForCwd } from '@/hooks/queries/useOpencodeModelsForCwd'
 import { useSessions } from '@/hooks/queries/useSessions'
 import { useActiveSuggestions, type Suggestion } from '@/hooks/useActiveSuggestions'
@@ -31,6 +32,7 @@ import {
 import { SessionTypeSelector } from './SessionTypeSelector'
 import { YoloToggle } from './YoloToggle'
 import { formatRunnerSpawnError } from '../../utils/formatRunnerSpawnError'
+import { mergeCodexModelOptions } from '@/lib/codexModelOptions'
 
 export function NewSession(props: {
     api: ApiClient
@@ -112,6 +114,10 @@ export function NewSession(props: {
         machineId,
         enabled: agent === 'codex' && Boolean(machineId)
     })
+    const customCodexModelsState = useCustomCodexModels({
+        api: props.api,
+        enabled: agent === 'codex'
+    })
     const [opencodeSelectedModel, setOpencodeSelectedModel] = useState<string | null>(null)
     const runnerSpawnError = useMemo(
         () => formatRunnerSpawnError(selectedMachine),
@@ -119,13 +125,16 @@ export function NewSession(props: {
     )
     const codexModelOptions = useMemo(() => {
         const options = [{ value: 'auto', label: 'Default' }]
-        for (const codexModel of codexModelsState.models) {
-            if (options.some((option) => option.value === codexModel.id)) {
+        for (const codexModel of mergeCodexModelOptions(
+            codexModelsState.models,
+            customCodexModelsState.models
+        )) {
+            if (options.some((option) => option.value === codexModel.value)) {
                 continue
             }
             options.push({
-                value: codexModel.id,
-                label: codexModel.displayName
+                value: codexModel.value,
+                label: codexModel.label
             })
         }
         if (!options.some((option) => option.value === DEFAULT_CODEX_MODEL)) {
@@ -135,10 +144,15 @@ export function NewSession(props: {
             options.splice(1, 0, { value: model, label: model })
         }
         return options
-    }, [codexModelsState.models, model])
+    }, [codexModelsState.models, customCodexModelsState.models, model])
+    const selectedCodexModel = useMemo(
+        () => mergeCodexModelOptions(codexModelsState.models, customCodexModelsState.models)
+            .find((option) => option.value === model),
+        [codexModelsState.models, customCodexModelsState.models, model]
+    )
     const codexReasoningEffortOptions = useMemo(
-        () => getCodexReasoningEffortOptions(model),
-        [model]
+        () => getCodexReasoningEffortOptions(model, selectedCodexModel?.supportedReasoningEfforts),
+        [model, selectedCodexModel?.supportedReasoningEfforts]
     )
 
     useEffect(() => {
@@ -444,7 +458,7 @@ export function NewSession(props: {
                     agent={agent}
                     model={model}
                     options={agent === 'codex' ? codexModelOptions : undefined}
-                    isDisabled={isFormDisabled || (agent === 'codex' && Boolean(codexModelsState.error))}
+                    isDisabled={isFormDisabled}
                     isLoading={agent === 'codex' && codexModelsState.isLoading}
                     error={agent === 'codex' && codexModelsState.error
                         ? `${t('newSession.model.loadFailed')}: ${codexModelsState.error}`

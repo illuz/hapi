@@ -36,6 +36,8 @@ export const DEFAULT_CODEX_REASONING_EFFORT = 'xhigh' as const
 const CODEX_BASE_REASONING_EFFORT_PRESETS = ['low', 'medium', 'high', 'xhigh'] as const
 const CODEX_EXTENDED_REASONING_EFFORT_PRESETS = ['max', 'ultra'] as const
 export const CODEX_REASONING_EFFORT_LABELS = {
+    none: 'None',
+    minimal: 'Minimal',
     low: 'Low',
     medium: 'Medium',
     high: 'High',
@@ -52,7 +54,21 @@ export function supportsCodexExtendedReasoning(model: string | null | undefined)
     return Boolean(trimmedModel && trimmedModel.startsWith('gpt-5.6-'))
 }
 
-export function getCodexReasoningEffortPresets(model?: string | null): CodexReasoningEffortPreset[] {
+export function getCodexReasoningEffortPresets(
+    model?: string | null,
+    supportedReasoningEfforts?: readonly string[]
+): CodexReasoningEffortPreset[] {
+    const supportedPresets = Array.from(new Set(
+        (supportedReasoningEfforts ?? [])
+            .map((effort) => effort.trim().toLowerCase())
+            .filter((effort): effort is CodexReasoningEffortPreset => (
+                Object.hasOwn(CODEX_REASONING_EFFORT_LABELS, effort)
+            ))
+    ))
+    if (supportedPresets.length > 0) {
+        return supportedPresets
+    }
+
     return supportsCodexExtendedReasoning(model)
         ? [...CODEX_BASE_REASONING_EFFORT_PRESETS, ...CODEX_EXTENDED_REASONING_EFFORT_PRESETS]
         : [...CODEX_BASE_REASONING_EFFORT_PRESETS]

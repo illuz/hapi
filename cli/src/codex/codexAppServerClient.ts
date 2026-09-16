@@ -18,8 +18,8 @@ import type {
     ThreadResumeResponse,
     ThreadForkParams,
     ThreadForkResponse,
-    ThreadRollbackParams,
-    ThreadRollbackResponse,
+    ThreadTurnsListParams,
+    ThreadTurnsListResponse,
     TurnStartParams,
     TurnStartResponse,
     TurnInterruptParams,
@@ -179,12 +179,12 @@ export class CodexAppServerClient {
         return response as ThreadForkResponse;
     }
 
-    async rollbackThread(params: ThreadRollbackParams, options?: { signal?: AbortSignal }): Promise<ThreadRollbackResponse> {
-        const response = await this.sendRequest('thread/rollback', params, {
+    async listThreadTurns(params: ThreadTurnsListParams, options?: { signal?: AbortSignal }): Promise<ThreadTurnsListResponse> {
+        const response = await this.sendRequest('thread/turns/list', params, {
             signal: options?.signal,
             timeoutMs: CodexAppServerClient.DEFAULT_TIMEOUT_MS
         });
-        return response as ThreadRollbackResponse;
+        return response as ThreadTurnsListResponse;
     }
 
     async startTurn(params: TurnStartParams, options?: { signal?: AbortSignal }): Promise<TurnStartResponse> {

@@ -95,9 +95,9 @@ export interface ThreadResumeResponse {
 
 export interface ThreadForkParams {
     threadId: string;
+    lastTurnId?: string;
     ephemeral?: boolean;
     excludeTurns?: boolean;
-    persistExtendedHistory?: boolean;
 }
 
 export interface ThreadForkResponse {
@@ -108,12 +108,21 @@ export interface ThreadForkResponse {
     [key: string]: unknown;
 }
 
-export interface ThreadRollbackParams {
+export interface ThreadTurnsListParams {
     threadId: string;
-    numTurns: number;
+    cursor?: string;
+    limit?: number;
+    sortDirection?: 'asc' | 'desc';
+    itemsView?: 'notLoaded' | 'summary' | 'full';
 }
 
-export interface ThreadRollbackResponse {
+export interface ThreadTurnsListResponse {
+    data: Array<{
+        id: string;
+        [key: string]: unknown;
+    }>;
+    nextCursor: string | null;
+    backwardsCursor: string | null;
     [key: string]: unknown;
 }
 

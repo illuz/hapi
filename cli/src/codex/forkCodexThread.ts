@@ -10,8 +10,40 @@ type ForkCodexThreadResult =
     | { success: true; threadId: string }
     | { success: false; error: string }
 
+const MAX_TURN_PAGE_SIZE = 100
+
 function getErrorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error)
+}
+
+async function resolveForkLastTurnId(
+    client: CodexAppServerClient,
+    threadId: string,
+    rollbackTurns: number
+): Promise<string> {
+    let remainingTurns = rollbackTurns
+    let cursor: string | undefined
+
+    while (true) {
+        const response = await client.listThreadTurns({
+            threadId,
+            ...(cursor ? { cursor } : {}),
+            limit: Math.min(remainingTurns + 1, MAX_TURN_PAGE_SIZE),
+            sortDirection: 'desc',
+            itemsView: 'notLoaded'
+        })
+        const targetTurn = response.data[remainingTurns]
+        if (targetTurn) {
+            return targetTurn.id
+        }
+
+        remainingTurns -= response.data.length
+        const nextCursor = response.nextCursor ?? undefined
+        if (!nextCursor || nextCursor === cursor) {
+            throw new Error(`Codex thread has fewer than ${rollbackTurns + 1} turns`)
+        }
+        cursor = nextCursor
+    }
 }
 
 export async function forkCodexThread(options: ForkCodexThreadOptions): Promise<ForkCodexThreadResult> {
@@ -26,11 +58,15 @@ export async function forkCodexThread(options: ForkCodexThreadOptions): Promise<
             }
         })
 
+        const rollbackTurns = options.rollbackTurns ?? 0
+        const lastTurnId = rollbackTurns > 0
+            ? await resolveForkLastTurnId(client, options.threadId, rollbackTurns)
+            : undefined
         const forked = await client.forkThread({
             threadId: options.threadId,
+            ...(lastTurnId ? { lastTurnId } : {}),
             ephemeral: false,
-            excludeTurns: false,
-            persistExtendedHistory: true
+            excludeTurns: true
         })
 
         const forkedThreadId = forked.thread?.id
@@ -39,13 +75,6 @@ export async function forkCodexThread(options: ForkCodexThreadOptions): Promise<
                 success: false,
                 error: 'Codex fork did not return thread.id'
             }
-        }
-
-        if ((options.rollbackTurns ?? 0) > 0) {
-            await client.rollbackThread({
-                threadId: forkedThreadId,
-                numTurns: options.rollbackTurns ?? 0
-            })
         }
 
         return {

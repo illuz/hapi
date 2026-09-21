@@ -83,7 +83,7 @@ export function getStoredPlaybackMode(): SoundPlaybackMode {
     if (raw === 'always' || raw === 'background' || raw === 'off') {
         return raw
     }
-    return 'always'
+    return 'off'
 }
 
 export function setStoredPlaybackMode(value: SoundPlaybackMode): void {

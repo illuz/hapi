@@ -45,6 +45,24 @@ function createSession(overrides: Partial<Session> = {}): Session {
 }
 
 describe('AutoRetryService', () => {
+    it('does not schedule when the namespace-wide AUTO switch is off', async () => {
+        const session = createSession()
+        const sends: string[] = []
+        const service = new AutoRetryService({
+            getSession: () => session,
+            isEnabled: () => false,
+            switchSession: async () => {},
+            sendMessage: async (_sessionId, payload) => { sends.push(payload.text) },
+            delayMs: 5
+        })
+
+        expect(service.scheduleIfNeeded(session.id, 'Task failed: Selected model is at capacity')).toBe(false)
+        await sleep(20)
+
+        expect(sends).toHaveLength(0)
+        service.stop()
+    })
+
     it('sends continue after the configured delay for a terminal capacity failure', async () => {
         const session = createSession({
             agentState: {
@@ -57,6 +75,7 @@ describe('AutoRetryService', () => {
         const sends: Array<{ sessionId: string; text: string; sentFrom: string }> = []
         const service = new AutoRetryService({
             getSession: () => session,
+            isEnabled: () => true,
             switchSession: async (sessionId) => { switches.push(sessionId) },
             sendMessage: async (sessionId, payload) => { sends.push({ sessionId, ...payload }) },
             delayMs: 5
@@ -81,6 +100,7 @@ describe('AutoRetryService', () => {
         const sends: string[] = []
         const service = new AutoRetryService({
             getSession: () => session,
+            isEnabled: () => true,
             switchSession: async () => {},
             sendMessage: async (_sessionId, payload) => { sends.push(payload.text) },
             delayMs: 5
@@ -118,6 +138,7 @@ describe('AutoRetryService', () => {
         const sends: string[] = []
         const service = new AutoRetryService({
             getSession: () => session,
+            isEnabled: () => true,
             switchSession: async () => {},
             sendMessage: async (_sessionId, payload) => { sends.push(payload.text) },
             delayMs: 5
@@ -135,6 +156,7 @@ describe('AutoRetryService', () => {
         const sends: string[] = []
         const service = new AutoRetryService({
             getSession: () => session,
+            isEnabled: () => true,
             switchSession: async () => {},
             sendMessage: async (_sessionId, payload) => { sends.push(payload.text) },
             delayMs: 5
@@ -155,6 +177,7 @@ describe('AutoRetryService', () => {
         const sends: string[] = []
         const service = new AutoRetryService({
             getSession: () => session,
+            isEnabled: () => true,
             switchSession: async () => {},
             sendMessage: async (_sessionId, payload) => { sends.push(payload.text) },
             delayMs: 5
@@ -173,6 +196,7 @@ describe('AutoRetryService', () => {
         const sends: string[] = []
         const service = new AutoRetryService({
             getSession: () => session,
+            isEnabled: () => true,
             switchSession: async () => {},
             sendMessage: async (_sessionId, payload) => { sends.push(payload.text) },
             delayMs: 5
@@ -191,6 +215,7 @@ describe('AutoRetryService', () => {
         const sends: string[] = []
         const service = new AutoRetryService({
             getSession: () => session,
+            isEnabled: () => true,
             switchSession: async () => {},
             sendMessage: async (_sessionId, payload) => { sends.push(payload.text) },
             delayMs: 5
@@ -228,6 +253,7 @@ describe('AutoRetryService', () => {
         const sends: string[] = []
         const service = new AutoRetryService({
             getSession: () => session,
+            isEnabled: () => true,
             switchSession: async () => {},
             sendMessage: async (_sessionId, payload) => { sends.push(payload.text) },
             delayMs: 5
@@ -262,6 +288,7 @@ describe('AutoRetryService', () => {
         const sends: string[] = []
         const service = new AutoRetryService({
             getSession: () => session,
+            isEnabled: () => true,
             switchSession: async () => {},
             sendMessage: async (_sessionId, payload) => { sends.push(payload.text) },
             delayMs: 5
@@ -296,6 +323,7 @@ describe('AutoRetryService', () => {
         const sends: string[] = []
         const service = new AutoRetryService({
             getSession: () => session,
+            isEnabled: () => true,
             switchSession: async () => {},
             sendMessage: async (_sessionId, payload) => { sends.push(payload.text) },
             delayMs: 5

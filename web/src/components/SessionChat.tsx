@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { AssistantRuntimeProvider } from '@assistant-ui/react'
-import { normalizeAutoContinueSettings as normalizeServerAutoContinueSettings } from '@hapi/protocol/autoContinue'
 import type { ApiClient } from '@/api/client'
 import type {
     AttachmentMetadata,
@@ -34,6 +33,7 @@ import { useSessionActions } from '@/hooks/mutations/useSessionActions'
 import { useCodexModels } from '@/hooks/queries/useCodexModels'
 import { useCustomCodexModels } from '@/hooks/queries/useCustomCodexModels'
 import { useOpencodeModels } from '@/hooks/queries/useOpencodeModels'
+import { useAutoRetrySettings } from '@/hooks/queries/useAutoRetrySettings'
 import { useVoiceOptional } from '@/lib/voice-context'
 import { useToast } from '@/lib/toast-context'
 import { canForkSession, getRollbackTurnsFromOutlineIndex } from '@/lib/sessionBranching'
@@ -96,12 +96,11 @@ export function SessionChat(props: {
     const [autoContinueStopKeywords, setAutoContinueStopKeywords] = useState<string[]>([])
     const [autoContinuePrompt, setAutoContinuePrompt] = useState(AUTO_CONTINUE_DEFAULT_PROMPT)
     const [autoContinueDialogOpen, setAutoContinueDialogOpen] = useState(false)
-    const serverAutoContinueSettings = useMemo(
-        () => normalizeServerAutoContinueSettings(props.session.metadata?.autoContinue),
-        [props.session.metadata?.autoContinue]
-    )
-    const [autoRetryEnabled, setAutoRetryEnabled] = useState(serverAutoContinueSettings.retryOnOverload)
-    const [autoRetryPending, setAutoRetryPending] = useState(false)
+    const {
+        enabled: autoRetryEnabled,
+        isPending: autoRetryPending,
+        setEnabled: updateAutoRetryEnabled
+    } = useAutoRetrySettings(props.api)
     const [outlineOpen, setOutlineOpen] = useState(false)
     const [historyOpen, setHistoryOpen] = useState(false)
     const [outlineForkingItemIndex, setOutlineForkingItemIndex] = useState<number | null>(null)
@@ -285,11 +284,6 @@ export function SessionChat(props: {
         setAutoContinuePrompt(state.prompt)
         lastAutoContinueKeyRef.current = null
     }, [props.session.id])
-
-    useEffect(() => {
-        setAutoRetryEnabled(serverAutoContinueSettings.retryOnOverload)
-        setAutoRetryPending(false)
-    }, [props.session.id, serverAutoContinueSettings.retryOnOverload])
 
     useEffect(() => {
         prevAutoContinueThinkingRef.current = props.session.thinking
@@ -548,16 +542,7 @@ export function SessionChat(props: {
         if (autoRetryPending) return
 
         const nextEnabled = !autoRetryEnabled
-        setAutoRetryEnabled(nextEnabled)
-        setAutoRetryPending(true)
-
-        void props.api.setAutoContinueSettings(props.session.id, {
-            ...serverAutoContinueSettings,
-            retryOnOverload: nextEnabled
-        }).then(() => {
-            props.onRefresh()
-        }).catch((error: unknown) => {
-            setAutoRetryEnabled(!nextEnabled)
+        void updateAutoRetryEnabled(nextEnabled).catch((error: unknown) => {
             addToast({
                 title: t('session.autoRetryUpdateFailed'),
                 body: error instanceof Error ? error.message : t('dialog.error.default'),
@@ -565,18 +550,14 @@ export function SessionChat(props: {
                 url: `/sessions/${props.session.id}`,
                 kind: 'failure'
             })
-        }).finally(() => {
-            setAutoRetryPending(false)
         })
     }, [
         addToast,
         autoRetryEnabled,
         autoRetryPending,
-        props.api,
-        props.onRefresh,
         props.session.id,
-        serverAutoContinueSettings,
-        t
+        t,
+        updateAutoRetryEnabled
     ])
 
     const quickPromptActions = useMemo<QuickPromptAction[]>(() => {

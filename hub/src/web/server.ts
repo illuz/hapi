@@ -106,7 +106,7 @@ export function createWebApp(options: {
     app.route('/api', createGitRoutes(options.getSyncEngine))
     app.route('/api', createPushRoutes(options.store, options.vapidPublicKey))
     app.route('/api', createVoiceRoutes())
-    app.route('/api', createSettingsRoutes(options.store))
+    app.route('/api', createSettingsRoutes(options.store, options.getSyncEngine))
     app.route('/', createPortProxyRoutes(options.getSyncEngine))
 
     app.get('/', () => new Response('It works!', {

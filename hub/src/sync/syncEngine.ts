@@ -149,6 +149,7 @@ export class SyncEngine {
         })
         this.autoRetryService = new AutoRetryService({
             getSession: (sessionId) => this.getSession(sessionId),
+            isEnabled: (namespace) => this.isAutoRetryEnabled(namespace),
             switchSession: (sessionId, to) => this.switchSession(sessionId, to),
             sendMessage: (sessionId, payload) => this.sendMessage(sessionId, payload)
         })
@@ -221,6 +222,22 @@ export class SyncEngine {
 
     getSessionsByNamespace(namespace: string): Session[] {
         return this.sessionCache.getSessionsByNamespace(namespace)
+    }
+
+    isAutoRetryEnabled(namespace: string): boolean {
+        return this.store.namespaceSettings.get(namespace).autoRetryEnabled
+    }
+
+    setAutoRetryEnabled(namespace: string, enabled: boolean): void {
+        const settings = this.store.namespaceSettings.setAutoRetryEnabled(namespace, enabled)
+        if (!enabled) {
+            this.autoRetryService.cancelPendingByNamespace(namespace)
+        }
+        this.eventPublisher.emit({
+            type: 'settings-updated',
+            namespace,
+            data: { autoRetryEnabled: settings.autoRetryEnabled }
+        })
     }
 
     getActiveShareCounts(namespace: string, sessionIds: string[]): Record<string, number> {

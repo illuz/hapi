@@ -1,7 +1,6 @@
 import {
     AUTO_RETRY_CONTINUE_DELAY_MS,
     isTerminalAutoRetryableErrorMessage,
-    normalizeAutoContinueSettings,
     parseAutoRetryMessage
 } from '@hapi/protocol/autoContinue'
 import { isObject } from '@hapi/protocol'
@@ -10,6 +9,7 @@ import type { Session, SyncEvent } from '@hapi/protocol/types'
 
 type AutoRetryDeps = {
     getSession: (sessionId: string) => Session | undefined
+    isEnabled: (namespace: string) => boolean
     switchSession: (sessionId: string, to: 'remote' | 'local') => Promise<void>
     sendMessage: (sessionId: string, payload: { text: string; sentFrom: 'auto-retry' }) => Promise<void>
     delayMs?: number
@@ -27,8 +27,7 @@ export class AutoRetryService {
         }
 
         const session = this.deps.getSession(sessionId)
-        const settings = normalizeAutoContinueSettings(session?.metadata?.autoContinue)
-        if (!session?.active || !settings.retryOnOverload) {
+        if (!session?.active || !this.deps.isEnabled(session.namespace)) {
             return false
         }
 
@@ -115,19 +114,27 @@ export class AutoRetryService {
         this.pendingBySessionId.delete(sessionId)
     }
 
+    cancelPendingByNamespace(namespace: string): void {
+        for (const sessionId of this.pendingBySessionId.keys()) {
+            const session = this.deps.getSession(sessionId)
+            if (session?.namespace === namespace) {
+                this.cancelPending(sessionId)
+            }
+        }
+    }
+
     private async continueSession(
         sessionId: string,
         timer: ReturnType<typeof setTimeout>
     ): Promise<void> {
         try {
             const session = this.deps.getSession(sessionId)
-            const settings = normalizeAutoContinueSettings(session?.metadata?.autoContinue)
             // A terminal provider failure is followed by a ready event, but
             // the hub may keep `thinking` true for the short queued-message
             // grace period.  The terminal event itself is the authoritative
             // signal that this turn ended, so do not let that cache grace
             // window suppress the scheduled continuation.
-            if (!session?.active || !settings.retryOnOverload) {
+            if (!session?.active || !this.deps.isEnabled(session.namespace)) {
                 return
             }
 

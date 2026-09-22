@@ -125,6 +125,7 @@ export type AuthResponse = {
 }
 
 export type SessionsResponse = { sessions: SessionSummary[] }
+export type AutoRetrySettingsResponse = { enabled: boolean }
 export type SessionResponse = { session: Session }
 export type ForkSessionOptions = {
     rollbackTurns?: number

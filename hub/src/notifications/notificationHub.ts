@@ -2,8 +2,7 @@ import type { SessionEndReason } from '@hapi/protocol'
 import { unwrapRoleWrappedRecordEnvelope } from '@hapi/protocol/messages'
 import {
     isAutoRetryableErrorMessage,
-    isTerminalAutoRetryableErrorMessage,
-    normalizeAutoContinueSettings
+    isTerminalAutoRetryableErrorMessage
 } from '@hapi/protocol/autoContinue'
 import type { Session, SyncEngine, SyncEvent } from '../sync/syncEngine'
 import type { NotificationChannel, NotificationHubOptions, TaskNotification } from './notificationTypes'
@@ -63,13 +62,20 @@ export class NotificationHub {
     }
 
     private handleSyncEvent(event: SyncEvent): void {
+        if (event.type === 'settings-updated' && event.namespace) {
+            if (!event.data.autoRetryEnabled) {
+                this.clearAutoRetryStateByNamespace(event.namespace)
+            }
+            return
+        }
+
         if ((event.type === 'session-updated' || event.type === 'session-added') && event.sessionId) {
             const session = this.syncEngine.getSession(event.sessionId)
             if (!session || !session.active) {
                 this.clearSessionState(event.sessionId)
                 return
             }
-            if (!normalizeAutoContinueSettings(session.metadata?.autoContinue).retryOnOverload) {
+            if (!this.syncEngine.isAutoRetryEnabled(session.namespace)) {
                 this.clearAutoRetryState(event.sessionId)
             }
             this.checkForPermissionNotification(session)
@@ -124,7 +130,7 @@ export class NotificationHub {
             const session = this.getNotifiableSession(event.sessionId)
             if (eventMessage
                 && session
-                && normalizeAutoContinueSettings(session.metadata?.autoContinue).retryOnOverload
+                && this.syncEngine.isAutoRetryEnabled(session.namespace)
                 && isAutoRetryableErrorMessage(eventMessage)) {
                 this.autoRetrySilentSessions.add(event.sessionId)
                 if (isTerminalAutoRetryableErrorMessage(eventMessage)) {
@@ -147,7 +153,7 @@ export class NotificationHub {
                 const session = this.getNotifiableSession(event.sessionId)
                 if (
                     session
-                    && normalizeAutoContinueSettings(session.metadata?.autoContinue).retryOnOverload
+                    && this.syncEngine.isAutoRetryEnabled(session.namespace)
                     && this.autoRetrySilentSessions.has(event.sessionId)
                 ) {
                     // Once an overload recovery has started, launchers may
@@ -188,6 +194,19 @@ export class NotificationHub {
         this.autoRetrySilentSessions.delete(sessionId)
         this.autoRetryAwaitingContinueSessions.delete(sessionId)
         this.autoRetryContinueInFlightSessions.delete(sessionId)
+    }
+
+    private clearAutoRetryStateByNamespace(namespace: string): void {
+        const sessionIds = new Set<string>([
+            ...this.autoRetrySilentSessions,
+            ...this.autoRetryAwaitingContinueSessions,
+            ...this.autoRetryContinueInFlightSessions
+        ])
+        for (const sessionId of sessionIds) {
+            if (this.syncEngine.getSession(sessionId)?.namespace === namespace) {
+                this.clearAutoRetryState(sessionId)
+            }
+        }
     }
 
     private getSentFrom(meta: unknown): string | null {

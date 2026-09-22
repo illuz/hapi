@@ -42,6 +42,7 @@ import type {
     VisibilityPayload,
     SessionResponse,
     SessionsResponse,
+    AutoRetrySettingsResponse,
     ForkSessionOptions,
     BulkSessionActionResponse,
     BulkSessionMarkerColorResponse,
@@ -784,6 +785,17 @@ export class ApiClient {
 
     async getCustomCodexModels(): Promise<CustomCodexModelsResponse> {
         return await this.request<CustomCodexModelsResponse>('/api/settings/codex-models')
+    }
+
+    async getAutoRetrySettings(): Promise<AutoRetrySettingsResponse> {
+        return await this.request<AutoRetrySettingsResponse>('/api/settings/auto-retry')
+    }
+
+    async setAutoRetryEnabled(enabled: boolean): Promise<AutoRetrySettingsResponse> {
+        return await this.request<AutoRetrySettingsResponse>('/api/settings/auto-retry', {
+            method: 'POST',
+            body: JSON.stringify({ enabled })
+        })
     }
 
     async saveCustomCodexModel(input: {

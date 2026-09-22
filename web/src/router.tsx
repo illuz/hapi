@@ -31,6 +31,7 @@ import { useMachines } from '@/hooks/queries/useMachines'
 import { useSession } from '@/hooks/queries/useSession'
 import { useSessions } from '@/hooks/queries/useSessions'
 import { useProjectToolCounts } from '@/hooks/queries/useProjectTools'
+import { useAutoRetrySettings } from '@/hooks/queries/useAutoRetrySettings'
 import { useSlashCommands } from '@/hooks/queries/useSlashCommands'
 import { useSkills } from '@/hooks/queries/useSkills'
 import { useSendMessage } from '@/hooks/mutations/useSendMessage'
@@ -113,8 +114,14 @@ function SessionsPage() {
     const pathname = useLocation({ select: location => location.pathname })
     const matchRoute = useMatchRoute()
     const { t } = useTranslation()
+    const { addToast } = useToast()
     const { sessions, isLoading, error, refetch } = useSessions(api)
     const { machines } = useMachines(api, true)
+    const {
+        enabled: autoRetryEnabled,
+        isPending: autoRetryPending,
+        setEnabled: updateAutoRetryEnabled
+    } = useAutoRetrySettings(api)
     const [cleanupDialogOpen, setCleanupDialogOpen] = useState(false)
     const [isCleaningInactive, setIsCleaningInactive] = useState(false)
     const [activityFilterEnabled, setActivityFilterEnabled] = useState(loadSessionListActivityFilter)
@@ -169,6 +176,21 @@ function SessionsPage() {
         })
     }, [])
 
+    const handleToggleAutoRetry = useCallback(() => {
+        if (autoRetryPending) {
+            return
+        }
+        void updateAutoRetryEnabled(!autoRetryEnabled).catch((error: unknown) => {
+            addToast({
+                title: t('session.autoRetryUpdateFailed'),
+                body: error instanceof Error ? error.message : t('dialog.error.default'),
+                sessionId: 'global',
+                url: '/sessions',
+                kind: 'failure'
+            })
+        })
+    }, [addToast, autoRetryEnabled, autoRetryPending, t, updateAutoRetryEnabled])
+
     const inactiveSessions = useMemo(
         () => sessions.filter((session) => !session.active && !session.markerColor),
         [sessions]
@@ -219,6 +241,19 @@ function SessionsPage() {
                             </div>
                         </div>
                         <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                aria-pressed={autoRetryEnabled}
+                                disabled={autoRetryPending || !api}
+                                onClick={handleToggleAutoRetry}
+                                className={`inline-flex h-8 items-center rounded-full border px-2.5 text-[11px] font-semibold tracking-wide transition-colors disabled:cursor-wait disabled:opacity-60 ${autoRetryEnabled
+                                    ? 'border-[var(--app-link)] bg-[var(--app-link)] text-[var(--app-bg)]'
+                                    : 'border-[var(--app-border)] bg-[var(--app-secondary-bg)] text-[var(--app-hint)] hover:text-[var(--app-fg)]'
+                                }`}
+                                title={t(autoRetryEnabled ? 'session.autoRetryOn' : 'session.autoRetryOff')}
+                            >
+                                AUTO
+                            </button>
                             <button
                                 type="button"
                                 onClick={handleToggleFilter}

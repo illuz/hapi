@@ -163,6 +163,10 @@ export class SSEManager {
             return true
         }
 
+        if (event.type === 'settings-updated') {
+            return true
+        }
+
         if (connection.all) {
             return true
         }

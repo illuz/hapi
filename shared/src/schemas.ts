@@ -287,6 +287,12 @@ export const SyncEventSchema = z.discriminatedUnion('type', [
             status: z.string(),
             subscriptionId: z.string().optional()
         }).optional()
+    }),
+    SessionEventBaseSchema.extend({
+        type: z.literal('settings-updated'),
+        data: z.object({
+            autoRetryEnabled: z.boolean()
+        })
     })
 ])
 

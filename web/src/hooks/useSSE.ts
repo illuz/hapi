@@ -600,6 +600,14 @@ export function useSSE(options: {
                 return
             }
 
+            if (event.type === 'settings-updated') {
+                queryClient.setQueryData(queryKeys.autoRetrySettings, {
+                    enabled: event.data.autoRetryEnabled
+                })
+                onEventRef.current(event)
+                return
+            }
+
             if (event.type === 'connection-changed') {
                 const data = event.data
                 if (data && typeof data === 'object' && 'subscriptionId' in data) {

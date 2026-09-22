@@ -9,6 +9,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 class FakeSyncEngine {
     private readonly listeners: Set<SyncEventListener> = new Set()
     private readonly sessions: Map<string, Session> = new Map()
+    private readonly autoRetryEnabled: Map<string, boolean> = new Map()
 
     subscribe(listener: SyncEventListener): () => void {
         this.listeners.add(listener)
@@ -21,6 +22,14 @@ class FakeSyncEngine {
 
     setSession(session: Session): void {
         this.sessions.set(session.id, session)
+    }
+
+    isAutoRetryEnabled(namespace: string): boolean {
+        return this.autoRetryEnabled.get(namespace) === true
+    }
+
+    setAutoRetryEnabled(namespace: string, enabled: boolean): void {
+        this.autoRetryEnabled.set(namespace, enabled)
     }
 
     emit(event: SyncEvent): void {
@@ -198,6 +207,7 @@ describe('NotificationHub', () => {
             }
         })
         engine.setSession(session)
+        engine.setAutoRetryEnabled(session.namespace, true)
 
         engine.emit({
             type: 'message-received',
@@ -349,6 +359,7 @@ describe('NotificationHub', () => {
             }
         })
         engine.setSession(session)
+        engine.setAutoRetryEnabled(session.namespace, true)
 
         const eventMessage = (id: string, content: unknown, seq: number): SyncEvent => ({
             type: 'message-received',
@@ -415,6 +426,7 @@ describe('NotificationHub', () => {
             }
         })
         engine.setSession(session)
+        engine.setAutoRetryEnabled(session.namespace, true)
 
         engine.emit({
             type: 'message-received',

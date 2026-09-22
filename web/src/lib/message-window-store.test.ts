@@ -1,8 +1,10 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { ApiClient } from '@/api/client'
 import type { DecryptedMessage, MessageStatus } from '@/types/api'
 import {
     appendOptimisticMessage,
     clearMessageWindow,
+    fetchMessagesAtSeq,
     getMessageWindowState,
     ingestIncomingMessages,
     markMessagesConsumed,
@@ -33,10 +35,11 @@ function makeUserMessage(props: {
     status?: MessageStatus
     text?: string
     createdAt?: number
+    seq?: number
 }): DecryptedMessage {
     return {
         id: props.id,
-        seq: null,
+        seq: props.seq ?? null,
         localId: props.localId ?? null,
         content: {
             role: 'user',
@@ -50,6 +53,68 @@ function makeUserMessage(props: {
         originalText: props.text ?? 'hello',
     } as DecryptedMessage
 }
+
+describe('fetchMessagesAtSeq', () => {
+    const SESSION_ID = 'session-message-window-jump-test'
+
+    afterEach(() => {
+        clearMessageWindow(SESSION_ID)
+    })
+
+    it('loads a page ending at the selected historical message', async () => {
+        ingestIncomingMessages(SESSION_ID, [makeUserMessage({ id: 'latest', seq: 500 })])
+        const target = makeUserMessage({ id: 'target', seq: 21, createdAt: 21 })
+        const getMessages = vi.fn().mockResolvedValue({
+            messages: [
+                makeUserMessage({ id: 'before-target', seq: 20, createdAt: 20 }),
+                target,
+            ],
+            page: {
+                limit: 200,
+                beforeSeq: 22,
+                nextBeforeSeq: 20,
+                hasMore: true,
+            },
+        })
+
+        const loaded = await fetchMessagesAtSeq(
+            { getMessages } as unknown as ApiClient,
+            SESSION_ID,
+            21
+        )
+
+        expect(loaded).toBe(true)
+        expect(getMessages).toHaveBeenCalledWith(SESSION_ID, { beforeSeq: 22, limit: 200 })
+        const state = getMessageWindowState(SESSION_ID)
+        expect(state.messages.map((message) => message.id)).toEqual(['before-target', 'target'])
+        expect(state.hasMore).toBe(true)
+        expect(state.atBottom).toBe(false)
+    })
+
+    it('keeps the current window when the selected message is unavailable', async () => {
+        ingestIncomingMessages(SESSION_ID, [makeUserMessage({ id: 'latest', seq: 500 })])
+        const getMessages = vi.fn().mockResolvedValue({
+            messages: [makeUserMessage({ id: 'other', seq: 20 })],
+            page: {
+                limit: 200,
+                beforeSeq: 22,
+                nextBeforeSeq: 20,
+                hasMore: true,
+            },
+        })
+
+        const loaded = await fetchMessagesAtSeq(
+            { getMessages } as unknown as ApiClient,
+            SESSION_ID,
+            21
+        )
+
+        expect(loaded).toBe(false)
+        const state = getMessageWindowState(SESSION_ID)
+        expect(state.messages.map((message) => message.id)).toEqual(['latest'])
+        expect(state.warning).toBe('Selected message is unavailable.')
+    })
+})
 
 describe('removeOptimisticMessage', () => {
     const SESSION = 'test-session-remove'

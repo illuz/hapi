@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentEvent, ChatBlock } from '@/chat/types'
-import { buildConversationOutline, truncateOutlineLabel } from '@/chat/outline'
+import {
+    buildConversationOutline,
+    buildConversationOutlineFromEntries,
+    truncateOutlineLabel
+} from '@/chat/outline'
 
 function userBlock(id: string, text: string, createdAt: number): ChatBlock {
     return {
@@ -32,6 +36,7 @@ describe('conversation outline', () => {
                 kind: 'user',
                 label: 'Implement the outline panel',
                 createdAt: 1000,
+                forkFromMessageId: 'm1',
                 resumeSessionAt: undefined
             }
         ])
@@ -84,5 +89,31 @@ describe('conversation outline', () => {
 
         expect(items[0]?.resumeSessionAt).toBe('assistant-uuid-1')
         expect(items[1]?.resumeSessionAt).toBeUndefined()
+    })
+
+    it('builds a complete outline from lightweight history entries', () => {
+        expect(buildConversationOutlineFromEntries([
+            { messageId: 'm1', text: 'First turn', createdAt: 1000, seq: 1 },
+            { messageId: 'm2', text: 'Second turn', createdAt: 2000, seq: 451 }
+        ])).toEqual([
+            {
+                id: 'outline:user:m1',
+                targetMessageId: 'user:m1',
+                kind: 'user',
+                label: 'First turn',
+                createdAt: 1000,
+                forkFromMessageId: 'm1',
+                seq: 1
+            },
+            {
+                id: 'outline:user:m2',
+                targetMessageId: 'user:m2',
+                kind: 'user',
+                label: 'Second turn',
+                createdAt: 2000,
+                forkFromMessageId: 'm2',
+                seq: 451
+            }
+        ])
     })
 })

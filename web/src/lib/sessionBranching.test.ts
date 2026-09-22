@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
     canForkSession,
-    canSpawnSessionFromConfig,
-    getRollbackTurnsFromOutlineIndex
+    canSpawnSessionFromConfig
 } from '@/lib/sessionBranching'
 
 describe('sessionBranching', () => {
@@ -70,15 +69,5 @@ describe('sessionBranching', () => {
         expect(canSpawnSessionFromConfig({
             metadata: null
         })).toBe(false)
-    })
-
-    it('calculates rollback turns from the selected outline item index', () => {
-        expect(getRollbackTurnsFromOutlineIndex(0, 4)).toBe(3)
-        expect(getRollbackTurnsFromOutlineIndex(3, 4)).toBe(0)
-    })
-
-    it('throws for invalid outline indices', () => {
-        expect(() => getRollbackTurnsFromOutlineIndex(-1, 4)).toThrow('index out of range')
-        expect(() => getRollbackTurnsFromOutlineIndex(4, 4)).toThrow('index out of range')
     })
 })

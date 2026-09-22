@@ -18,14 +18,16 @@ const outlineItems: ConversationOutlineItem[] = [
         targetMessageId: 'user:m1',
         kind: 'user',
         label: 'Implement the panel',
-        createdAt: 1000
+        createdAt: 1000,
+        forkFromMessageId: 'm1'
     },
     {
         id: 'outline:user:m2',
         targetMessageId: 'user:m2',
         kind: 'user',
         label: 'Second user prompt',
-        createdAt: 2000
+        createdAt: 2000,
+        forkFromMessageId: 'm2'
     }
 ]
 

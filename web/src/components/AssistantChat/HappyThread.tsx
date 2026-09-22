@@ -283,6 +283,7 @@ export function ConversationOutlinePanel(props: {
     forkingItemIndex?: number | null
     hasMoreMessages: boolean
     isLoadingMoreMessages: boolean
+    isLoadingOutline?: boolean
     onForkFromItem?: (item: ConversationOutlineItem, index: number) => void | Promise<void>
     onLoadMore: () => void
     onSelect: (item: ConversationOutlineItem) => void
@@ -337,7 +338,11 @@ export function ConversationOutlinePanel(props: {
             ) : null}
 
             <div className="app-scroll-y min-h-0 flex-1 p-2">
-                {props.items.length === 0 ? (
+                {props.isLoadingOutline && props.items.length === 0 ? (
+                    <div className="flex justify-center px-2 py-8">
+                        <Spinner size="sm" label={null} className="text-[var(--app-hint)]" />
+                    </div>
+                ) : props.items.length === 0 ? (
                     <div className="px-2 py-8 text-center text-sm text-[var(--app-hint)]">
                         {t('session.outline.empty')}
                     </div>
@@ -422,6 +427,7 @@ export function HappyThread(props: {
     hasMoreMessages: boolean
     isLoadingMoreMessages: boolean
     onLoadMore: () => Promise<unknown>
+    onLoadMessageAtSeq?: (seq: number) => Promise<boolean>
     pendingCount: number
     rawMessagesCount: number
     normalizedMessagesCount: number
@@ -432,6 +438,8 @@ export function HappyThread(props: {
     outlineItems: readonly ConversationOutlineItem[]
     canForkFromOutline?: boolean
     outlineForkingItemIndex?: number | null
+    outlineHasMoreMessages?: boolean
+    isLoadingOutline?: boolean
     onOutlineOpenChange: (open: boolean) => void
     onOutlineFork?: (item: ConversationOutlineItem, index: number) => void | Promise<void>
     onOutlineItemClick?: (item: ConversationOutlineItem) => void
@@ -877,14 +885,39 @@ export function HappyThread(props: {
     }, [findLoadedConversationNavigationTarget, scrollToConversationItem, scrollToLatestAndRefresh])
 
     const handleOutlineSelect = useCallback((item: ConversationOutlineItem) => {
-        const target = document.getElementById(getConversationMessageAnchorId(item.targetMessageId))
-        if (target) {
-            target.scrollIntoView({ block: 'start', behavior: 'smooth' })
-            autoScrollEnabledRef.current = false
-        }
         props.onOutlineItemClick?.(item)
         props.onOutlineOpenChange(false)
-    }, [props.onOutlineItemClick, props.onOutlineOpenChange])
+
+        const targetSeq = item.seq
+        const loadMessageAtSeq = props.onLoadMessageAtSeq
+        if (scrollToConversationItem(item) || targetSeq === undefined || !loadMessageAtSeq) {
+            return
+        }
+        if (conversationNavigationBusyRef.current) {
+            return
+        }
+
+        conversationNavigationBusyRef.current = true
+        void (async () => {
+            try {
+                const previousVersion = messagesVersionRef.current
+                const loaded = await loadMessageAtSeq(targetSeq)
+                if (!loaded) {
+                    return
+                }
+                await waitForMessageWindowUpdate(previousVersion)
+                scrollToConversationItem(item)
+            } finally {
+                conversationNavigationBusyRef.current = false
+            }
+        })()
+    }, [
+        props.onLoadMessageAtSeq,
+        props.onOutlineItemClick,
+        props.onOutlineOpenChange,
+        scrollToConversationItem,
+        waitForMessageWindowUpdate
+    ])
 
     useEffect(() => {
         handleLoadMoreRef.current = handleLoadMore
@@ -1070,8 +1103,9 @@ export function HappyThread(props: {
                             items={props.outlineItems}
                             canForkFromOutline={props.canForkFromOutline}
                             forkingItemIndex={props.outlineForkingItemIndex}
-                            hasMoreMessages={props.hasMoreMessages}
+                            hasMoreMessages={props.outlineHasMoreMessages ?? props.hasMoreMessages}
                             isLoadingMoreMessages={props.isLoadingMoreMessages}
+                            isLoadingOutline={props.isLoadingOutline}
                             onForkFromItem={props.onOutlineFork}
                             onLoadMore={handleLoadMore}
                             onSelect={handleOutlineSelect}

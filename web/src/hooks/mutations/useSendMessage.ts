@@ -10,7 +10,7 @@ import {
 } from '@/lib/message-window-store'
 import { usePlatform } from '@/hooks/usePlatform'
 import { playNotificationSound } from '@/lib/readyChime'
-import { getStoredEventSound } from '@/lib/readySound'
+import { getStoredEventSound, getStoredPlaybackMode } from '@/lib/readySound'
 
 type SendMessageInput = {
     sessionId: string
@@ -126,7 +126,7 @@ export function useSendMessage(
         const silent = optionsArg?.silent === true
         if (!silent) {
             const messageSound = getStoredEventSound('message')
-            if (messageSound !== 'off') {
+            if (getStoredPlaybackMode() !== 'off' && messageSound !== 'off') {
                 void playNotificationSound(messageSound)
             }
         }

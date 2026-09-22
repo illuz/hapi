@@ -1,4 +1,5 @@
 import type { ChatBlock, UserTextBlock } from '@/chat/types'
+import type { ConversationOutlineEntry } from '@/types/api'
 
 export type ConversationOutlineItem = {
     id: string
@@ -6,6 +7,8 @@ export type ConversationOutlineItem = {
     kind: 'user'
     label: string
     createdAt: number
+    forkFromMessageId: string
+    seq?: number
     resumeSessionAt?: string
 }
 
@@ -56,8 +59,23 @@ function userBlockToOutlineItem(
         kind: 'user',
         label,
         createdAt: block.createdAt,
+        forkFromMessageId: block.id,
         resumeSessionAt
     }
+}
+
+export function buildConversationOutlineFromEntries(
+    entries: readonly ConversationOutlineEntry[]
+): ConversationOutlineItem[] {
+    return entries.map((entry) => ({
+        id: `outline:user:${entry.messageId}`,
+        targetMessageId: `user:${entry.messageId}`,
+        kind: 'user',
+        label: truncateOutlineLabel(entry.text) || 'Empty message',
+        createdAt: entry.createdAt,
+        forkFromMessageId: entry.messageId,
+        seq: entry.seq
+    }))
 }
 
 export function buildConversationOutline(blocks: readonly ChatBlock[]): ConversationOutlineItem[] {

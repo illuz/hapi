@@ -245,7 +245,8 @@ function AppInner() {
         const invalidations = [
             queryClient.invalidateQueries({ queryKey: queryKeys.sessions }),
             ...(selectedSessionId ? [
-                queryClient.invalidateQueries({ queryKey: queryKeys.session(selectedSessionId) })
+                queryClient.invalidateQueries({ queryKey: queryKeys.session(selectedSessionId) }),
+                queryClient.invalidateQueries({ queryKey: queryKeys.conversationOutline(selectedSessionId) })
             ] : [])
         ]
         const refreshMessages = (selectedSessionId && api)

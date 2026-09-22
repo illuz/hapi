@@ -130,6 +130,7 @@ export type SessionResponse = { session: Session }
 export type ForkSessionOptions = {
     rollbackTurns?: number
     resumeSessionAt?: string
+    forkFromMessageId?: string
 }
 export type BulkSessionActionResponse = {
     successIds: string[]
@@ -215,6 +216,17 @@ export type MessagesResponse = {
         nextBeforeAt?: number | null
         hasMore: boolean
     }
+}
+
+export type ConversationOutlineEntry = {
+    messageId: string
+    text: string
+    createdAt: number
+    seq: number
+}
+
+export type ConversationOutlineResponse = {
+    items: ConversationOutlineEntry[]
 }
 
 export type MachinesResponse = { machines: Machine[] }
@@ -370,7 +382,15 @@ export type ListDirectoryResponse = {
 export type FileReadResponse = {
     success: boolean
     content?: string
+    mimeType?: string
+    width?: number
+    height?: number
     error?: string
+}
+
+export type FileReadOptions = {
+    thumbnail?: boolean
+    maxDimension?: number
 }
 
 export type UploadFileResponse = {

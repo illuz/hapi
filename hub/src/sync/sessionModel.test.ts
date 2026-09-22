@@ -1417,7 +1417,7 @@ describe('session model', () => {
                 time: Date.now()
             })
             await engine.setSessionMarkerColor(session.id, 'green')
-            store.messages.addMessage(session.id, {
+            const firstUserMessage = store.messages.addMessage(session.id, {
                 role: 'user',
                 content: {
                     type: 'text',
@@ -1486,7 +1486,9 @@ describe('session model', () => {
                 return { type: 'success', sessionId: forked.id }
             }
 
-            const result = await engine.forkSession(session.id, 'default', { rollbackTurns: 1 })
+            const result = await engine.forkSession(session.id, 'default', {
+                forkFromMessageId: firstUserMessage.id
+            })
 
             expect(result.type).toBe('success')
             expect(capturedFork!).toEqual({
@@ -1507,6 +1509,17 @@ describe('session model', () => {
                 const content = message.content as { role?: string; content?: { text?: string } }
                 return content.content?.text ?? null
             })).toEqual(['turn 1', 'reply 1'])
+
+            capturedFork = null
+            const invalidResult = await engine.forkSession(session.id, 'default', {
+                forkFromMessageId: 'missing-message'
+            })
+            expect(invalidResult).toEqual({
+                type: 'error',
+                message: 'Fork point is unavailable',
+                code: 'fork_unavailable'
+            })
+            expect(capturedFork).toBeNull()
         } finally {
             engine.stop()
         }

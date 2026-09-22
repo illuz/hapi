@@ -27,7 +27,15 @@ export type RpcCommandResponse = {
 export type RpcReadFileResponse = {
     success: boolean
     content?: string
+    mimeType?: string
+    width?: number
+    height?: number
     error?: string
+}
+
+export type RpcReadFileOptions = {
+    thumbnail?: boolean
+    maxDimension?: number
 }
 
 export type RpcUploadFileResponse = {
@@ -344,8 +352,8 @@ export class RpcGateway {
         return await this.sessionRpc(sessionId, 'git-diff-file', options) as RpcCommandResponse
     }
 
-    async readSessionFile(sessionId: string, path: string): Promise<RpcReadFileResponse> {
-        return await this.sessionRpc(sessionId, 'readFile', { path }) as RpcReadFileResponse
+    async readSessionFile(sessionId: string, path: string, options?: RpcReadFileOptions): Promise<RpcReadFileResponse> {
+        return await this.sessionRpc(sessionId, 'readFile', { path, ...options }) as RpcReadFileResponse
     }
 
     async listDirectory(sessionId: string, path: string): Promise<RpcListDirectoryResponse> {

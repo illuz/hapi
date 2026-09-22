@@ -1,4 +1,5 @@
 import type { AttachmentMetadata, DecryptedMessage } from '@hapi/protocol/types'
+import { unwrapRoleWrappedRecordEnvelope } from '@hapi/protocol/messages'
 import type { Server } from 'socket.io'
 import { randomUUID } from 'node:crypto'
 import type { Store, CancelQueuedMessageResult } from '../store'
@@ -13,6 +14,37 @@ type MessageMetaPatch = {
     disallowedTools?: string[] | null
     shareId?: string | null
     shareLabel?: string | null
+}
+
+export type ConversationOutlineEntry = {
+    messageId: string
+    text: string
+    createdAt: number
+    seq: number
+}
+
+function extractUserText(content: unknown): string {
+    const record = unwrapRoleWrappedRecordEnvelope(content)
+    if (record?.role !== 'user') return ''
+
+    const value = record.content
+    if (typeof value === 'string') return value
+    if (Array.isArray(value)) {
+        return value
+            .filter((item): item is { type: string; text: string } => (
+                Boolean(item)
+                && typeof item === 'object'
+                && (item as Record<string, unknown>).type === 'text'
+                && typeof (item as Record<string, unknown>).text === 'string'
+            ))
+            .map((item) => item.text)
+            .join('\n\n')
+    }
+    if (value && typeof value === 'object') {
+        const text = (value as Record<string, unknown>).text
+        if (typeof text === 'string') return text
+    }
+    return ''
 }
 
 export class MessageService {
@@ -33,6 +65,21 @@ export class MessageService {
             content: message.content,
             createdAt: message.createdAt
         }))
+    }
+
+    getConversationOutline(sessionId: string): ConversationOutlineEntry[] {
+        return this.store.messages.getUserTurnMessages(sessionId).map((message) => ({
+            messageId: message.id,
+            text: extractUserText(message.content),
+            createdAt: message.createdAt,
+            seq: message.seq
+        }))
+    }
+
+    getRollbackTurnsAfterMessage(sessionId: string, messageId: string): number | null {
+        const turns = this.store.messages.getUserTurnMessages(sessionId)
+        const index = turns.findIndex((message) => message.id === messageId)
+        return index < 0 ? null : turns.length - index - 1
     }
 
     getMessagesPage(sessionId: string, options: { limit: number; beforeSeq: number | null }): {

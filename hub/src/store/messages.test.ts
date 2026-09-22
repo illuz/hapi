@@ -172,3 +172,44 @@ describe('cancelQueuedMessage', () => {
         expect(messages.some(m => m.id === msg.id)).toBe(true)
     })
 })
+
+describe('getUserTurnMessages', () => {
+    it('returns every invoked user turn across message pages and supported envelopes', () => {
+        const store = makeStore()
+        const session = makeSession(store, 'outline-user-turns')
+        const otherSession = makeSession(store, 'outline-user-turns-other')
+
+        const first = store.messages.addMessage(session.id, {
+            role: 'user',
+            content: { type: 'text', text: 'First turn' }
+        })
+        for (let index = 0; index < 250; index += 1) {
+            store.messages.addMessage(session.id, {
+                role: 'agent',
+                content: { type: 'event', data: { type: 'token_count', index } }
+            })
+        }
+        const second = store.messages.addMessage(session.id, {
+            data: {
+                message: {
+                    role: 'user',
+                    content: { type: 'text', text: 'Second turn' }
+                }
+            }
+        }, 'second-local-id')
+        store.messages.markMessagesInvoked(session.id, ['second-local-id'], Date.now())
+        store.messages.addMessage(session.id, {
+            role: 'user',
+            content: { type: 'text', text: 'Still queued' }
+        }, 'queued-local-id')
+        store.messages.addMessage(otherSession.id, {
+            role: 'user',
+            content: { type: 'text', text: 'Other session' }
+        })
+
+        expect(store.messages.getUserTurnMessages(session.id).map((message) => message.id)).toEqual([
+            first.id,
+            second.id
+        ])
+    })
+})

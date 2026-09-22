@@ -211,6 +211,50 @@ When ENV values are set and not present in settings.json, they are automatically
 JSON Schema: [settings.schema.json](https://hapi.run/schemas/settings.schema.json)
 </details>
 
+### Docker Compose
+
+The repository includes a multi-stage Dockerfile and Docker Compose example for
+running the Hub and its embedded web app. CLI and Runner should normally remain
+on the workspace machines because they need direct access to local files,
+credentials, terminals, and agent processes.
+
+```bash
+git clone https://github.com/tiann/hapi.git
+cd hapi/docker
+cp .env.hub-a.example .env.hub-a
+```
+
+Edit `.env.hub-a`, set a strong `CLI_API_TOKEN`, and replace the example public
+URL. Then build the current checkout and start the Hub:
+
+```bash
+docker compose up -d --build
+docker compose ps
+docker compose logs -f hub-a
+```
+
+The default configuration exposes the Hub at `127.0.0.1:3006` and persists its
+configuration and SQLite database in a dedicated Docker volume.
+
+To start two independent Hubs, configure the second environment file and enable
+the `multi` profile:
+
+```bash
+cp .env.hub-b.example .env.hub-b
+docker compose --profile multi up -d --build
+```
+
+The second Hub is exposed at `127.0.0.1:3007`. Each Hub has a separate data
+volume and must use a separate `CLI_API_TOKEN`. Do not share a SQLite volume or
+use Compose replicas to load-balance one Hub.
+
+For public access, route each domain to its corresponding host port and set that
+domain in `HAPI_PUBLIC_URL` and `CORS_ORIGINS`. The reverse proxy must support
+WebSocket upgrades and unbuffered SSE responses.
+
+See the repository's [Docker deployment guide](https://github.com/tiann/hapi/tree/main/docker)
+for upgrade, backup, restore, and container-network reverse proxy instructions.
+
 ## CLI setup
 
 If the hub is not on localhost, set these before running `hapi`:

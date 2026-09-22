@@ -1,5 +1,7 @@
 export const READY_SOUND_KEY = 'hapi-ready-sound'
 export const PLAYBACK_MODE_KEY = 'hapi-notification-sound-mode'
+export const PLAYBACK_MODE_URL_PARAM = 'sound'
+const LAST_ACTIVE_PLAYBACK_MODE_KEY = 'hapi-notification-sound-last-active-mode'
 export const EVENT_SOUND_KEYS = {
     ready: 'hapi-sound-ready',
     permission: 'hapi-sound-permission',
@@ -24,6 +26,7 @@ export type SoundVariant =
     | 'youHaveLost'
 export type SoundEvent = keyof typeof EVENT_SOUND_KEYS
 export type SoundPlaybackMode = 'always' | 'background' | 'off'
+const DEFAULT_PLAYBACK_MODE: SoundPlaybackMode = 'off'
 
 export function getSoundVariantOptions(): Array<{ value: SoundVariant; labelKey: string }> {
     return [
@@ -70,6 +73,42 @@ function setStorageItem(key: string, value: string): void {
     }
 }
 
+export function parseSoundPlaybackMode(value: unknown): SoundPlaybackMode | null {
+    if (value === 'always' || value === 'background' || value === 'off') {
+        return value
+    }
+    return null
+}
+
+function getPlaybackModeFromUrlParams(): SoundPlaybackMode | null {
+    if (typeof window === 'undefined') return null
+    const query = new URLSearchParams(window.location.search)
+    return parseSoundPlaybackMode(query.get(PLAYBACK_MODE_URL_PARAM))
+}
+
+function setPlaybackModeUrlParam(value: SoundPlaybackMode): void {
+    if (typeof window === 'undefined') return
+    try {
+        const query = new URLSearchParams(window.location.search)
+        if (query.get(PLAYBACK_MODE_URL_PARAM) === value) return
+
+        query.set(PLAYBACK_MODE_URL_PARAM, value)
+        const search = query.toString()
+        const href = `${window.location.pathname}${search ? `?${search}` : ''}${window.location.hash}`
+        window.history.replaceState(window.history.state, '', href)
+    } catch {
+    }
+}
+
+function persistPlaybackMode(value: SoundPlaybackMode, current: SoundPlaybackMode): void {
+    if (value === 'off' && current !== 'off') {
+        setStorageItem(LAST_ACTIVE_PLAYBACK_MODE_KEY, current)
+    } else if (value !== 'off') {
+        setStorageItem(LAST_ACTIVE_PLAYBACK_MODE_KEY, value)
+    }
+    setStorageItem(PLAYBACK_MODE_KEY, value)
+}
+
 function getDefaultSoundForEvent(event: SoundEvent): SoundVariant {
     if (event === 'ready') return 'constructionComplete'
     if (event === 'permission') return 'sirYesSir'
@@ -79,15 +118,34 @@ function getDefaultSoundForEvent(event: SoundEvent): SoundVariant {
 }
 
 export function getStoredPlaybackMode(): SoundPlaybackMode {
-    const raw = getStorageItem(PLAYBACK_MODE_KEY)
-    if (raw === 'always' || raw === 'background' || raw === 'off') {
-        return raw
+    const stored = parseSoundPlaybackMode(getStorageItem(PLAYBACK_MODE_KEY))
+    const fromUrl = getPlaybackModeFromUrlParams()
+    if (fromUrl) {
+        if (fromUrl !== stored) {
+            persistPlaybackMode(fromUrl, stored ?? 'always')
+        }
+        return fromUrl
     }
-    return 'off'
+    return stored ?? DEFAULT_PLAYBACK_MODE
 }
 
 export function setStoredPlaybackMode(value: SoundPlaybackMode): void {
-    setStorageItem(PLAYBACK_MODE_KEY, value)
+    const current = getStoredPlaybackMode()
+    persistPlaybackMode(value, current)
+    setPlaybackModeUrlParam(value)
+}
+
+export function toggleStoredPlaybackMute(): SoundPlaybackMode {
+    const current = getStoredPlaybackMode()
+    if (current !== 'off') {
+        setStoredPlaybackMode('off')
+        return 'off'
+    }
+
+    const lastActiveMode = getStorageItem(LAST_ACTIVE_PLAYBACK_MODE_KEY)
+    const next = lastActiveMode === 'background' ? 'background' : 'always'
+    setStoredPlaybackMode(next)
+    return next
 }
 
 export function getStoredEventSound(event: SoundEvent): SoundVariant {

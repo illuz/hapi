@@ -39,6 +39,7 @@ import {
     type RpcProjectToolCountsResponse,
     type RpcProjectToolListResponse,
     type RpcProjectToolMutationResponse,
+    type RpcReadFileOptions,
     type RpcReadFileResponse,
     type RpcUploadFileResponse
 } from './rpcGateway'
@@ -110,6 +111,7 @@ export type ForkSessionResult =
 type ForkSessionOptions = {
     rollbackTurns?: number
     resumeSessionAt?: string
+    forkFromMessageId?: string
 }
 
 export class SyncEngine {
@@ -342,6 +344,10 @@ export class SyncEngine {
 
     getMessagesAfter(sessionId: string, options: { afterSeq: number; limit: number }): DecryptedMessage[] {
         return this.messageService.getMessagesAfter(sessionId, options)
+    }
+
+    getConversationOutline(sessionId: string): ReturnType<MessageService['getConversationOutline']> {
+        return this.messageService.getConversationOutline(sessionId)
     }
 
     searchConversationHistory(options: Parameters<Store['history']['search']>[0]): ReturnType<Store['history']['search']> {
@@ -796,10 +802,22 @@ export class SyncEngine {
             return { type: 'error', message: 'Codex thread ID unavailable', code: 'fork_unavailable' }
         }
 
+        let rollbackTurns = options?.rollbackTurns
+        if (options?.forkFromMessageId) {
+            const resolvedRollbackTurns = this.messageService.getRollbackTurnsAfterMessage(
+                access.sessionId,
+                options.forkFromMessageId
+            )
+            if (resolvedRollbackTurns === null) {
+                return { type: 'error', message: 'Fork point is unavailable', code: 'fork_unavailable' }
+            }
+            rollbackTurns = resolvedRollbackTurns
+        }
+
         const forkResult = await this.rpcGateway.forkCodexThread(
             targetMachine.id,
             metadata.codexSessionId,
-            options?.rollbackTurns
+            rollbackTurns
         )
 
         if (!forkResult.success) {
@@ -820,7 +838,7 @@ export class SyncEngine {
         await this.seedSpawnedSessionFromSource(session, spawnResult.sessionId, {
             copyHistory: true,
             forkLabel: true,
-            rollbackTurns: options?.rollbackTurns
+            rollbackTurns
         })
         return { type: 'success', sessionId: spawnResult.sessionId }
     }
@@ -1302,8 +1320,8 @@ export class SyncEngine {
         return await this.rpcGateway.getGitDiffFile(sessionId, options)
     }
 
-    async readSessionFile(sessionId: string, path: string): Promise<RpcReadFileResponse> {
-        return await this.rpcGateway.readSessionFile(sessionId, path)
+    async readSessionFile(sessionId: string, path: string, options?: RpcReadFileOptions): Promise<RpcReadFileResponse> {
+        return await this.rpcGateway.readSessionFile(sessionId, path, options)
     }
 
     async listDirectory(sessionId: string, path: string): Promise<RpcListDirectoryResponse> {

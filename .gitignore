@@ -16,6 +16,10 @@ hub/tools/tunwg/*.exe
 **/.env
 **/.env.*
 **/.env*.local
+!docker/.env.*.example
+docker/env/
+docker/backups/
+docker/current-image
 
 # Logs
 **/*.log

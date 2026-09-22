@@ -16,7 +16,7 @@ import type { Suggestion } from '@/hooks/useActiveSuggestions'
 import { normalizeDecryptedMessage } from '@/chat/normalize'
 import { reduceChatBlocks } from '@/chat/reducer'
 import { reconcileChatBlocks } from '@/chat/reconcile'
-import { buildConversationOutline } from '@/chat/outline'
+import { buildConversationOutline, buildConversationOutlineFromEntries } from '@/chat/outline'
 import { isQueuedForInvocation } from '@/lib/messages'
 import { HappyComposer, type QuickPromptAction } from '@/components/AssistantChat/HappyComposer'
 import { HappyThread } from '@/components/AssistantChat/HappyThread'
@@ -33,10 +33,11 @@ import { useSessionActions } from '@/hooks/mutations/useSessionActions'
 import { useCodexModels } from '@/hooks/queries/useCodexModels'
 import { useCustomCodexModels } from '@/hooks/queries/useCustomCodexModels'
 import { useOpencodeModels } from '@/hooks/queries/useOpencodeModels'
+import { useConversationOutline } from '@/hooks/queries/useConversationOutline'
 import { useAutoRetrySettings } from '@/hooks/queries/useAutoRetrySettings'
 import { useVoiceOptional } from '@/lib/voice-context'
 import { useToast } from '@/lib/toast-context'
-import { canForkSession, getRollbackTurnsFromOutlineIndex } from '@/lib/sessionBranching'
+import { canForkSession } from '@/lib/sessionBranching'
 import { getDisplaySessionTitle } from '@/lib/sessionTitle'
 import { RealtimeVoiceSession, registerSessionStore, registerVoiceHooksStore, voiceHooks } from '@/realtime'
 import { isRemoteTerminalSupported } from '@/utils/terminalSupport'
@@ -73,6 +74,7 @@ export function SessionChat(props: {
     onBack: () => void
     onRefresh: () => void
     onLoadMore: () => Promise<unknown>
+    onLoadMessageAtSeq: (seq: number) => Promise<boolean>
     onSend: (text: string, attachments?: AttachmentMetadata[], options?: SessionSendOptions) => string | null
     onFlushPending: () => void
     onAtBottomChange: (atBottom: boolean) => void
@@ -107,6 +109,11 @@ export function SessionChat(props: {
     const agentFlavor = props.session.metadata?.flavor ?? null
     const controlledByUser = props.session.agentState?.controlledByUser === true
     const codexCollaborationModeSupported = agentFlavor === 'codex' && !controlledByUser
+    const conversationOutlineState = useConversationOutline({
+        api: props.api,
+        sessionId: props.session.id,
+        enabled: agentFlavor === 'codex' && outlineOpen
+    })
     const codexModelsState = useCodexModels({
         api: props.api,
         sessionId: props.session.id,
@@ -358,10 +365,21 @@ export function SessionChat(props: {
         blocksByIdRef.current = reconciled.byId
     }, [reconciled.byId])
 
-    const outlineItems = useMemo(
+    const loadedOutlineItems = useMemo(
         () => buildConversationOutline(reconciled.blocks),
         [reconciled.blocks]
     )
+    const completeOutlineItems = useMemo(
+        () => conversationOutlineState.entries
+            ? buildConversationOutlineFromEntries(conversationOutlineState.entries)
+            : null,
+        [conversationOutlineState.entries]
+    )
+    const outlineUsesCompleteHistory = agentFlavor === 'codex'
+        && (conversationOutlineState.entries !== null || conversationOutlineState.isLoading)
+    const outlineItems = outlineUsesCompleteHistory
+        ? (completeOutlineItems ?? [])
+        : loadedOutlineItems
 
     const outlineTitle = useMemo(
         () => getDisplaySessionTitle(props.session, { pathMode: 'full' }),
@@ -668,7 +686,7 @@ export function SessionChat(props: {
         try {
             const result = agentFlavor === 'claude'
                 ? await forkSession(item.resumeSessionAt ? { resumeSessionAt: item.resumeSessionAt } : undefined)
-                : await forkSession(getRollbackTurnsFromOutlineIndex(index, outlineItems.length))
+                : await forkSession({ forkFromMessageId: item.forkFromMessageId })
             haptic.notification('success')
             await navigate({
                 to: '/sessions/$sessionId',
@@ -686,7 +704,7 @@ export function SessionChat(props: {
         } finally {
             setOutlineForkingItemIndex(null)
         }
-    }, [addToast, agentFlavor, forkSession, haptic, navigate, outlineForkingItemIndex, outlineItems.length, props.session.id, t])
+    }, [addToast, agentFlavor, forkSession, haptic, navigate, outlineForkingItemIndex, props.session.id, t])
 
     return (
         <div className="flex h-full min-h-0 flex-col">
@@ -747,6 +765,7 @@ export function SessionChat(props: {
                         hasMoreMessages={props.hasMoreMessages}
                         isLoadingMoreMessages={props.isLoadingMoreMessages}
                         onLoadMore={props.onLoadMore}
+                        onLoadMessageAtSeq={props.onLoadMessageAtSeq}
                         pendingCount={props.pendingCount}
                         rawMessagesCount={visibleMessages.length}
                         normalizedMessagesCount={normalizedMessages.length}
@@ -755,6 +774,8 @@ export function SessionChat(props: {
                         outlineOpen={outlineOpen}
                         outlineTitle={outlineTitle}
                         outlineItems={outlineItems}
+                        outlineHasMoreMessages={outlineUsesCompleteHistory ? false : props.hasMoreMessages}
+                        isLoadingOutline={agentFlavor === 'codex' && conversationOutlineState.isLoading}
                         canForkFromOutline={forkFromOutlineSupported}
                         outlineForkingItemIndex={outlineForkingItemIndex}
                         onOutlineOpenChange={setOutlineOpen}

@@ -2,6 +2,7 @@ export const queryKeys = {
     sessions: ['sessions'] as const,
     session: (sessionId: string) => ['session', sessionId] as const,
     messages: (sessionId: string) => ['messages', sessionId] as const,
+    conversationOutline: (sessionId: string) => ['conversation-outline', sessionId] as const,
     sessionShares: (sessionId: string) => ['session-shares', sessionId] as const,
     machines: ['machines'] as const,
     machineCodexModels: (machineId: string) => ['machine-codex-models', machineId] as const,
@@ -9,6 +10,12 @@ export const queryKeys = {
     sessionFiles: (sessionId: string, query: string) => ['session-files', sessionId, query] as const,
     sessionDirectory: (sessionId: string, path: string) => ['session-directory', sessionId, path] as const,
     sessionFile: (sessionId: string, path: string) => ['session-file', sessionId, path] as const,
+    sessionFileThumbnail: (sessionId: string, path: string, maxDimension: number) => [
+        'session-file-thumbnail',
+        sessionId,
+        path,
+        maxDimension
+    ] as const,
     gitFileDiff: (sessionId: string, path: string, staged?: boolean) => [
         'git-file-diff',
         sessionId,

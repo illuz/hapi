@@ -128,6 +128,21 @@ describe('useSendMessage', () => {
         expect(onSuccess).not.toHaveBeenCalled()
     })
 
+    it('does not play the message sound when notifications are muted', () => {
+        setStoredPlaybackMode('off')
+        const api = createMockApi()
+        const { result } = renderHook(
+            () => useSendMessage(api, 'session-A'),
+            { wrapper: createWrapper() },
+        )
+
+        act(() => {
+            result.current.sendMessage('hello')
+        })
+
+        expect(playNotificationSound).not.toHaveBeenCalled()
+    })
+
     it('keeps automatic continue messages silent', async () => {
         const api = createMockApi()
         const { result } = renderHook(

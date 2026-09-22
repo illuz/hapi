@@ -5,11 +5,16 @@ import { RpcGateway } from './rpcGateway'
 
 function createGateway() {
     const timeouts: number[] = []
+    const requests: Array<{ method: string; params: unknown }> = []
     const socket = {
         timeout(timeoutMs: number) {
             timeouts.push(timeoutMs)
             return {
                 async emitWithAck(_event: string, payload: { method: string; params: string }) {
+                    requests.push({
+                        method: payload.method,
+                        params: JSON.parse(payload.params) as unknown
+                    })
                     return JSON.stringify({
                         success: true,
                         method: payload.method,
@@ -40,7 +45,8 @@ function createGateway() {
 
     return {
         gateway: new RpcGateway(io, rpcRegistry),
-        timeouts
+        timeouts,
+        requests
     }
 }
 
@@ -60,5 +66,22 @@ describe('RpcGateway RPC timeouts', () => {
 
         expect(timeouts).toEqual([120_000])
     })
-})
 
+    it('forwards thumbnail options when reading a session file', async () => {
+        const { gateway, requests } = createGateway()
+
+        await gateway.readSessionFile('session-1', 'image.png', {
+            thumbnail: true,
+            maxDimension: 640
+        })
+
+        expect(requests).toEqual([{
+            method: 'session-1:readFile',
+            params: {
+                path: 'image.png',
+                thumbnail: true,
+                maxDimension: 640
+            }
+        }])
+    })
+})

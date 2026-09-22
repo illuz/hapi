@@ -19,6 +19,7 @@ export default defineConfig({
 
     sidebar: [
       { text: 'Quick Start', link: '/guide/quick-start' },
+      { text: '用户端安装', link: '/guide/client-installation' },
       { text: 'Installation', link: '/guide/installation' },
       { text: 'PWA', link: '/guide/pwa' },
       { text: 'How it Works', link: '/guide/how-it-works' },

@@ -55,7 +55,7 @@ function createSession(overrides?: Partial<Session>): Session {
 function createApp(session: Session, opts?: {
     resumeSession?: (sessionId: string, namespace: string, resumeOpts?: { permissionMode?: string }) => Promise<{ type: string; sessionId?: string; message?: string; code?: string }>
     spawnSessionFromConfig?: (sessionId: string, namespace: string, options?: { agent?: 'claude' | 'codex' }) => Promise<{ type: string; sessionId?: string; message?: string; code?: string }>
-    forkSession?: (sessionId: string, namespace: string, options?: { rollbackTurns?: number; resumeSessionAt?: string }) => Promise<{ type: string; sessionId?: string; message?: string; code?: string }>
+    forkSession?: (sessionId: string, namespace: string, options?: { rollbackTurns?: number; resumeSessionAt?: string; forkFromMessageId?: string }) => Promise<{ type: string; sessionId?: string; message?: string; code?: string }>
     resolveSessionAccess?: SyncEngine['resolveSessionAccess']
     archiveSession?: (sessionId: string) => Promise<void>
     deleteSession?: (sessionId: string) => Promise<void>
@@ -257,6 +257,25 @@ describe('sessions routes', () => {
             resumeSessionAt: 'assistant-uuid-1'
         })
         expect(await response.json()).toEqual({ type: 'success', sessionId: 'session-forked' })
+    })
+
+    it('forks a session from a stable user message id', async () => {
+        let captured: { forkFromMessageId?: string } | null = null
+        const { app } = createApp(createSession(), {
+            forkSession: async (_sessionId, _namespace, options) => {
+                captured = { forkFromMessageId: options?.forkFromMessageId }
+                return { type: 'success', sessionId: 'session-forked' }
+            }
+        })
+
+        const response = await app.request('/api/sessions/session-1/fork', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ forkFromMessageId: 'message-1' })
+        })
+
+        expect(response.status).toBe(200)
+        expect(captured!).toEqual({ forkFromMessageId: 'message-1' })
     })
 
     it('rejects invalid fork body', async () => {

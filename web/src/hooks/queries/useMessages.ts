@@ -4,6 +4,7 @@ import type { DecryptedMessage } from '@/types/api'
 import {
     clearMessageWindow,
     fetchLatestMessages,
+    fetchMessagesAtSeq,
     fetchOlderMessages,
     flushPendingMessages,
     getMessageWindowState,
@@ -36,6 +37,7 @@ export function useMessages(api: ApiClient | null, sessionId: string | null): {
     pendingCount: number
     messagesVersion: number
     loadMore: () => Promise<unknown>
+    loadAtSeq: (seq: number) => Promise<boolean>
     refetch: () => Promise<unknown>
     flushPending: () => Promise<void>
     setAtBottom: (atBottom: boolean) => void
@@ -78,6 +80,11 @@ export function useMessages(api: ApiClient | null, sessionId: string | null): {
         await fetchOlderMessages(api, sessionId)
     }, [api, sessionId, state.hasMore, state.isLoadingMore])
 
+    const loadAtSeq = useCallback(async (seq: number) => {
+        if (!api || !sessionId) return false
+        return await fetchMessagesAtSeq(api, sessionId, seq)
+    }, [api, sessionId])
+
     const refetch = useCallback(async () => {
         if (!api || !sessionId) return
         await fetchLatestMessages(api, sessionId)
@@ -105,6 +112,7 @@ export function useMessages(api: ApiClient | null, sessionId: string | null): {
         pendingCount: state.pendingCount,
         messagesVersion: state.messagesVersion,
         loadMore,
+        loadAtSeq,
         refetch,
         flushPending,
         setAtBottom,

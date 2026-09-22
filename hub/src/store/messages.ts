@@ -174,6 +174,29 @@ export function getUninvokedLocalMessages(
     return rows.map(toStoredMessage)
 }
 
+export function getUserTurnMessages(
+    db: Database,
+    sessionId: string
+): StoredMessage[] {
+    const rows = db.prepare(`
+        SELECT * FROM messages
+        WHERE session_id = ?
+          AND json_valid(content)
+          AND NOT (invoked_at IS NULL AND local_id IS NOT NULL)
+          AND COALESCE(
+              json_extract(content, '$.role'),
+              json_extract(content, '$.message.role'),
+              json_extract(content, '$.data.message.role'),
+              json_extract(content, '$.payload.message.role')
+          ) = 'user'
+        ORDER BY seq ASC
+    `).all(sessionId) as DbMessageRow[]
+
+    return rows
+        .map(toStoredMessage)
+        .filter((message) => isUserTurnContent(message.content))
+}
+
 export function getMaxSeq(db: Database, sessionId: string): number {
     const row = db.prepare(
         'SELECT COALESCE(MAX(seq), 0) AS maxSeq FROM messages WHERE session_id = ?'

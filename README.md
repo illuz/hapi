@@ -33,6 +33,15 @@ The terminal will display a URL and QR code. Scan the QR code with your phone or
 
 For self-hosted options (Cloudflare Tunnel, Tailscale), see [Installation](docs/guide/installation.md)
 
+## Docker
+
+The repository includes a production-oriented Dockerfile and Docker Compose
+example for running one or more independent Hubs. Keep CLI and Runner processes
+on the machines that own the coding workspaces.
+
+See [Docker deployment](docker/README.md) for setup, multi-Hub configuration,
+reverse proxy requirements, backups, and upgrades.
+
 ## Docs
 
 - [App](docs/guide/pwa.md)

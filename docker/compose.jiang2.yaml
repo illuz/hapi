@@ -1,0 +1,78 @@
+# Five independent HAPI Hub instances for jiang2.
+# Run from this directory: docker compose -f compose.jiang2.yaml ...
+x-hapi-common: &hapi-common
+    build:
+        context: ..
+        dockerfile: Dockerfile
+    image: ${HAPI_IMAGE:-hapi-hub:jiang2}
+    restart: unless-stopped
+    init: true
+    security_opt:
+        - no-new-privileges:true
+    cap_drop:
+        - ALL
+    stop_grace_period: 30s
+    healthcheck:
+        test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:3006/health"]
+        interval: 30s
+        timeout: 5s
+        start_period: 30s
+        retries: 3
+
+services:
+    hapi-me:
+        <<: *hapi-common
+        container_name: hapi-me
+        env_file: ./env/hapi-me.env
+        ports:
+            - "127.0.0.1:13300:3006"
+        volumes:
+            - hapi-me-data:/data
+
+    hapi-zzy:
+        <<: *hapi-common
+        container_name: hapi-zzy
+        env_file: ./env/hapi-zzy.env
+        ports:
+            - "127.0.0.1:13301:3006"
+        volumes:
+            - hapi-zzy-data:/data
+
+    hapi-xcr:
+        <<: *hapi-common
+        container_name: hapi-xcr
+        env_file: ./env/hapi-xcr.env
+        ports:
+            - "127.0.0.1:13302:3006"
+        volumes:
+            - hapi-xcr-data:/data
+
+    hapi-wxh:
+        <<: *hapi-common
+        container_name: hapi-wxh
+        env_file: ./env/hapi-wxh.env
+        ports:
+            - "127.0.0.1:13303:3006"
+        volumes:
+            - hapi-wxh-data:/data
+
+    hapi-jiajia:
+        <<: *hapi-common
+        container_name: hapi-jiajia
+        env_file: ./env/hapi-jiajia.env
+        ports:
+            - "127.0.0.1:13304:3006"
+        volumes:
+            - hapi-jiajia-data:/data
+
+volumes:
+    hapi-me-data:
+        name: hapi-me-data
+    hapi-zzy-data:
+        name: hapi-zzy-data
+    hapi-xcr-data:
+        name: hapi-xcr-data
+    hapi-wxh-data:
+        name: hapi-wxh-data
+    hapi-jiajia-data:
+        name: hapi-jiajia-data

@@ -472,6 +472,67 @@ export async function fetchLatestMessages(api: ApiClient, sessionId: string): Pr
     }
 }
 
+export async function fetchMessagesAtSeq(
+    api: ApiClient,
+    sessionId: string,
+    targetSeq: number
+): Promise<boolean> {
+    if (!Number.isSafeInteger(targetSeq) || targetSeq < 1 || targetSeq >= Number.MAX_SAFE_INTEGER) {
+        return false
+    }
+
+    const initial = getState(sessionId)
+    if (initial.isLoading || initial.isLoadingMore) {
+        return false
+    }
+
+    updateState(sessionId, (prev) => buildState(prev, {
+        isLoading: true,
+        warning: null,
+        atBottom: false,
+    }), true)
+
+    try {
+        // seq 游标是排他的，传入 seq + 1 即可取得以目标消息结尾的页面，
+        // 无需逐页遍历中间的 200 条消息。
+        const response = await api.getMessages(sessionId, {
+            beforeSeq: targetSeq + 1,
+            limit: PAGE_SIZE,
+        })
+        const includesTarget = response.messages.some((message) => message.seq === targetSeq)
+
+        updateState(sessionId, (prev) => {
+            if (!includesTarget) {
+                return buildState(prev, {
+                    isLoading: false,
+                    warning: 'Selected message is unavailable.',
+                })
+            }
+
+            const queued = prev.messages.filter(isQueuedForInvocation)
+            const messages = trimVisible(mergeMessages(response.messages, queued), 'append')
+            return buildState(prev, {
+                messages,
+                hasMore: response.page.hasMore,
+                oldestPositionAt: null,
+                oldestPositionSeq: null,
+                isLoading: false,
+                warning: null,
+                atBottom: false,
+            })
+        }, true)
+
+        return includesTarget
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to load selected message'
+        updateState(sessionId, (prev) => buildState(prev, {
+            isLoading: false,
+            warning: message,
+        }), true)
+        return false
+    }
+}
+
 export async function fetchOlderMessages(api: ApiClient, sessionId: string): Promise<void> {
     const initial = getState(sessionId)
     if (initial.isLoadingMore || !initial.hasMore) {

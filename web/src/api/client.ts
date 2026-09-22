@@ -5,6 +5,7 @@ import type {
     CodexCollaborationMode,
     DeleteUploadResponse,
     ListDirectoryResponse,
+    FileReadOptions,
     FileReadResponse,
     FileSearchResponse,
     GitCommandResponse,
@@ -12,6 +13,7 @@ import type {
     MachinePathsExistsResponse,
     MachinesResponse,
     MessagesResponse,
+    ConversationOutlineResponse,
     ConversationHistoryResponse,
     CodexModelsResponse,
     CustomCodexModelResponse,
@@ -298,6 +300,12 @@ export class ApiClient {
         return await this.request<MessagesResponse>(url)
     }
 
+    async getConversationOutline(sessionId: string): Promise<ConversationOutlineResponse> {
+        return await this.request<ConversationOutlineResponse>(
+            `/api/sessions/${encodeURIComponent(sessionId)}/outline`
+        )
+    }
+
     async getGitStatus(sessionId: string): Promise<GitCommandResponse> {
         return await this.request<GitCommandResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/git-status`)
     }
@@ -329,9 +337,11 @@ export class ApiClient {
         return await this.request<FileSearchResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/files${qs ? `?${qs}` : ''}`)
     }
 
-    async readSessionFile(sessionId: string, path: string): Promise<FileReadResponse> {
+    async readSessionFile(sessionId: string, path: string, options?: FileReadOptions): Promise<FileReadResponse> {
         const params = new URLSearchParams()
         params.set('path', path)
+        if (options?.thumbnail !== undefined) params.set('thumbnail', String(options.thumbnail))
+        if (options?.maxDimension !== undefined) params.set('maxDimension', String(options.maxDimension))
         return await this.request<FileReadResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/file?${params.toString()}`)
     }
 
@@ -390,7 +400,8 @@ export class ApiClient {
             : options
                 ? {
                     ...(options.rollbackTurns !== undefined ? { rollbackTurns: options.rollbackTurns } : {}),
-                    ...(options.resumeSessionAt ? { resumeSessionAt: options.resumeSessionAt } : {})
+                    ...(options.resumeSessionAt ? { resumeSessionAt: options.resumeSessionAt } : {}),
+                    ...(options.forkFromMessageId ? { forkFromMessageId: options.forkFromMessageId } : {})
                 }
                 : {}
 

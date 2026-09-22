@@ -1,0 +1,39 @@
+x-hapi-common: &hapi-common
+  build:
+    context: ..
+    dockerfile: Dockerfile
+  image: hapi-hub:local
+  restart: unless-stopped
+  init: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  stop_grace_period: 30s
+
+services:
+  hub-a:
+    <<: *hapi-common
+    env_file:
+      - ./.env.hub-a
+    ports:
+      - "127.0.0.1:3006:3006"
+    volumes:
+      - hapi-a-data:/data
+
+  hub-b:
+    <<: *hapi-common
+    profiles:
+      - multi
+    env_file:
+      - ./.env.hub-b
+    ports:
+      - "127.0.0.1:3007:3006"
+    volumes:
+      - hapi-b-data:/data
+
+volumes:
+  hapi-a-data:
+    name: hapi-hub-a-data
+  hapi-b-data:
+    name: hapi-hub-b-data

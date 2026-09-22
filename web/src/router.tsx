@@ -6,6 +6,7 @@ import {
     createRootRoute,
     createRoute,
     createRouter,
+    retainSearchParams,
     useLocation,
     useMatchRoute,
     useNavigate,
@@ -45,6 +46,13 @@ import { filterSessionsByActivityOrMarker } from '@/lib/sessionFilters'
 import { loadSessionColorFilterPreference } from '@/lib/sessionColorFilterPreference'
 import { loadSessionListActivityFilter, saveSessionListActivityFilter } from '@/lib/sessionListFiltersPreference'
 import { cleanupInactiveSessions } from '@/lib/sessionCleanup'
+import {
+    PLAYBACK_MODE_URL_PARAM,
+    getStoredPlaybackMode,
+    parseSoundPlaybackMode,
+    toggleStoredPlaybackMute,
+    type SoundPlaybackMode,
+} from '@/lib/readySound'
 import FilesPage from '@/routes/sessions/files'
 import FilePage from '@/routes/sessions/file'
 import TerminalPage from '@/routes/sessions/terminal'
@@ -95,6 +103,35 @@ function RefreshIcon(props: { className?: string }) {
     )
 }
 
+function SpeakerIcon(props: { muted: boolean }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        >
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+            {props.muted ? (
+                <>
+                    <line x1="22" y1="9" x2="16" y2="15" />
+                    <line x1="16" y1="9" x2="22" y2="15" />
+                </>
+            ) : (
+                <>
+                    <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                </>
+            )}
+        </svg>
+    )
+}
+
 function HapiLogo(props: { className?: string }) {
     return (
         <div className={`flex items-center ${props.className ?? ''}`}>
@@ -125,6 +162,7 @@ function SessionsPage() {
     const [cleanupDialogOpen, setCleanupDialogOpen] = useState(false)
     const [isCleaningInactive, setIsCleaningInactive] = useState(false)
     const [activityFilterEnabled, setActivityFilterEnabled] = useState(loadSessionListActivityFilter)
+    const [playbackMode, setPlaybackMode] = useState(getStoredPlaybackMode)
     const [lastViewedSessionId, setLastViewedSessionId] = useState<string | null>(() => {
         if (typeof window === 'undefined') return null
         return window.sessionStorage.getItem('hapi-last-viewed-session-id')
@@ -176,6 +214,10 @@ function SessionsPage() {
         })
     }, [])
 
+    const handleToggleMute = useCallback(() => {
+        setPlaybackMode(toggleStoredPlaybackMute())
+    }, [])
+
     const handleToggleAutoRetry = useCallback(() => {
         if (autoRetryPending) {
             return
@@ -192,7 +234,7 @@ function SessionsPage() {
     }, [addToast, autoRetryEnabled, autoRetryPending, t, updateAutoRetryEnabled])
 
     const inactiveSessions = useMemo(
-        () => sessions.filter((session) => !session.active && !session.markerColor),
+        () => sessions.filter((session) => !session.active && !session.markerColor && session.pinned !== true),
         [sessions]
     )
     const sessionMatch = matchRoute({ to: '/sessions/$sessionId', fuzzy: true })
@@ -241,6 +283,16 @@ function SessionsPage() {
                             </div>
                         </div>
                         <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={handleToggleMute}
+                                aria-label={playbackMode === 'off' ? t('sessions.unmuteSounds') : t('sessions.muteSounds')}
+                                aria-pressed={playbackMode === 'off'}
+                                className={`p-1.5 rounded-full transition-colors ${playbackMode === 'off' ? 'text-[var(--app-link)] bg-[var(--app-subtle-bg)]' : 'text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)]'}`}
+                                title={playbackMode === 'off' ? t('sessions.unmuteSounds') : t('sessions.muteSounds')}
+                            >
+                                <SpeakerIcon muted={playbackMode === 'off'} />
+                            </button>
                             <button
                                 type="button"
                                 aria-pressed={autoRetryEnabled}
@@ -464,6 +516,7 @@ function SessionPage() {
         isLoadingMore: messagesLoadingMore,
         hasMore: messagesHasMore,
         loadMore: loadMoreMessages,
+        loadAtSeq: loadMessageAtSeq,
         refetch: refetchMessages,
         pendingCount,
         messagesVersion,
@@ -592,6 +645,7 @@ function SessionPage() {
             onBack={goBack}
             onRefresh={refreshSelectedSession}
             onLoadMore={loadMoreMessages}
+            onLoadMessageAtSeq={loadMessageAtSeq}
             onSend={sendMessage}
             onFlushPending={flushPending}
             onAtBottomChange={setAtBottom}
@@ -797,7 +851,26 @@ function SharedRoutePage() {
     )
 }
 
+type RootSearch = Record<string, unknown> & {
+    sound?: SoundPlaybackMode
+}
+
+function validateRootSearch(search: Record<string, unknown>): RootSearch {
+    const result: RootSearch = { ...search }
+    const sound = parseSoundPlaybackMode(search[PLAYBACK_MODE_URL_PARAM])
+    if (sound) {
+        result.sound = sound
+    } else {
+        delete result.sound
+    }
+    return result
+}
+
 const rootRoute = createRootRoute({
+    validateSearch: validateRootSearch,
+    search: {
+        middlewares: [retainSearchParams<RootSearch>([PLAYBACK_MODE_URL_PARAM])],
+    },
     component: App,
 })
 

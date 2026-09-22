@@ -15,6 +15,15 @@ const mockState = vi.hoisted(() => ({
         data: undefined as { success: boolean; content?: string; error?: string } | undefined,
         isLoading: false,
     },
+    thumbnailQuery: {
+        data: { success: true, content: '', mimeType: 'image/jpeg', width: 0, height: 0, error: undefined as string | undefined },
+        isLoading: false,
+    },
+    queryOptions: [] as Array<{
+        queryKey: readonly unknown[]
+        queryFn: () => Promise<unknown>
+        enabled: boolean
+    }>,
     readSessionFile: vi.fn(),
     copy: vi.fn(),
     goBack: vi.fn(),
@@ -31,8 +40,10 @@ vi.mock('@tanstack/react-query', () => ({
         queryFn: () => Promise<unknown>
         enabled: boolean
     }) => {
+        mockState.queryOptions.push(options)
         const key = options.queryKey[0]
         if (key === 'git-file-diff') return mockState.diffQuery
+        if (key === 'session-file-thumbnail') return mockState.thumbnailQuery
         if (key === 'session-file') return mockState.fileQuery
         return { data: undefined, isLoading: false }
     },
@@ -105,6 +116,29 @@ function setFile(path: string, content: string) {
     }
 }
 
+function setImageFile(path: string, thumbnailContent: string, originalContent: string) {
+    mockState.search.path = encodeBase64(path)
+    mockState.thumbnailQuery = {
+        data: {
+            success: true,
+            content: encodeBase64(thumbnailContent),
+            mimeType: 'image/jpeg',
+            width: 320,
+            height: 640,
+            error: undefined,
+        },
+        isLoading: false,
+    }
+    mockState.fileQuery = {
+        data: { success: true, content: encodeBase64(originalContent) },
+        isLoading: false,
+    }
+}
+
+function latestQueryOptions(key: string) {
+    return mockState.queryOptions.findLast((options) => options.queryKey[0] === key)
+}
+
 describe('isMarkdownFilePath', () => {
     it('recognizes common Markdown file extensions', () => {
         expect(isMarkdownFilePath('README.md')).toBe(true)
@@ -135,6 +169,7 @@ describe('FilePage Markdown preview', () => {
             configurable: true,
             value: vi.fn(),
         })
+        mockState.queryOptions = []
         mockState.search.staged = undefined
         mockState.diffQuery = {
             data: { success: true, stdout: '', error: undefined },
@@ -202,16 +237,32 @@ describe('FilePage Markdown preview', () => {
         expect(screen.getByText('Command failed: not a git repository')).toBeInTheDocument()
     })
 
-    it('renders image files as a visual preview instead of a binary warning', () => {
-        const imageBytes = '\x00\x01binary-image'
-        setFile('assets/diagram.png', imageBytes)
+    it('loads a thumbnail first and requests the original image only after a click', async () => {
+        const thumbnailBytes = '\x00thumbnail-image'
+        const originalBytes = '\x00\x01original-image'
+        setImageFile('assets/diagram.png', thumbnailBytes, originalBytes)
 
         render(<FilePage />)
 
         const image = screen.getByRole('img', { name: 'diagram.png' })
-        expect(image).toHaveAttribute('src', `data:image/png;base64,${encodeBase64(imageBytes)}`)
-        expect(screen.getByText('image/png')).toBeInTheDocument()
-        expect(screen.getByRole('link', { name: 'Open image' })).toHaveAttribute('download', 'diagram.png')
+        expect(image).toHaveAttribute('src', `data:image/jpeg;base64,${encodeBase64(thumbnailBytes)}`)
+        expect(latestQueryOptions('session-file-thumbnail')?.enabled).toBe(true)
+        expect(latestQueryOptions('session-file')?.enabled).toBe(false)
+
+        const thumbnailOptions = latestQueryOptions('session-file-thumbnail')
+        await thumbnailOptions?.queryFn()
+        expect(mockState.readSessionFile).toHaveBeenCalledWith('session-1', 'assets/diagram.png', {
+            thumbnail: true,
+            maxDimension: 640,
+        })
+
+        fireEvent.click(screen.getByRole('button', { name: 'Load original image' }))
+
+        expect(latestQueryOptions('session-file')?.enabled).toBe(true)
+        expect(screen.getByRole('img', { name: 'diagram.png' })).toHaveAttribute(
+            'src',
+            `data:image/png;base64,${encodeBase64(originalBytes)}`
+        )
         expect(screen.queryByText('This looks like a binary file. It cannot be displayed.')).not.toBeInTheDocument()
     })
 
@@ -220,13 +271,13 @@ describe('FilePage Markdown preview', () => {
             data: { success: true, stdout: 'Binary files a/assets/icon.webp and b/assets/icon.webp differ', error: undefined },
             isLoading: false,
         }
-        setFile('assets/icon.webp', '\x00webp-image')
+        setImageFile('assets/icon.webp', '\x00webp-thumbnail', '\x00webp-image')
 
         render(<FilePage />)
 
         expect(screen.getByRole('button', { name: 'Diff' })).toBeInTheDocument()
         expect(screen.getByRole('button', { name: 'Preview' })).toBeInTheDocument()
-        expect(screen.getByRole('img', { name: 'icon.webp' })).toHaveAttribute('src', `data:image/webp;base64,${encodeBase64('\x00webp-image')}`)
+        expect(screen.getByRole('img', { name: 'icon.webp' })).toHaveAttribute('src', `data:image/jpeg;base64,${encodeBase64('\x00webp-thumbnail')}`)
 
         fireEvent.click(screen.getByRole('button', { name: 'Diff' }))
 
@@ -235,6 +286,34 @@ describe('FilePage Markdown preview', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
 
         expect(screen.getByRole('img', { name: 'icon.webp' })).toBeInTheDocument()
+    })
+
+    it('allows loading the original when thumbnail generation is unsupported', () => {
+        const originalBytes = '\x00avif-image'
+        setImageFile('assets/photo.avif', '', originalBytes)
+        mockState.thumbnailQuery = {
+            data: {
+                success: false,
+                content: '',
+                mimeType: 'image/jpeg',
+                width: 0,
+                height: 0,
+                error: 'Unsupported image format',
+            },
+            isLoading: false,
+        }
+
+        render(<FilePage />)
+
+        expect(screen.getByText('Unsupported image format')).toBeInTheDocument()
+        expect(screen.queryByRole('img')).not.toBeInTheDocument()
+
+        fireEvent.click(screen.getByRole('button', { name: 'Load original' }))
+
+        expect(screen.getByRole('img', { name: 'photo.avif' })).toHaveAttribute(
+            'src',
+            `data:image/avif;base64,${encodeBase64(originalBytes)}`
+        )
     })
 
     it('keeps unsupported binary files hidden', () => {
@@ -262,7 +341,6 @@ describe('FilePage Markdown preview', () => {
     it.each([
         ['notes.txt', 'plain text'],
         ['archives/data.zip', '\x00\x01zip'],
-        ['assets/diagram.png', '\x00\x01image'],
     ])('downloads %s from the file toolbar', async (path, content) => {
         const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
         setFile(path, content)
@@ -271,6 +349,25 @@ describe('FilePage Markdown preview', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Download file' }))
 
         await waitFor(() => {
+            expect(URL.createObjectURL).toHaveBeenCalledOnce()
+            expect(anchorClick).toHaveBeenCalledOnce()
+        })
+    })
+
+    it('fetches the original image when downloading from a thumbnail preview', async () => {
+        const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+        setImageFile('assets/diagram.png', '\x00thumbnail', '\x00original')
+        mockState.fileQuery = { data: undefined, isLoading: false }
+        mockState.readSessionFile.mockResolvedValue({
+            success: true,
+            content: encodeBase64('\x00original'),
+        })
+
+        render(<FilePage />)
+        fireEvent.click(screen.getByRole('button', { name: 'Download file' }))
+
+        await waitFor(() => {
+            expect(mockState.readSessionFile).toHaveBeenCalledWith('session-1', 'assets/diagram.png')
             expect(URL.createObjectURL).toHaveBeenCalledOnce()
             expect(anchorClick).toHaveBeenCalledOnce()
         })

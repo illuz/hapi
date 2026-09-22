@@ -15,6 +15,7 @@ import { langAlias, useShikiHighlighter } from '@/lib/shiki'
 import { cn, decodeBase64 } from '@/lib/utils'
 
 const MAX_COPYABLE_FILE_BYTES = 1_000_000
+const IMAGE_THUMBNAIL_MAX_DIMENSION = 640
 const MARKDOWN_EXTENSIONS = new Set(['md', 'markdown', 'mdown', 'mkd', 'mkdn', 'mdx'])
 const IMAGE_MIME_TYPES = new Map<string, string>([
     ['apng', 'image/apng'],
@@ -315,28 +316,93 @@ function ImagePreview(props: {
     dataUri: string
     fileName: string
     mimeType: string
+    originalLoaded: boolean
+    originalLoading: boolean
+    originalError: string | null
+    onLoadOriginal: () => void
 }) {
     return (
         <div className="overflow-hidden rounded-md border border-[var(--app-border)] bg-[var(--app-bg)]">
-            <div className="flex min-h-[220px] items-center justify-center bg-[var(--app-code-bg)] p-3">
-                <img
-                    src={props.dataUri}
-                    alt={props.fileName}
-                    loading="lazy"
-                    className="max-h-[70vh] max-w-full rounded object-contain"
-                />
+            <div className="relative flex min-h-[220px] items-center justify-center bg-[var(--app-code-bg)] p-3">
+                {props.originalLoaded ? (
+                    <img
+                        src={props.dataUri}
+                        alt={props.fileName}
+                        loading="lazy"
+                        className="max-h-[70vh] max-w-full rounded object-contain"
+                    />
+                ) : (
+                    <button
+                        type="button"
+                        onClick={props.onLoadOriginal}
+                        disabled={props.originalLoading}
+                        aria-label="Load original image"
+                        className="flex min-h-[196px] w-full cursor-zoom-in items-center justify-center disabled:cursor-wait"
+                    >
+                        <img
+                            src={props.dataUri}
+                            alt={props.fileName}
+                            loading="lazy"
+                            className="max-h-[70vh] max-w-full rounded object-contain"
+                        />
+                    </button>
+                )}
+                {props.originalLoading ? (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                        <span className="rounded bg-[var(--app-bg)] p-2 shadow-sm">
+                            <Spinner size="sm" label="Loading original image" />
+                        </span>
+                    </div>
+                ) : null}
             </div>
             <div className="flex items-center justify-between gap-3 border-t border-[var(--app-divider)] px-3 py-2 text-xs text-[var(--app-hint)]">
-                <span className="min-w-0 truncate">{props.mimeType}</span>
-                <a
-                    href={props.dataUri}
-                    target="_blank"
-                    rel="noreferrer"
-                    download={props.fileName}
-                    className="shrink-0 rounded px-2 py-1 font-semibold text-[var(--app-fg)] transition-colors hover:bg-[var(--app-subtle-bg)]"
+                <span className="min-w-0 truncate">
+                    {props.originalError ?? props.mimeType}
+                </span>
+                {props.originalLoaded ? (
+                    <a
+                        href={props.dataUri}
+                        target="_blank"
+                        rel="noreferrer"
+                        download={props.fileName}
+                        className="shrink-0 rounded px-2 py-1 font-semibold text-[var(--app-fg)] transition-colors hover:bg-[var(--app-subtle-bg)]"
+                    >
+                        Open image
+                    </a>
+                ) : (
+                    <button
+                        type="button"
+                        onClick={props.onLoadOriginal}
+                        disabled={props.originalLoading}
+                        className="shrink-0 rounded px-2 py-1 font-semibold text-[var(--app-fg)] transition-colors hover:bg-[var(--app-subtle-bg)] disabled:cursor-wait disabled:opacity-60"
+                    >
+                        {props.originalLoading ? 'Loading original…' : props.originalError ? 'Retry original' : 'Load original'}
+                    </button>
+                )}
+            </div>
+        </div>
+    )
+}
+
+function ImagePreviewUnavailable(props: {
+    message: string
+    originalLoading: boolean
+    onLoadOriginal: () => void
+}) {
+    return (
+        <div className="overflow-hidden rounded-md border border-[var(--app-border)] bg-[var(--app-bg)]">
+            <div className="flex min-h-[220px] items-center justify-center bg-[var(--app-code-bg)] p-4 text-sm text-[var(--app-hint)]">
+                {props.message}
+            </div>
+            <div className="flex justify-end border-t border-[var(--app-divider)] px-3 py-2">
+                <button
+                    type="button"
+                    onClick={props.onLoadOriginal}
+                    disabled={props.originalLoading}
+                    className="rounded px-2 py-1 text-xs font-semibold text-[var(--app-fg)] transition-colors hover:bg-[var(--app-subtle-bg)] disabled:cursor-wait disabled:opacity-60"
                 >
-                    Open image
-                </a>
+                    {props.originalLoading ? 'Loading original…' : 'Load original'}
+                </button>
             </div>
         </div>
     )
@@ -375,8 +441,15 @@ export default function FilePage() {
 
     const filePath = useMemo(() => decodePath(encodedPath), [encodedPath])
     const fileName = filePath.split('/').pop() || filePath || 'File'
+    const markdownFile = useMemo(() => isMarkdownFilePath(filePath), [filePath])
+    const imageFile = useMemo(() => isPreviewableImageFilePath(filePath), [filePath])
+    const imageMimeType = useMemo(() => getImageMimeType(filePath), [filePath])
+    const documentKind = useMemo(() => getDocumentPreviewKind(filePath), [filePath])
+    const documentFile = documentKind !== null
+    const [originalImagePath, setOriginalImagePath] = useState<string | null>(null)
     const [isDownloading, setIsDownloading] = useState(false)
     const [downloadError, setDownloadError] = useState<string | null>(null)
+    const originalImageRequested = imageFile && originalImagePath === filePath
 
     const diffQuery = useQuery({
         queryKey: queryKeys.gitFileDiff(sessionId, filePath, staged),
@@ -397,21 +470,35 @@ export default function FilePage() {
             }
             return await api.readSessionFile(sessionId, filePath)
         },
-        enabled: Boolean(api && sessionId && filePath)
+        enabled: Boolean(api && sessionId && filePath && (!imageFile || originalImageRequested))
+    })
+
+    const thumbnailQuery = useQuery({
+        queryKey: queryKeys.sessionFileThumbnail(sessionId, filePath, IMAGE_THUMBNAIL_MAX_DIMENSION),
+        queryFn: async () => {
+            if (!api || !sessionId || !filePath) {
+                throw new Error('Missing session or path')
+            }
+            return await api.readSessionFile(sessionId, filePath, {
+                thumbnail: true,
+                maxDimension: IMAGE_THUMBNAIL_MAX_DIMENSION
+            })
+        },
+        enabled: Boolean(api && sessionId && filePath && imageFile),
+        retry: false
     })
 
     const diffContent = diffQuery.data?.success ? (diffQuery.data.stdout ?? '') : ''
     const diffError = extractCommandError(diffQuery.data)
+        ?? extractQueryError(diffQuery.error, 'Failed to load diff')
     const diffSuccess = diffQuery.data?.success === true
     const diffFailed = diffQuery.data?.success === false
 
-    const markdownFile = useMemo(() => isMarkdownFilePath(filePath), [filePath])
-    const imageFile = useMemo(() => isPreviewableImageFilePath(filePath), [filePath])
-    const imageMimeType = useMemo(() => getImageMimeType(filePath), [filePath])
-    const documentKind = useMemo(() => getDocumentPreviewKind(filePath), [filePath])
-    const documentFile = documentKind !== null
-
-    const fileContentResult = fileQuery.data
+    const originalImageResult = originalImageRequested ? fileQuery.data : undefined
+    const originalImageLoaded = originalImageResult?.success === true && Boolean(originalImageResult.content)
+    const fileContentResult = imageFile
+        ? originalImageLoaded ? originalImageResult : thumbnailQuery.data
+        : fileQuery.data
     const encodedContent = fileContentResult?.success ? (fileContentResult.content ?? '') : ''
     const decodedContentResult = fileContentResult?.success && encodedContent && !imageFile && !documentFile
         ? decodeBase64(encodedContent)
@@ -426,8 +513,11 @@ export default function FilePage() {
             : null,
         [documentFile, fileContentResult]
     )
-    const imageDataUri = fileContentResult?.success && encodedContent && imageMimeType
-        ? `data:${imageMimeType};base64,${encodedContent}`
+    const activeImageMimeType = originalImageLoaded
+        ? imageMimeType
+        : thumbnailQuery.data?.success ? (thumbnailQuery.data.mimeType ?? imageMimeType) : imageMimeType
+    const imageDataUri = fileContentResult?.success && encodedContent && activeImageMimeType
+        ? `data:${activeImageMimeType};base64,${encodedContent}`
         : null
 
     const language = useMemo(
@@ -480,10 +570,28 @@ export default function FilePage() {
         }
     }, [markdownFile, imageFile, documentFile, displayMode, diffContent, defaultDisplayMode])
 
-    const loading = diffQuery.isLoading || fileQuery.isLoading
-    const fileError = fileContentResult && !fileContentResult.success
-        ? (fileContentResult.error ?? 'Failed to read file')
+    const loading = diffQuery.isLoading || (imageFile ? thumbnailQuery.isLoading : fileQuery.isLoading)
+    const fileError = !imageFile
+        ? fileContentResult && !fileContentResult.success
+            ? (fileContentResult.error ?? 'Failed to read file')
+            : extractQueryError(fileQuery.error, 'Failed to read file')
         : null
+    const thumbnailError = thumbnailQuery.data && !thumbnailQuery.data.success
+        ? (thumbnailQuery.data.error ?? 'Failed to load image thumbnail')
+        : extractQueryError(thumbnailQuery.error, 'Failed to load image thumbnail')
+    const originalImageLoading = originalImageRequested && fileQuery.isLoading
+    const originalImageError = originalImageResult && !originalImageResult.success
+        ? (originalImageResult.error ?? 'Failed to load original image')
+        : originalImageRequested
+            ? extractQueryError(fileQuery.error, 'Failed to load original image')
+            : null
+    const loadOriginalImage = () => {
+        if (originalImageRequested) {
+            void fileQuery.refetch()
+            return
+        }
+        setOriginalImagePath(filePath)
+    }
     const handleDownload = async () => {
         if (!api || !sessionId || !filePath || isDownloading) return
 
@@ -646,14 +754,22 @@ export default function FilePage() {
                             <div className="text-sm text-[var(--app-hint)]">File is empty.</div>
                         )
                     ) : effectiveDisplayMode === 'image' && imageFile ? (
-                        imageDataUri && imageMimeType ? (
+                        imageDataUri && activeImageMimeType ? (
                             <ImagePreview
                                 dataUri={imageDataUri}
                                 fileName={fileName}
-                                mimeType={imageMimeType}
+                                mimeType={activeImageMimeType}
+                                originalLoaded={originalImageLoaded}
+                                originalLoading={originalImageLoading}
+                                originalError={originalImageError}
+                                onLoadOriginal={loadOriginalImage}
                             />
                         ) : (
-                            <div className="text-sm text-[var(--app-hint)]">File is empty.</div>
+                            <ImagePreviewUnavailable
+                                message={originalImageError ?? thumbnailError ?? 'File is empty.'}
+                                originalLoading={originalImageLoading}
+                                onLoadOriginal={loadOriginalImage}
+                            />
                         )
                     ) : effectiveDisplayMode === 'document' && documentFile && documentKind ? (
                         documentBytes ? (

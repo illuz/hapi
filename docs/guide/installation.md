@@ -221,11 +221,18 @@ export CLI_API_TOKEN="your-token-here"
 export HAPI_EXTRA_HEADERS_JSON='{"Cookie":"CF_Authorization=..."}'
 ```
 
-Or use interactive login:
+Or save all connection settings in one command:
 
 ```bash
-hapi auth login
+hapi auth login --host=https://your-hub.example.com --machineId=workstation --cliApiToken=your-token-here
 ```
+
+The command saves `apiUrl`, `machineId`, and `cliApiToken` in
+`~/.hapi/settings.json`, so future CLI and Runner processes need no environment
+variables. Omit `--cliApiToken` to enter the token interactively. An explicit
+`HAPI_API_URL` or `CLI_API_TOKEN` environment variable still takes precedence.
+Passing `--cliApiToken` inline may store the token in shell history; omit it when
+interactive entry is preferable.
 
 Authentication commands:
 

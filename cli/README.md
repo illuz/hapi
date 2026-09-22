@@ -39,6 +39,8 @@ Run Claude Code, Codex, Cursor Agent, Gemini, or OpenCode sessions from your ter
 
 - `hapi auth status` - Show authentication configuration and token source.
 - `hapi auth login` - Interactively enter and save CLI_API_TOKEN.
+- `hapi auth login --host=https://hapi.example.com` - Also save a self-hosted Hub URL as `apiUrl`.
+- `hapi auth login --host=https://hapi.example.com --machineId=workstation --cliApiToken=token` - Save all connection settings without prompting.
 - `hapi auth logout` - Clear saved credentials.
 
 See `src/commands/auth.ts`.

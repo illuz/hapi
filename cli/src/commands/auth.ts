@@ -7,6 +7,66 @@ import { readSettings, clearMachineId, updateSettings } from '@/persistence'
 import { initializeApiUrl } from '@/ui/apiUrlInit'
 import type { CommandDefinition } from './types'
 
+function normalizeHubUrl(value: string): string {
+    const trimmed = value.trim()
+    if (!trimmed) {
+        throw new Error('--host requires a Hub URL')
+    }
+
+    let parsed: URL
+    try {
+        parsed = new URL(trimmed)
+    } catch {
+        throw new Error(`Invalid --host URL: ${trimmed}`)
+    }
+
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        throw new Error('--host must use http:// or https://')
+    }
+    if (parsed.search || parsed.hash) {
+        throw new Error('--host must not include a query string or fragment')
+    }
+
+    return parsed.toString().replace(/\/+$/, '')
+}
+
+interface LoginOptions {
+    host?: string
+    machineId?: string
+    cliApiToken?: string
+}
+
+function requireOptionValue(option: string, value: string | undefined): string {
+    const trimmed = value?.trim()
+    if (!trimmed || trimmed.startsWith('--')) {
+        throw new Error(`${option} requires a value`)
+    }
+    return trimmed
+}
+
+function parseLoginOptions(args: string[]): LoginOptions {
+    const options: LoginOptions = {}
+
+    for (let i = 0; i < args.length; i++) {
+        const arg = args[i]
+        if (arg === '--host') {
+            options.host = normalizeHubUrl(requireOptionValue('--host', args[++i]))
+        } else if (arg.startsWith('--host=')) {
+            options.host = normalizeHubUrl(arg.slice('--host='.length))
+        } else if (arg === '--machineId') {
+            options.machineId = requireOptionValue('--machineId', args[++i])
+        } else if (arg.startsWith('--machineId=')) {
+            options.machineId = requireOptionValue('--machineId', arg.slice('--machineId='.length))
+        } else if (arg === '--cliApiToken') {
+            options.cliApiToken = requireOptionValue('--cliApiToken', args[++i])
+        } else if (arg.startsWith('--cliApiToken=')) {
+            options.cliApiToken = requireOptionValue('--cliApiToken', arg.slice('--cliApiToken='.length))
+        }
+    }
+
+    return options
+}
+
 export async function handleAuthCommand(args: string[]): Promise<void> {
     const subcommand = args[0]
 
@@ -42,30 +102,46 @@ export async function handleAuthCommand(args: string[]): Promise<void> {
     }
 
     if (subcommand === 'login') {
-        if (!process.stdin.isTTY) {
+        const { host, machineId, cliApiToken } = parseLoginOptions(args.slice(1))
+        let token = cliApiToken
+
+        if (!token && !process.stdin.isTTY) {
             console.error(chalk.red('Cannot prompt for token in non-TTY environment.'))
-            console.error(chalk.gray('Set CLI_API_TOKEN environment variable instead.'))
+            console.error(chalk.gray('Pass --cliApiToken or run `hapi auth login` in an interactive terminal.'))
             process.exit(1)
         }
 
-        const rl = readline.createInterface({ input, output })
+        if (!token) {
+            const rl = readline.createInterface({ input, output })
 
-        try {
-            const token = await rl.question(chalk.cyan('Enter CLI_API_TOKEN: '))
+            try {
+                token = (await rl.question(chalk.cyan('Enter CLI_API_TOKEN: '))).trim()
 
-            if (!token.trim()) {
-                console.error(chalk.red('Token cannot be empty'))
-                process.exit(1)
+                if (!token) {
+                    console.error(chalk.red('Token cannot be empty'))
+                    process.exit(1)
+                }
+            } finally {
+                rl.close()
             }
+        }
 
-            await updateSettings(current => ({
-                ...current,
-                cliApiToken: token.trim()
-            }))
-            configuration._setCliApiToken(token.trim())
-            console.log(chalk.green(`\nToken saved to ${configuration.settingsFile}`))
-        } finally {
-            rl.close()
+        await updateSettings(current => ({
+            ...current,
+            cliApiToken: token,
+            ...(host ? { apiUrl: host } : {}),
+            ...(machineId ? { machineId } : {})
+        }))
+        configuration._setCliApiToken(token)
+        if (host) {
+            configuration._setApiUrl(host)
+        }
+        console.log(chalk.green(`\nAuthentication saved to ${configuration.settingsFile}`))
+        if (host) {
+            console.log(chalk.green(`Hub URL saved: ${host}`))
+        }
+        if (machineId) {
+            console.log(chalk.green(`Machine ID saved: ${machineId}`))
         }
         return
     }
@@ -92,8 +168,13 @@ ${chalk.bold('hapi auth')} - Authentication management
 
 ${chalk.bold('Usage:')}
   hapi auth status            Show current configuration
-  hapi auth login             Enter and save CLI_API_TOKEN
+  hapi auth login [options]   Save authentication settings
   hapi auth logout            Clear saved credentials
+
+${chalk.bold('Login options:')}
+  --host <url>                Save a self-hosted Hub URL (http:// or https://)
+  --machineId <id>            Save a specific machine ID
+  --cliApiToken <token>       Save the token without an interactive prompt
 
 ${chalk.bold('Token priority (highest to lowest):')}
   1. CLI_API_TOKEN environment variable

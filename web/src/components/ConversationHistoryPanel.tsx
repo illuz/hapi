@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError, type ApiClient } from '@/api/client'
 import type { ConversationHistoryEntry, Session } from '@/types/api'
+import { compactAutoRetryText } from '@hapi/protocol/autoContinue'
 import { useConversationHistory, type ConversationHistoryScope } from '@/hooks/queries/useConversationHistory'
 import { SessionMarkerDot } from '@/components/SessionMarkerDot'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -42,8 +43,77 @@ const HISTORY_SNIPPET_CONTEXT_BEFORE = 80
 const HISTORY_SNIPPET_CONTEXT_AFTER = 420
 const HISTORY_SNIPPET_FALLBACK_LENGTH = 520
 
+type HistoryDisplayEntry = ConversationHistoryEntry & {
+    autoRetryDetails?: string[]
+}
+
 function normalizeSnippetText(value: string): string {
     return value.replace(/\s+/g, ' ').trim()
+}
+
+function isAutoRetryHistoryEntry(entry: ConversationHistoryEntry): boolean {
+    const excerpt = compactAutoRetryText(entry.assistantExcerpt).trim()
+    return /(?:^|\n)AUTO retry(?:ing| failed| \d+\/\d+)/i.test(excerpt)
+}
+
+function collapseAutoRetryHistoryEntries(
+    entries: ConversationHistoryEntry[],
+    enabled: boolean
+): HistoryDisplayEntry[] {
+    if (!enabled) return entries
+
+    const collapsed: HistoryDisplayEntry[] = []
+    for (let index = 0; index < entries.length;) {
+        const first = entries[index]
+        if (!first || !isAutoRetryHistoryEntry(first)) {
+            if (first) collapsed.push(first)
+            index += 1
+            continue
+        }
+
+        const group: ConversationHistoryEntry[] = [first]
+        let nextIndex = index + 1
+        while (nextIndex < entries.length) {
+            const candidate = entries[nextIndex]
+            if (!candidate || candidate.sessionId !== first.sessionId || !isAutoRetryHistoryEntry(candidate)) {
+                break
+            }
+            group.push(candidate)
+            nextIndex += 1
+        }
+
+        const hasAutoContinue = group.some((entry) => entry.userText.trim().toLowerCase() === 'continue')
+        if (group.length < 2 || !hasAutoContinue) {
+            collapsed.push(...group)
+            index = nextIndex
+            continue
+        }
+
+        const terminalCount = group.filter((entry) => {
+            const excerpt = compactAutoRetryText(entry.assistantExcerpt)
+            return excerpt.includes('AUTO retry failed')
+        }).length
+        const continueCount = group.filter((entry) => entry.userText.trim().toLowerCase() === 'continue').length
+        const recoveryCount = Math.max(terminalCount, continueCount)
+        // The history API returns newest entries first; show the compact
+        // attempts in chronological order inside the aggregate detail.
+        const details = [...group].reverse().flatMap((entry) => {
+            const excerpt = compactAutoRetryText(entry.assistantExcerpt).trim()
+            const user = entry.userText.trim().toLowerCase() === 'continue' ? 'continue' : null
+            return [user, excerpt].filter((value): value is string => Boolean(value))
+        })
+        const summary = `AUTO recovery × ${recoveryCount || group.length}`
+
+        collapsed.push({
+            ...first,
+            userText: summary,
+            assistantExcerpt: summary,
+            autoRetryDetails: details
+        })
+        index = nextIndex
+    }
+
+    return collapsed
 }
 
 function getSearchTerms(query: string): string[] {
@@ -81,7 +151,8 @@ function buildSnippetAroundMatch(text: string, match: { index: number; term: str
 
 function getHistorySnippet(entry: ConversationHistoryEntry, query: string): { text: string; terms: string[] } {
     const terms = getSearchTerms(query)
-    const contentText = [entry.userText, entry.assistantExcerpt].filter(Boolean).join(' ')
+    const assistantExcerpt = compactAutoRetryText(entry.assistantExcerpt)
+    const contentText = [entry.userText, assistantExcerpt].filter(Boolean).join(' ')
     const candidates = [
         contentText,
         entry.title,
@@ -162,7 +233,11 @@ function formatHistoryDetailTime(value: number): string {
     }
 }
 
-function buildHistoryCopyText(entry: ConversationHistoryEntry, projectLabel: string | null, t: (key: string) => string): string {
+function buildHistoryCopyText(entry: HistoryDisplayEntry, projectLabel: string | null, t: (key: string) => string): string {
+    const assistantExcerpt = [
+        compactAutoRetryText(entry.assistantExcerpt),
+        ...(entry.autoRetryDetails ?? [])
+    ].filter(Boolean).join('\n')
     return [
         `${t('session.history.detail.title')}: ${entry.title}`,
         `${t('session.history.detail.time')}: ${formatHistoryDetailTime(entry.createdAt)}`,
@@ -174,13 +249,13 @@ function buildHistoryCopyText(entry: ConversationHistoryEntry, projectLabel: str
         entry.userText || '—',
         '',
         `${t('session.history.detail.assistant')}:`,
-        entry.assistantExcerpt || '—'
+        assistantExcerpt || '—'
     ].filter((item): item is string => item !== null).join('\n')
 }
 
 function ConversationHistoryDetailDialog(props: {
     api: ApiClient
-    entry: ConversationHistoryEntry | null
+    entry: HistoryDisplayEntry | null
     onOpenChange: (open: boolean) => void
     onOpenSession?: (sessionId: string) => void
 }) {
@@ -286,7 +361,10 @@ function ConversationHistoryDetailDialog(props: {
                                 maxHeight={260}
                             />
                             <CodeBlock
-                                code={entry.assistantExcerpt || '—'}
+                                code={[
+                                    compactAutoRetryText(entry.assistantExcerpt),
+                                    ...(entry.autoRetryDetails ?? [])
+                                ].filter(Boolean).join('\n') || '—'}
                                 language="text"
                                 title={t('session.history.detail.assistant')}
                                 scrollY
@@ -312,7 +390,7 @@ export function ConversationHistoryPanel(props: {
     const [queryInput, setQueryInput] = useState('')
     const [query, setQuery] = useState('')
     const [userOnly, setUserOnly] = useState(false)
-    const [selectedEntry, setSelectedEntry] = useState<ConversationHistoryEntry | null>(null)
+    const [selectedEntry, setSelectedEntry] = useState<HistoryDisplayEntry | null>(null)
     const scrollRef = useRef<HTMLDivElement | null>(null)
     const projectPath = props.session.metadata?.path ?? null
 
@@ -339,6 +417,11 @@ export function ConversationHistoryPanel(props: {
         query,
         userOnly
     })
+
+    const displayEntries = useMemo(
+        () => collapseAutoRetryHistoryEntries(history.entries, !userOnly),
+        [history.entries, userOnly]
+    )
 
     const scopeOptions = useMemo<Array<{ value: ConversationHistoryScope; label: string; disabled?: boolean }>>(() => [
         { value: 'session', label: t('session.history.scope.session') },
@@ -419,7 +502,7 @@ export function ConversationHistoryPanel(props: {
 
                     {history.isLoading ? (
                         <div className="py-10 text-center text-sm text-[var(--app-hint)]">{t('loading')}</div>
-                    ) : history.entries.length === 0 ? (
+                    ) : displayEntries.length === 0 ? (
                         <div className="py-10 text-center text-sm text-[var(--app-hint)]">{t('session.history.empty')}</div>
                     ) : (
                         <div className="overflow-hidden rounded-xl border border-[var(--app-border)]">
@@ -431,7 +514,7 @@ export function ConversationHistoryPanel(props: {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-[var(--app-border)]">
-                                    {history.entries.map((entry) => {
+                                    {displayEntries.map((entry) => {
                                         const projectLabel = getProjectLabel(entry)
                                         const snippet = getHistorySnippet(entry, query)
                                         return (

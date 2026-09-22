@@ -33,6 +33,16 @@ function addAgentMessage(store: Store, sessionId: string, text: string): void {
     })
 }
 
+function addAgentEvent(store: Store, sessionId: string, message: string): void {
+    store.messages.addMessage(sessionId, {
+        role: 'agent',
+        content: {
+            type: 'event',
+            data: { type: 'message', message }
+        }
+    })
+}
+
 function searchSessionHistory(store: Store, sessionId: string) {
     return store.history.search({
         namespace: 'default',
@@ -88,5 +98,48 @@ describe('ConversationHistoryService', () => {
             'User turn 1'
         ])
         expect(service.backfillSession(session.id)).toEqual({ entriesAttempted: 0 })
+    })
+
+    it('stores a compact AUTO retry label in history excerpts', () => {
+        const { store, cache, service } = createService()
+        const session = cache.getOrCreateSession(
+            'compact-retry-history',
+            { path: '/tmp/compact-retry-history', flavor: 'codex' },
+            null,
+            'default'
+        )
+
+        addUserMessage(store, session.id, 'Continue the task')
+        addAgentEvent(
+            store,
+            session.id,
+            'Task failed: Our servers are currently overloaded; retrying same conversation (2/3)'
+        )
+
+        service.recordCompletion(session.id)
+
+        const history = searchSessionHistory(store, session.id)
+        expect(history.entries[0]?.assistantExcerpt).toBe('AUTO retry 2/3')
+    })
+
+    it('compacts legacy raw retry excerpts when history is read', () => {
+        const { store, cache } = createService()
+        const session = cache.getOrCreateSession(
+            'legacy-compact-history',
+            { path: '/tmp/legacy-compact-history', flavor: 'codex' },
+            null,
+            'default'
+        )
+
+        store.history.addEntry({
+            namespace: 'default',
+            sessionId: session.id,
+            title: 'Legacy history',
+            userText: 'Continue',
+            assistantExcerpt: 'Task failed: Selected model is at capacity'
+        })
+
+        const history = searchSessionHistory(store, session.id)
+        expect(history.entries[0]?.assistantExcerpt).toBe('AUTO retry failed')
     })
 })

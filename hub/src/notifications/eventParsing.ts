@@ -1,4 +1,5 @@
 import { isObject } from '@hapi/protocol'
+import { isAutoRetryableErrorMessage } from '@hapi/protocol/autoContinue'
 import type { SyncEvent } from '../sync/syncEngine'
 
 type EventEnvelope = {
@@ -99,16 +100,19 @@ export function extractMessageEventType(event: SyncEvent): string | null {
     return typeof eventType === 'string' ? eventType : null
 }
 
-export function isFailureEventMessage(event: SyncEvent): string | null {
+export function extractMessageEventText(event: SyncEvent): string | null {
     const data = extractEventEnvelopeData(event)
     if (!data || data.type !== 'message' || typeof data.message !== 'string') {
         return null
     }
 
     const message = data.message.trim()
-    if (!message) {
-        return null
-    }
+    return message || null
+}
+
+export function isFailureEventMessage(event: SyncEvent): string | null {
+    const message = extractMessageEventText(event)
+    if (!message) return null
 
     const normalized = message.toLowerCase()
     if (
@@ -116,6 +120,7 @@ export function isFailureEventMessage(event: SyncEvent): string | null {
         || normalized.includes('error')
         || normalized.includes('aborted')
         || normalized.includes('unexpectedly')
+        || isAutoRetryableErrorMessage(normalized)
     ) {
         return message
     }

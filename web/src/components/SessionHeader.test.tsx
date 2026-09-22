@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import type { Session } from '@/types/api'
 import { SessionHeader } from './SessionHeader'
 
@@ -114,5 +114,39 @@ describe('SessionHeader', () => {
         expect(props.resumeCommand).toBe('codex resume codex-thread-1')
         expect(props.onForkSession).toEqual(expect.any(Function))
         expect(props.onSpawnSessionFromConfig).toEqual(expect.any(Function))
+    })
+
+    it('keeps takeover actions in the menu and exposes the AUTO switch in the header', () => {
+        const onToggleAutoContinue = vi.fn()
+        const onOpenAutoContinueSettings = vi.fn()
+        const onToggleAutoRetry = vi.fn()
+
+        render(
+            <SessionHeader
+                session={makeSession()}
+                onBack={vi.fn()}
+                api={null}
+                autoContinueEnabled
+                autoContinueRemaining={12}
+                onToggleAutoContinue={onToggleAutoContinue}
+                onOpenAutoContinueSettings={onOpenAutoContinueSettings}
+                autoRetryEnabled
+                onToggleAutoRetry={onToggleAutoRetry}
+            />,
+        )
+
+        const autoButton = screen.getByRole('button', { name: 'AUTO' })
+        expect(autoButton).toHaveAttribute('aria-pressed', 'true')
+        fireEvent.click(autoButton)
+        expect(onToggleAutoRetry).toHaveBeenCalledOnce()
+
+        const calls = mockSessionActionMenu.mock.calls as unknown as Array<[Record<string, unknown>]>
+        const menuProps = calls[calls.length - 1]?.[0]
+        expect(menuProps).toMatchObject({
+            autoContinueEnabled: true,
+            autoContinueRemaining: 12,
+            onToggleAutoContinue,
+            onOpenAutoContinueSettings
+        })
     })
 })

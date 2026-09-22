@@ -1,5 +1,6 @@
 import React from 'react';
 import { randomUUID } from 'node:crypto';
+import { compactAutoRetryMessage, isAutoRetryableErrorMessage } from '@hapi/protocol/autoContinue';
 
 import { CodexAppServerClient } from './codexAppServerClient';
 import { CodexPermissionHandler } from './utils/permissionHandler';
@@ -29,7 +30,6 @@ type HappyServer = Awaited<ReturnType<typeof buildHapiMcpBridge>>['server'];
 type QueuedMessage = { message: string; mode: EnhancedMode; isolate: boolean; hash: string };
 
 const SAME_THREAD_RETRYABLE_ERROR_PATTERNS = [
-    'selected model is at capacity',
     'codex thread entered systemerror'
 ];
 const CONTEXT_COMPACT_RETRYABLE_ERROR_PATTERNS = [
@@ -46,7 +46,8 @@ function isSameThreadRetryableCodexError(error: string | null): boolean {
         return false;
     }
     const normalized = error.toLowerCase();
-    return SAME_THREAD_RETRYABLE_ERROR_PATTERNS.some((pattern) => normalized.includes(pattern));
+    return isAutoRetryableErrorMessage(normalized)
+        || SAME_THREAD_RETRYABLE_ERROR_PATTERNS.some((pattern) => normalized.includes(pattern));
 }
 
 function isContextCompactRetryableCodexError(error: string | null): boolean {
@@ -580,17 +581,17 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                     const retryMessage = error
                         ? `Task failed: ${error}; compacting same conversation before retry (${sameThreadCompactAttempt}/${SAME_THREAD_MAX_COMPACT_RETRIES})`
                         : `Task failed; compacting same conversation before retry (${sameThreadCompactAttempt}/${SAME_THREAD_MAX_COMPACT_RETRIES})`;
-                    messageBuffer.addMessage(retryMessage, 'status');
+                    messageBuffer.addMessage(compactAutoRetryMessage(retryMessage) ?? retryMessage, 'status');
                     session.sendSessionEvent({ type: 'message', message: retryMessage });
                 } else if (shouldRetrySameThread) {
                     const retryMessage = error
                         ? `Task failed: ${error}; retrying same conversation (${sameThreadRetryAttempt}/${SAME_THREAD_MAX_RETRIES})`
                         : `Task failed; retrying same conversation (${sameThreadRetryAttempt}/${SAME_THREAD_MAX_RETRIES})`;
-                    messageBuffer.addMessage(retryMessage, 'status');
+                    messageBuffer.addMessage(compactAutoRetryMessage(retryMessage) ?? retryMessage, 'status');
                     session.sendSessionEvent({ type: 'message', message: retryMessage });
                 } else {
                     const message = error ? `Task failed: ${error}` : 'Task failed';
-                    messageBuffer.addMessage(message, 'status');
+                    messageBuffer.addMessage(compactAutoRetryMessage(message) ?? message, 'status');
                     session.sendSessionEvent({ type: 'message', message });
                 }
             }

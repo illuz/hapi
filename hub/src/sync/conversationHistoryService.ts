@@ -1,4 +1,6 @@
 import { unwrapRoleWrappedRecordEnvelope } from '@hapi/protocol/messages'
+import { compactAutoRetryText } from '@hapi/protocol/autoContinue'
+import { isObject } from '@hapi/protocol'
 import type { Session } from '@hapi/protocol/types'
 import type { Store, StoredMessage } from '../store'
 
@@ -57,7 +59,12 @@ function getSessionTitle(session: Session): string {
 
 function getMessageText(message: StoredMessage): string {
     const record = unwrapRoleWrappedRecordEnvelope(message.content)
-    return extractText(record?.content ?? message.content)
+    const content = record?.content ?? message.content
+    if (isObject(content) && content.type === 'event' && isObject(content.data)
+        && content.data.type === 'message' && typeof content.data.message === 'string') {
+        return compactAutoRetryText(content.data.message)
+    }
+    return extractText(content)
 }
 
 type TurnRecord = {

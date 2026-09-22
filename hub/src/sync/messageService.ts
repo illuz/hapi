@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 import type { Store, CancelQueuedMessageResult } from '../store'
 import { EventPublisher } from './eventPublisher'
 
-export type MessageSentFrom = 'telegram-bot' | 'webapp' | 'auto-continue' | 'project-agent' | 'cron' | 'shared-guest'
+export type MessageSentFrom = 'telegram-bot' | 'webapp' | 'auto-continue' | 'auto-retry' | 'project-agent' | 'cron' | 'shared-guest'
 type MessageMetaPatch = {
     appendSystemPrompt?: string | null
     customSystemPrompt?: string | null

@@ -59,6 +59,7 @@ function createApp(session: Session, opts?: {
     resolveSessionAccess?: SyncEngine['resolveSessionAccess']
     archiveSession?: (sessionId: string) => Promise<void>
     deleteSession?: (sessionId: string) => Promise<void>
+    updateAutoContinueSettings?: SyncEngine['updateAutoContinueSettings']
     listSlashCommands?: SyncEngine['listSlashCommands']
 }) {
     const applySessionConfigCalls: Array<[string, Record<string, unknown>]> = []
@@ -66,6 +67,7 @@ function createApp(session: Session, opts?: {
     const setSessionMarkerColorCalls: Array<[string, Session['markerColor']]> = []
     const archiveSessionCalls: string[] = []
     const deleteSessionCalls: string[] = []
+    const autoContinueSettingsCalls: Array<[string, Parameters<SyncEngine['updateAutoContinueSettings']>[1]]> = []
     const applySessionConfig = async (sessionId: string, config: Record<string, unknown>) => {
         applySessionConfigCalls.push([sessionId, config])
     }
@@ -98,6 +100,12 @@ function createApp(session: Session, opts?: {
     const deleteSession = opts?.deleteSession ?? (async (sessionId: string) => {
         deleteSessionCalls.push(sessionId)
     })
+    const updateAutoContinueSettings = opts?.updateAutoContinueSettings ?? (async (
+        sessionId: string,
+        settings: Parameters<SyncEngine['updateAutoContinueSettings']>[1]
+    ) => {
+        autoContinueSettingsCalls.push([sessionId, settings])
+    })
     const engine = {
         resolveSessionAccess: opts?.resolveSessionAccess ?? (() => ({ ok: true, sessionId: session.id, session })),
         applySessionConfig,
@@ -110,6 +118,7 @@ function createApp(session: Session, opts?: {
         forkSession,
         archiveSession,
         deleteSession,
+        updateAutoContinueSettings,
         listSlashCommands: opts?.listSlashCommands ?? (async () => ({
             success: true,
             commands: []
@@ -129,11 +138,33 @@ function createApp(session: Session, opts?: {
         renameSessionCalls,
         setSessionMarkerColorCalls,
         archiveSessionCalls,
-        deleteSessionCalls
+        deleteSessionCalls,
+        autoContinueSettingsCalls
     }
 }
 
 describe('sessions routes', () => {
+    it('updates AUTO overload recovery without changing takeover settings', async () => {
+        const { app, autoContinueSettingsCalls } = createApp(createSession())
+
+        const response = await app.request('/api/sessions/session-1/auto-continue', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+                enabled: false,
+                remaining: 20,
+                maxRuns: 20,
+                keywords: ['next step'],
+                messageText: 'continue',
+                retryOnOverload: true
+            })
+        })
+
+        expect(response.status).toBe(200)
+        expect(autoContinueSettingsCalls[0]?.[0]).toBe('session-1')
+        expect(autoContinueSettingsCalls[0]?.[1].retryOnOverload).toBe(true)
+    })
+
     it('spawns a new session from stored config', async () => {
         let captured: { sessionId: string; namespace: string; agent?: 'claude' | 'codex' } | null = null
         const { app } = createApp(createSession(), {

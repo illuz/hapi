@@ -1,4 +1,4 @@
-import { useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useId, useMemo, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import type { AgentFlavor, Session } from '@/types/api'
 import type { ApiClient } from '@/api/client'
@@ -111,7 +111,13 @@ export function SessionHeader(props: {
     onOpenHistory?: () => void
     api: ApiClient | null
     onSessionDeleted?: () => void
-    autoContinueButton?: ReactNode
+    autoContinueEnabled?: boolean
+    autoContinueRemaining?: number
+    onToggleAutoContinue?: () => void
+    onOpenAutoContinueSettings?: () => void
+    autoRetryEnabled?: boolean
+    autoRetryPending?: boolean
+    onToggleAutoRetry?: () => void
 }) {
     const { t } = useTranslation()
     const { session, api, onSessionDeleted } = props
@@ -283,7 +289,21 @@ export function SessionHeader(props: {
                         </div>
                     </div>
 
-                    {props.autoContinueButton ?? null}
+                    {props.onToggleAutoRetry ? (
+                        <button
+                            type="button"
+                            aria-pressed={props.autoRetryEnabled === true}
+                            disabled={props.autoRetryPending}
+                            onClick={props.onToggleAutoRetry}
+                            className={`inline-flex h-8 items-center rounded-full border px-2.5 text-[11px] font-semibold tracking-wide transition-colors disabled:cursor-wait disabled:opacity-60 ${props.autoRetryEnabled === true
+                                ? 'border-[var(--app-link)] bg-[var(--app-link)] text-[var(--app-bg)]'
+                                : 'border-[var(--app-border)] bg-[var(--app-secondary-bg)] text-[var(--app-hint)] hover:text-[var(--app-fg)]'
+                            }`}
+                            title={t(props.autoRetryEnabled === true ? 'session.autoRetryOn' : 'session.autoRetryOff')}
+                        >
+                            AUTO
+                        </button>
+                    ) : null}
 
                     <button
                         type="button"
@@ -398,6 +418,10 @@ export function SessionHeader(props: {
                 sessionActive={session.active}
                 resumeCommand={resumeCommand}
                 pinned={session.pinned === true}
+                autoContinueEnabled={props.autoContinueEnabled}
+                autoContinueRemaining={props.autoContinueRemaining}
+                onToggleAutoContinue={props.onToggleAutoContinue}
+                onOpenAutoContinueSettings={props.onOpenAutoContinueSettings}
                 onTogglePinned={() => {
                     if (typeof setSessionPinned === 'function') {
                         void Promise.resolve(setSessionPinned(session.pinned !== true)).catch((error: unknown) => {

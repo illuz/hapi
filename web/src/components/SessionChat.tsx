@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { AssistantRuntimeProvider } from '@assistant-ui/react'
+import { normalizeAutoContinueSettings as normalizeServerAutoContinueSettings } from '@hapi/protocol/autoContinue'
 import type { ApiClient } from '@/api/client'
 import type {
     AttachmentMetadata,
@@ -90,6 +91,12 @@ export function SessionChat(props: {
     const [autoContinueStopKeywords, setAutoContinueStopKeywords] = useState<string[]>([])
     const [autoContinuePrompt, setAutoContinuePrompt] = useState(AUTO_CONTINUE_DEFAULT_PROMPT)
     const [autoContinueDialogOpen, setAutoContinueDialogOpen] = useState(false)
+    const serverAutoContinueSettings = useMemo(
+        () => normalizeServerAutoContinueSettings(props.session.metadata?.autoContinue),
+        [props.session.metadata?.autoContinue]
+    )
+    const [autoRetryEnabled, setAutoRetryEnabled] = useState(serverAutoContinueSettings.retryOnOverload)
+    const [autoRetryPending, setAutoRetryPending] = useState(false)
     const [outlineOpen, setOutlineOpen] = useState(false)
     const [historyOpen, setHistoryOpen] = useState(false)
     const [outlineForkingItemIndex, setOutlineForkingItemIndex] = useState<number | null>(null)
@@ -273,6 +280,11 @@ export function SessionChat(props: {
         setAutoContinuePrompt(state.prompt)
         lastAutoContinueKeyRef.current = null
     }, [props.session.id])
+
+    useEffect(() => {
+        setAutoRetryEnabled(serverAutoContinueSettings.retryOnOverload)
+        setAutoRetryPending(false)
+    }, [props.session.id, serverAutoContinueSettings.retryOnOverload])
 
     useEffect(() => {
         prevAutoContinueThinkingRef.current = props.session.thinking
@@ -523,6 +535,41 @@ export function SessionChat(props: {
         setAutoContinuePrompt(settings.prompt)
     }, [])
 
+    const handleAutoRetryToggle = useCallback(() => {
+        if (autoRetryPending) return
+
+        const nextEnabled = !autoRetryEnabled
+        setAutoRetryEnabled(nextEnabled)
+        setAutoRetryPending(true)
+
+        void props.api.setAutoContinueSettings(props.session.id, {
+            ...serverAutoContinueSettings,
+            retryOnOverload: nextEnabled
+        }).then(() => {
+            props.onRefresh()
+        }).catch((error: unknown) => {
+            setAutoRetryEnabled(!nextEnabled)
+            addToast({
+                title: t('session.autoRetryUpdateFailed'),
+                body: error instanceof Error ? error.message : t('dialog.error.default'),
+                sessionId: props.session.id,
+                url: `/sessions/${props.session.id}`,
+                kind: 'failure'
+            })
+        }).finally(() => {
+            setAutoRetryPending(false)
+        })
+    }, [
+        addToast,
+        autoRetryEnabled,
+        autoRetryPending,
+        props.api,
+        props.onRefresh,
+        props.session.id,
+        serverAutoContinueSettings,
+        t
+    ])
+
     const quickPromptActions = useMemo<QuickPromptAction[]>(() => {
         const commonActions: QuickPromptAction[] = [
             { id: 'commit', label: 'ok, commit it', message: 'ok, commit it' },
@@ -651,47 +698,6 @@ export function SessionChat(props: {
         }
     }, [addToast, agentFlavor, forkSession, haptic, navigate, outlineForkingItemIndex, outlineItems.length, props.session.id, t])
 
-    const autoContinueButton = (
-        <div className="flex items-center gap-1">
-            <button
-                type="button"
-                onClick={handleAutoContinueToggle}
-                className={`inline-flex h-8 items-center gap-1 rounded-full border px-3 text-xs font-medium transition-colors ${
-                    autoContinueEnabled
-                        ? 'border-[var(--app-link)] bg-[var(--app-link)] text-[var(--app-bg)]'
-                        : 'border-[var(--app-border)] bg-[var(--app-secondary-bg)] text-[var(--app-hint)] hover:text-[var(--app-fg)]'
-                }`}
-                title={t(autoContinueEnabled ? 'session.autoContinueOn' : 'session.autoContinueOff', {
-                    n: displayedAutoContinueRemaining
-                })}
-            >
-                <span>{t('session.autoContinueShort')}</span>
-                <span>{displayedAutoContinueRemaining}</span>
-            </button>
-            <button
-                type="button"
-                onClick={() => setAutoContinueDialogOpen(true)}
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--app-secondary-bg)] text-[var(--app-hint)] transition-colors hover:text-[var(--app-fg)]"
-                title={t('session.autoContinueSettings')}
-            >
-                <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                >
-                    <circle cx="12" cy="12" r="3" />
-                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82L4.21 7.2a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01A1.65 1.65 0 0 0 10 3.25V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-                </svg>
-            </button>
-        </div>
-    )
-
     return (
         <div className="flex h-full min-h-0 flex-col">
             <SessionHeader
@@ -702,7 +708,13 @@ export function SessionChat(props: {
                 onOpenHistory={() => setHistoryOpen(true)}
                 api={props.api}
                 onSessionDeleted={props.onBack}
-                autoContinueButton={autoContinueButton}
+                autoContinueEnabled={autoContinueEnabled}
+                autoContinueRemaining={displayedAutoContinueRemaining}
+                onToggleAutoContinue={handleAutoContinueToggle}
+                onOpenAutoContinueSettings={() => setAutoContinueDialogOpen(true)}
+                autoRetryEnabled={autoRetryEnabled}
+                autoRetryPending={autoRetryPending}
+                onToggleAutoRetry={handleAutoRetryToggle}
             />
 
             <ConversationHistoryPanel

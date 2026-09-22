@@ -33,6 +33,7 @@ class FakeSyncEngine {
 class StubChannel implements NotificationChannel {
     readonly readySessions: Session[] = []
     readonly permissionSessions: Session[] = []
+    readonly failures: Array<{ session: Session; message: string }> = []
     readonly taskNotifications: Array<{ session: Session; notification: TaskNotification }> = []
     readonly sessionCompletions: Session[] = []
 
@@ -42,6 +43,10 @@ class StubChannel implements NotificationChannel {
 
     async sendPermissionRequest(session: Session): Promise<void> {
         this.permissionSessions.push(session)
+    }
+
+    async sendFailure(session: Session, message: string): Promise<void> {
+        this.failures.push({ session, message })
     }
 
     async sendTaskNotification(session: Session, notification: TaskNotification): Promise<void> {
@@ -167,6 +172,288 @@ describe('NotificationHub', () => {
         await sleep(5)
         expect(channel.readySessions).toHaveLength(2)
 
+        hub.stop()
+    })
+
+    it('silences retryable overload failures until AUTO recovery starts', async () => {
+        const engine = new FakeSyncEngine()
+        const channel = new StubChannel()
+        const hub = new NotificationHub(engine as unknown as SyncEngine, [channel], {
+            permissionDebounceMs: 1,
+            readyCooldownMs: 1
+        })
+        const session = createSession({
+            metadata: {
+                path: '/tmp/project',
+                host: 'localhost',
+                flavor: 'codex',
+                autoContinue: {
+                    enabled: false,
+                    remaining: 20,
+                    maxRuns: 20,
+                    keywords: ['next step'],
+                    messageText: 'continue',
+                    retryOnOverload: true
+                }
+            }
+        })
+        engine.setSession(session)
+
+        engine.emit({
+            type: 'message-received',
+            sessionId: session.id,
+            message: {
+                id: 'message-failure',
+                seq: 1,
+                localId: null,
+                createdAt: 0,
+                content: {
+                    role: 'agent',
+                    content: {
+                        type: 'event',
+                        data: {
+                            type: 'message',
+                            message: 'Our servers are currently overloaded'
+                        }
+                    }
+                }
+            }
+        })
+        engine.emit({
+            type: 'message-received',
+            sessionId: session.id,
+            message: {
+                id: 'message-ready-after-failure',
+                seq: 2,
+                localId: null,
+                createdAt: 0,
+                content: {
+                    role: 'agent',
+                    content: { type: 'event', data: { type: 'ready' } }
+                }
+            }
+        })
+        await sleep(5)
+
+        expect(channel.failures).toHaveLength(0)
+        expect(channel.readySessions).toHaveLength(0)
+
+        engine.setSession({ ...session, thinking: true })
+        engine.emit({ type: 'session-updated', sessionId: session.id })
+        engine.emit({
+            type: 'message-received',
+            sessionId: session.id,
+            message: {
+                id: 'message-ready-during-queued-grace',
+                seq: 2,
+                localId: null,
+                createdAt: 0,
+                content: {
+                    role: 'agent',
+                    content: { type: 'event', data: { type: 'ready' } }
+                }
+            }
+        })
+        await sleep(5)
+        expect(channel.readySessions).toHaveLength(0)
+
+        engine.setSession({ ...session, thinking: false })
+        engine.emit({
+            type: 'message-received',
+            sessionId: session.id,
+            message: {
+                id: 'message-auto-continue',
+                seq: 3,
+                localId: null,
+                createdAt: 0,
+                content: {
+                    role: 'user',
+                    content: { type: 'text', text: 'continue' },
+                    meta: { sentFrom: 'auto-retry' }
+                }
+            }
+        })
+        engine.emit({
+            type: 'message-received',
+            sessionId: session.id,
+            message: {
+                id: 'message-ready-after-success',
+                seq: 4,
+                localId: null,
+                createdAt: 0,
+                content: {
+                    role: 'agent',
+                    content: { type: 'event', data: { type: 'ready' } }
+                }
+            }
+        })
+        await sleep(5)
+
+        expect(channel.readySessions).toHaveLength(1)
+        hub.stop()
+    })
+
+    it('keeps retryable failure notifications when AUTO is off', async () => {
+        const engine = new FakeSyncEngine()
+        const channel = new StubChannel()
+        const hub = new NotificationHub(engine as unknown as SyncEngine, [channel])
+        const session = createSession()
+        engine.setSession(session)
+
+        engine.emit({
+            type: 'message-received',
+            sessionId: session.id,
+            message: {
+                id: 'message-capacity-failure',
+                seq: 1,
+                localId: null,
+                createdAt: 0,
+                content: {
+                    role: 'agent',
+                    content: {
+                        type: 'event',
+                        data: {
+                            type: 'message',
+                            message: 'Selected model is at capacity'
+                        }
+                    }
+                }
+            }
+        })
+        await sleep(5)
+
+        expect(channel.failures).toHaveLength(1)
+        hub.stop()
+    })
+
+    it('keeps ready silent while terminal AUTO recovery is pending, then notifies after success', async () => {
+        const engine = new FakeSyncEngine()
+        const channel = new StubChannel()
+        const hub = new NotificationHub(engine as unknown as SyncEngine, [channel], {
+            permissionDebounceMs: 1,
+            readyCooldownMs: 1
+        })
+        const session = createSession({
+            metadata: {
+                path: '/tmp/project',
+                host: 'localhost',
+                flavor: 'codex',
+                autoContinue: {
+                    enabled: false,
+                    remaining: 20,
+                    maxRuns: 20,
+                    keywords: ['next step'],
+                    messageText: 'continue',
+                    retryOnOverload: true
+                }
+            }
+        })
+        engine.setSession(session)
+
+        const eventMessage = (id: string, content: unknown, seq: number): SyncEvent => ({
+            type: 'message-received',
+            sessionId: session.id,
+            message: {
+                id,
+                seq,
+                localId: null,
+                createdAt: 0,
+                content
+            }
+        })
+
+        engine.emit(eventMessage('failure', {
+            role: 'agent',
+            content: {
+                type: 'event',
+                data: { type: 'message', message: 'Task failed: Selected model is at capacity' }
+            }
+        }, 1))
+        engine.emit(eventMessage('ready-before-auto', {
+            role: 'agent',
+            content: { type: 'event', data: { type: 'ready' } }
+        }, 2))
+        await sleep(5)
+        expect(channel.readySessions).toHaveLength(0)
+
+        engine.emit(eventMessage('auto-continue', {
+            role: 'user',
+            content: { type: 'text', text: 'continue' },
+            meta: { sentFrom: 'auto-retry' }
+        }, 3))
+        engine.emit(eventMessage('ready-after-auto', {
+            role: 'agent',
+            content: { type: 'event', data: { type: 'ready' } }
+        }, 4))
+        await sleep(5)
+        expect(channel.readySessions).toHaveLength(1)
+        expect(channel.failures).toHaveLength(0)
+
+        hub.stop()
+    })
+
+    it('allows ready after an in-progress built-in retry succeeds', async () => {
+        const engine = new FakeSyncEngine()
+        const channel = new StubChannel()
+        const hub = new NotificationHub(engine as unknown as SyncEngine, [channel], {
+            permissionDebounceMs: 1,
+            readyCooldownMs: 1
+        })
+        const session = createSession({
+            metadata: {
+                path: '/tmp/project',
+                host: 'localhost',
+                flavor: 'codex',
+                autoContinue: {
+                    enabled: false,
+                    remaining: 20,
+                    maxRuns: 20,
+                    keywords: ['next step'],
+                    messageText: 'continue',
+                    retryOnOverload: true
+                }
+            }
+        })
+        engine.setSession(session)
+
+        engine.emit({
+            type: 'message-received',
+            sessionId: session.id,
+            message: {
+                id: 'retrying',
+                seq: 1,
+                localId: null,
+                createdAt: 0,
+                content: {
+                    role: 'agent',
+                    content: {
+                        type: 'event',
+                        data: {
+                            type: 'message',
+                            message: 'Task failed: Our servers are currently overloaded; retrying same conversation (1/3)'
+                        }
+                    }
+                }
+            }
+        })
+        engine.emit({
+            type: 'message-received',
+            sessionId: session.id,
+            message: {
+                id: 'ready-after-built-in-retry',
+                seq: 2,
+                localId: null,
+                createdAt: 0,
+                content: {
+                    role: 'agent',
+                    content: { type: 'event', data: { type: 'ready' } }
+                }
+            }
+        })
+        await sleep(5)
+
+        expect(channel.readySessions).toHaveLength(1)
+        expect(channel.failures).toHaveLength(0)
         hub.stop()
     })
 

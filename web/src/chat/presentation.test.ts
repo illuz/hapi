@@ -96,6 +96,57 @@ describe('getEventPresentation — token-count', () => {
     })
 })
 
+describe('getEventPresentation — AUTO retry errors', () => {
+    it('hides the provider error and keeps the retry attempt marker', () => {
+        const result = getEventPresentation({
+            type: 'message',
+            message: 'Task failed: Our servers are currently overloaded; retrying same conversation (2/3)'
+        })
+
+        expect(result.icon).toBe('⏳')
+        expect(result.text).toBe('AUTO retry 2/3')
+    })
+
+    it('uses a compact terminal marker', () => {
+        const result = getEventPresentation({
+            type: 'message',
+            message: 'Task failed: Selected model is at capacity'
+        })
+
+        expect(result.icon).toBe('⚠️')
+        expect(result.text).toBe('AUTO retry failed')
+    })
+
+    it('keeps an in-progress marker when the provider omits retry counts', () => {
+        const result = getEventPresentation({
+            type: 'message',
+            message: 'Task failed: Our servers are currently overloaded; retrying same conversation'
+        })
+
+        expect(result.icon).toBe('⏳')
+        expect(result.text).toBe('AUTO retrying')
+    })
+
+    it('renders a folded recovery summary with expandable details', () => {
+        const result = getEventPresentation({
+            type: 'auto-retry-summary',
+            recoveryCount: 3,
+            retryCount: 8,
+            details: [
+                'AUTO retry 1/3',
+                'Task failed: Selected model is at capacity',
+                'continue'
+            ]
+        })
+
+        expect(result).toEqual({
+            icon: '🔁',
+            text: 'AUTO recovery × 3',
+            details: ['AUTO retry 1/3', 'AUTO retry failed', 'continue']
+        })
+    })
+})
+
 describe('formatResetTime', () => {
     it('formats a unix timestamp to a non-empty string', () => {
         const result = formatResetTime(1774278000)

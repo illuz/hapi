@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
+import { compactAutoRetryText } from '@hapi/protocol/autoContinue'
 import type { SessionMarkerColor } from '@hapi/protocol/types'
 
 import type { StoredHistoryEntry } from './types'
@@ -74,7 +75,7 @@ function toStoredHistoryEntry(row: DbHistoryRow): StoredHistoryEntry {
         projectHost: row.project_host,
         markerColor: row.marker_color as SessionMarkerColor | null,
         userText: row.user_text,
-        assistantExcerpt: row.assistant_excerpt
+        assistantExcerpt: compactAutoRetryText(row.assistant_excerpt)
     }
 }
 
@@ -87,6 +88,7 @@ function normalizeLikeQuery(query: string | null | undefined): string | null {
 export function addHistoryEntry(db: Database, input: AddHistoryEntryInput): StoredHistoryEntry {
     const id = randomUUID()
     const createdAt = input.createdAt ?? Date.now()
+    const assistantExcerpt = compactAutoRetryText(input.assistantExcerpt)
 
     db.prepare(`
         INSERT OR IGNORE INTO conversation_history (
@@ -108,7 +110,7 @@ export function addHistoryEntry(db: Database, input: AddHistoryEntryInput): Stor
         project_host: input.projectHost ?? null,
         marker_color: input.markerColor ?? null,
         user_text: input.userText,
-        assistant_excerpt: input.assistantExcerpt
+        assistant_excerpt: assistantExcerpt
     })
 
     if (input.assistantMessageId && input.projectHost) {

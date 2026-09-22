@@ -24,6 +24,7 @@ import { EventPublisher, type SyncEventListener } from './eventPublisher'
 import { MachineCache, type Machine } from './machineCache'
 import { MessageService, type MessageSentFrom } from './messageService'
 import { AutoContinueService } from './autoContinueService'
+import { AutoRetryService } from './autoRetryService'
 import {
     RpcGateway,
     type RpcCodexModel,
@@ -117,6 +118,7 @@ export class SyncEngine {
     private readonly machineCache: MachineCache
     private readonly messageService: MessageService
     private readonly autoContinueService: AutoContinueService
+    private readonly autoRetryService: AutoRetryService
     private readonly rpcGateway: RpcGateway
     private readonly projectToolsService: ProjectToolsService
     private readonly portMappingService: PortMappingService
@@ -145,6 +147,11 @@ export class SyncEngine {
             sendMessage: (sessionId, payload) => this.messageService.sendMessage(sessionId, payload),
             updateSettings: (sessionId, settings) => this.sessionCache.updateAutoContinueSettings(sessionId, settings)
         })
+        this.autoRetryService = new AutoRetryService({
+            getSession: (sessionId) => this.getSession(sessionId),
+            switchSession: (sessionId, to) => this.switchSession(sessionId, to),
+            sendMessage: (sessionId, payload) => this.sendMessage(sessionId, payload)
+        })
         this.rpcGateway = new RpcGateway(io, rpcRegistry)
         this.conversationHistoryService = new ConversationHistoryService(store, (sessionId) => this.getSession(sessionId))
         this.portMappingService = new PortMappingService({
@@ -170,6 +177,7 @@ export class SyncEngine {
     }
 
     stop(): void {
+        this.autoRetryService.stop()
         if (this.inactivityTimer) {
             clearInterval(this.inactivityTimer)
             this.inactivityTimer = null
@@ -354,6 +362,7 @@ export class SyncEngine {
             if (!this.getSession(event.sessionId)) {
                 this.sessionCache.refreshSession(event.sessionId)
             }
+            this.autoRetryService.handleEvent(event)
         }
 
         this.eventPublisher.emit(event)
@@ -381,6 +390,7 @@ export class SyncEngine {
     }
 
     handleSessionEnd(payload: { sid: string; time: number; reason?: 'completed' | 'terminated' | 'error' }): void {
+        this.autoRetryService.cancelPending(payload.sid)
         this.conversationHistoryService.recordCompletion(payload.sid)
         this.sessionCache.handleSessionEnd(payload)
         this.eventPublisher.emit({
@@ -459,6 +469,9 @@ export class SyncEngine {
             meta?: SendMessageMeta
         }
     ): Promise<void> {
+        if (payload.sentFrom !== 'auto-retry') {
+            this.autoRetryService.cancelPending(sessionId)
+        }
         await this.messageService.sendMessage(sessionId, this.withProjectAgentContext(sessionId, payload))
         this.sessionCache.markMessageQueued(sessionId)
     }
@@ -523,6 +536,7 @@ export class SyncEngine {
     }
 
     async abortSession(sessionId: string): Promise<void> {
+        this.autoRetryService.cancelPending(sessionId)
         await this.rpcGateway.abortSession(sessionId)
     }
 

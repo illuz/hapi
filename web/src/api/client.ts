@@ -504,6 +504,7 @@ export class ApiClient {
         maxRuns: number
         keywords: string[]
         messageText: string
+        retryOnOverload: boolean
     }): Promise<void> {
         await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/auto-continue`, {
             method: 'POST',

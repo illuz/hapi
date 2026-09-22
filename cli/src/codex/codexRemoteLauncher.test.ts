@@ -415,6 +415,24 @@ describe('codexRemoteLauncher', () => {
         expect(session.thinking).toBe(false);
     });
 
+    it('retries overloaded server failures on the same thread', async () => {
+        harness.remainingThreadSystemErrors = 1;
+        harness.nextThreadSystemErrorMessage = 'Our servers are currently overloaded. Please try again later.';
+        const { session, sessionEvents } = createSessionStub(['first message']);
+
+        const exitReason = await codexRemoteLauncher(session as never);
+
+        expect(exitReason).toBe('exit');
+        expect(harness.startThreadIds).toEqual(['thread-1']);
+        expect(harness.startTurnThreadIds).toEqual(['thread-1', 'thread-1']);
+        expect(harness.startTurnMessages).toEqual(['first message', 'first message']);
+        expect(sessionEvents).not.toContainEqual({
+            type: 'message',
+            message: 'Task failed: Our servers are currently overloaded. Please try again later.'
+        });
+        expect(session.thinking).toBe(false);
+    });
+
     it('compacts the same thread before retrying context-window overflow', async () => {
         harness.remainingThreadSystemErrors = 1;
         harness.nextThreadSystemErrorMessage = "Codex ran out of room in the model's context window. Start a new thread or clear earlier history before retrying.";

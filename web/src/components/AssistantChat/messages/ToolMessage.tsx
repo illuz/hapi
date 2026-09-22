@@ -4,6 +4,7 @@ import type { ToolCallBlock } from '@/chat/types'
 import { isObject, safeStringify } from '@hapi/protocol'
 import { isSubagentToolName } from '@/chat/subagentTool'
 import { getEventPresentation } from '@/chat/presentation'
+import { EventPresentationView } from './EventPresentationView'
 import { CodeBlock } from '@/components/CodeBlock'
 import { MarkdownRenderer } from '@/components/MarkdownRenderer'
 import { MessageStatusIndicator } from '@/components/AssistantChat/messages/MessageStatusIndicator'
@@ -100,10 +101,7 @@ function HappyNestedBlockList(props: {
                     return (
                         <div key={`event:${block.id}`} className="py-1">
                             <div className="mx-auto w-fit max-w-[92%] px-2 text-center text-xs text-[var(--app-hint)] opacity-80">
-                                <span className="inline-flex items-center gap-1">
-                                    {presentation.icon ? <span aria-hidden="true">{presentation.icon}</span> : null}
-                                    <span>{presentation.text}</span>
-                                </span>
+                                <EventPresentationView presentation={presentation} />
                             </div>
                         </div>
                     )

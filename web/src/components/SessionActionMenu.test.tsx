@@ -41,6 +41,8 @@ vi.mock('@/lib/use-translation', () => ({
                 'session.action.newSessionCl': 'New session',
                 'session.action.archive': 'Archive',
                 'session.action.delete': 'Delete',
+                'session.autoContinueShort': 'Takeover',
+                'session.autoContinueSettings': 'Takeover settings',
                 'session.marker.red': 'Red',
                 'session.marker.orange': 'Orange',
                 'session.marker.yellow': 'Yellow',
@@ -160,6 +162,55 @@ describe('SessionActionMenu', () => {
         fireEvent.click(screen.getByRole('menuitem', { name: 'Pin to top' }))
         expect(onTogglePinned).toHaveBeenCalledOnce()
         expect(onClose).toHaveBeenCalledOnce()
+    })
+
+    it('keeps takeover controls inside the action menu', () => {
+        const onClose = vi.fn()
+        const onToggleAutoContinue = vi.fn()
+        const onOpenAutoContinueSettings = vi.fn()
+
+        render(
+            <SessionActionMenu
+                isOpen
+                onClose={onClose}
+                sessionActive={false}
+                autoContinueEnabled
+                autoContinueRemaining={12}
+                onToggleAutoContinue={onToggleAutoContinue}
+                onOpenAutoContinueSettings={onOpenAutoContinueSettings}
+                markerColor={null}
+                onSelectMarkerColor={vi.fn()}
+                onRename={vi.fn()}
+                onArchive={vi.fn()}
+                onDelete={vi.fn()}
+                anchorPoint={{ x: 100, y: 100 }}
+            />,
+        )
+
+        const toggle = screen.getByRole('menuitemcheckbox', { name: 'Takeover 12' })
+        expect(toggle).toHaveAttribute('aria-checked', 'true')
+        fireEvent.click(toggle)
+        expect(onToggleAutoContinue).toHaveBeenCalledOnce()
+        expect(onClose).toHaveBeenCalledOnce()
+
+        cleanup()
+        render(
+            <SessionActionMenu
+                isOpen
+                onClose={onClose}
+                sessionActive={false}
+                onOpenAutoContinueSettings={onOpenAutoContinueSettings}
+                markerColor={null}
+                onSelectMarkerColor={vi.fn()}
+                onRename={vi.fn()}
+                onArchive={vi.fn()}
+                onDelete={vi.fn()}
+                anchorPoint={{ x: 100, y: 100 }}
+            />,
+        )
+
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Takeover settings' }))
+        expect(onOpenAutoContinueSettings).toHaveBeenCalledOnce()
     })
 
     it('renders Codex and Claude new-session actions', async () => {

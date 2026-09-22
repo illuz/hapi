@@ -107,4 +107,49 @@ describe('ConversationHistoryPanel', () => {
         expect(await screen.findByText('This conversation has been deleted.')).toBeInTheDocument()
         expect(onOpenSession).not.toHaveBeenCalled()
     })
+
+    it('folds consecutive AUTO retry history entries into one aggregate row', async () => {
+        const entries: ConversationHistoryEntry[] = [
+            {
+                ...entry,
+                id: 'history-3',
+                createdAt: entry.createdAt + 2_000,
+                userText: 'continue',
+                assistantExcerpt: 'AUTO retry failed'
+            },
+            {
+                ...entry,
+                id: 'history-2',
+                createdAt: entry.createdAt + 1_000,
+                userText: 'continue',
+                assistantExcerpt: 'AUTO retry 1/3'
+            },
+            {
+                ...entry,
+                id: 'history-1',
+                userText: 'Original request',
+                assistantExcerpt: 'AUTO retry failed'
+            }
+        ]
+        const api = createApi({
+            getConversationHistory: vi.fn(async () => ({
+                entries,
+                page: {
+                    limit: 50,
+                    nextBeforeCreatedAt: null,
+                    nextBeforeId: null,
+                    hasMore: false
+                }
+            }))
+        })
+
+        renderPanel(api)
+
+        const historyButtons = await screen.findAllByRole('button', { name: 'History title' })
+        expect(historyButtons).toHaveLength(1)
+
+        fireEvent.click(screen.getByRole('button', { name: 'History title' }))
+        expect(await screen.findByText('AUTO recovery × 2')).toBeInTheDocument()
+        expect(screen.queryByText('Selected model is at capacity')).not.toBeInTheDocument()
+    })
 })

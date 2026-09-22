@@ -1,4 +1,5 @@
 import type { AgentEvent } from '@/chat/types'
+import { compactAutoRetryMessage, compactAutoRetryText, parseAutoRetryMessage } from '@hapi/protocol/autoContinue'
 
 function normalizeTimestamp(value: number): Date {
     const ms = value < 1_000_000_000_000 ? value * 1000 : value
@@ -114,6 +115,7 @@ function formatTokenCountEvent(event: AgentEvent): EventPresentation {
 export type EventPresentation = {
     icon: string | null
     text: string
+    details?: string[]
 }
 
 export function getEventPresentation(event: AgentEvent): EventPresentation {
@@ -129,6 +131,18 @@ export function getEventPresentation(event: AgentEvent): EventPresentation {
             return { icon: '⏳', text: 'API error: Retrying...' }
         }
         return { icon: '⚠️', text: 'API error' }
+    }
+    if (event.type === 'auto-retry-summary') {
+        const recoveryCount = typeof event.recoveryCount === 'number' ? event.recoveryCount : 0
+        const retryCount = typeof event.retryCount === 'number' ? event.retryCount : 0
+        const details = Array.isArray(event.details)
+            ? event.details
+                .filter((detail): detail is string => typeof detail === 'string')
+                .map((detail) => compactAutoRetryText(detail))
+            : []
+        return recoveryCount > 0
+            ? { icon: '🔁', text: `AUTO recovery × ${recoveryCount}`, details }
+            : { icon: '⏳', text: `AUTO retry × ${retryCount}`, details }
     }
     if (event.type === 'switch') {
         const mode = event.mode === 'local' ? 'local' : 'remote'
@@ -159,7 +173,15 @@ export function getEventPresentation(event: AgentEvent): EventPresentation {
         return { icon: '⏳', text: endsAt ? `Usage limit reached${suffix} until ${formatUnixTimestamp(endsAt)}` : `Usage limit reached${suffix}` }
     }
     if (event.type === 'message') {
-        return { icon: null, text: typeof event.message === 'string' ? event.message : 'Message' }
+        if (typeof event.message === 'string') {
+            const compact = compactAutoRetryMessage(event.message)
+            if (compact) {
+                const details = parseAutoRetryMessage(event.message)
+                return { icon: details?.inProgress ? '⏳' : '⚠️', text: compact }
+            }
+            return { icon: null, text: event.message }
+        }
+        return { icon: null, text: 'Message' }
     }
     if (event.type === 'turn-duration') {
         const ms = typeof event.durationMs === 'number' ? event.durationMs : 0

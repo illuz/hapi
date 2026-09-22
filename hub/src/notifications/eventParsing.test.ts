@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import type { SyncEvent } from '../sync/syncEngine'
-import { extractMessageEventType, extractTaskNotification } from './eventParsing'
+import { extractMessageEventText, extractMessageEventType, extractTaskNotification } from './eventParsing'
 
 describe('extractMessageEventType', () => {
     it('returns the event type from a role-wrapped envelope', () => {
@@ -74,6 +74,31 @@ describe('extractMessageEventType', () => {
         }
 
         expect(extractMessageEventType(event)).toBeNull()
+    })
+
+    it('extracts and trims status message text', () => {
+        const event: SyncEvent = {
+            type: 'message-received',
+            sessionId: 'session-1',
+            message: {
+                id: 'message-4',
+                seq: 4,
+                localId: null,
+                createdAt: 0,
+                content: {
+                    role: 'agent',
+                    content: {
+                        type: 'event',
+                        data: {
+                            type: 'message',
+                            message: '  Our servers are currently overloaded  '
+                        }
+                    }
+                }
+            }
+        }
+
+        expect(extractMessageEventText(event)).toBe('Our servers are currently overloaded')
     })
 })
 

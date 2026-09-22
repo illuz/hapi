@@ -4,6 +4,14 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { useSendMessage } from './useSendMessage'
 import type { ApiClient } from '@/api/client'
+import { playNotificationSound } from '@/lib/readyChime'
+import { setStoredPlaybackMode } from '@/lib/readySound'
+
+const hapticNotification = vi.fn()
+
+vi.mock('@/lib/readyChime', () => ({
+    playNotificationSound: vi.fn(async () => {}),
+}))
 
 vi.mock('@/lib/message-window-store', () => ({
     appendOptimisticMessage: vi.fn(),
@@ -13,7 +21,7 @@ vi.mock('@/lib/message-window-store', () => ({
 
 vi.mock('@/hooks/usePlatform', () => ({
     usePlatform: () => ({
-        haptic: { notification: vi.fn() },
+        haptic: { notification: hapticNotification },
     }),
 }))
 
@@ -37,6 +45,8 @@ function createMockApi(sendMessage: (...args: unknown[]) => Promise<void> = asyn
 describe('useSendMessage', () => {
     beforeEach(() => {
         vi.clearAllMocks()
+        window.localStorage.clear()
+        setStoredPlaybackMode('always')
     })
 
     it('calls onSuccess with the session ID that was sent', async () => {
@@ -116,5 +126,23 @@ describe('useSendMessage', () => {
 
         expect(onBlocked).toHaveBeenCalledWith('no-api')
         expect(onSuccess).not.toHaveBeenCalled()
+    })
+
+    it('keeps automatic continue messages silent', async () => {
+        const api = createMockApi()
+        const { result } = renderHook(
+            () => useSendMessage(api, 'session-A'),
+            { wrapper: createWrapper() },
+        )
+
+        act(() => {
+            result.current.sendMessage('continue', undefined, { silent: true })
+        })
+
+        await waitFor(() => {
+            expect(result.current.isSending).toBe(false)
+        })
+        expect(playNotificationSound).not.toHaveBeenCalled()
+        expect(hapticNotification).not.toHaveBeenCalled()
     })
 })

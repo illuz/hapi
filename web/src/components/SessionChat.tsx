@@ -54,6 +54,11 @@ import {
     shouldStopAutoContinue
 } from '@/lib/autoContinue'
 
+type SessionSendOptions = {
+    localId?: string
+    silent?: boolean
+}
+
 export function SessionChat(props: {
     api: ApiClient
     session: Session
@@ -68,7 +73,7 @@ export function SessionChat(props: {
     onBack: () => void
     onRefresh: () => void
     onLoadMore: () => Promise<unknown>
-    onSend: (text: string, attachments?: AttachmentMetadata[], options?: { localId?: string }) => string | null
+    onSend: (text: string, attachments?: AttachmentMetadata[], options?: SessionSendOptions) => string | null
     onFlushPending: () => void
     onAtBottomChange: (atBottom: boolean) => void
     onRetryMessage?: (localId: string) => void
@@ -477,7 +482,7 @@ export function SessionChat(props: {
         })
     }, [navigate, props.session.id])
 
-    const handleSend = useCallback((text: string, attachments?: AttachmentMetadata[]) => {
+    const handleSend = useCallback((text: string, attachments?: AttachmentMetadata[], options?: SessionSendOptions) => {
         if (agentFlavor === 'codex') {
             const unsupportedCommand = findUnsupportedCodexBuiltinSlashCommand(
                 text,
@@ -495,13 +500,17 @@ export function SessionChat(props: {
             }
         }
 
-        const localId = props.onSend(text, attachments)
+        const localId = props.onSend(text, attachments, options)
         setForceScrollToken((token) => token + 1)
         return localId
     }, [agentFlavor, props.availableSlashCommands, props.onSend, props.session.id, addToast, haptic, t])
 
     const handleSendContinue = useCallback((source: 'manual' | 'auto' = 'manual') => {
-        const localId = handleSend(autoContinuePrompt)
+        const localId = handleSend(
+            autoContinuePrompt,
+            undefined,
+            source === 'auto' ? { silent: true } : undefined
+        )
         if (localId) {
             allocateContinueRoundWithSource(props.session.id, localId, source)
         }

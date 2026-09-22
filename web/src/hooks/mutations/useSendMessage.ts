@@ -18,10 +18,13 @@ type SendMessageInput = {
     localId: string
     createdAt: number
     attachments?: AttachmentMetadata[]
+    /** Automatic continuation messages should not produce user feedback. */
+    silent?: boolean
 }
 
-type SendMessageOptions = {
+export type SendMessageOptions = {
     localId?: string
+    silent?: boolean
 }
 
 type BlockedReason = 'no-api' | 'no-session' | 'pending'
@@ -106,28 +109,39 @@ export function useSendMessage(
                 input.localId,
                 context?.status === 'queued' ? 'queued' : 'sent'
             )
-            haptic.notification('success')
+            if (!input.silent) {
+                haptic.notification('success')
+            }
             options?.onSuccess?.(input.sessionId)
         },
         onError: (_, input) => {
             updateMessageStatus(input.sessionId, input.localId, 'failed')
-            haptic.notification('error')
+            if (!input.silent) {
+                haptic.notification('error')
+            }
         },
     })
 
     const sendMessage = (text: string, attachments?: AttachmentMetadata[], optionsArg?: SendMessageOptions) => {
-        const messageSound = getStoredEventSound('message')
-        if (messageSound !== 'off') {
-            void playNotificationSound(messageSound)
+        const silent = optionsArg?.silent === true
+        if (!silent) {
+            const messageSound = getStoredEventSound('message')
+            if (messageSound !== 'off') {
+                void playNotificationSound(messageSound)
+            }
         }
         if (!api) {
             options?.onBlocked?.('no-api')
-            haptic.notification('error')
+            if (!silent) {
+                haptic.notification('error')
+            }
             return null
         }
         if (!sessionId) {
             options?.onBlocked?.('no-session')
-            haptic.notification('error')
+            if (!silent) {
+                haptic.notification('error')
+            }
             return null
         }
         if (mutation.isPending || resolveGuardRef.current) {
@@ -148,7 +162,9 @@ export function useSendMessage(
                         targetSessionId = resolved
                     }
                 } catch (error) {
-                    haptic.notification('error')
+                    if (!silent) {
+                        haptic.notification('error')
+                    }
                     console.error('Failed to resolve session before send:', error)
                     return
                 } finally {
@@ -162,6 +178,7 @@ export function useSendMessage(
                 localId,
                 createdAt,
                 attachments,
+                silent,
             })
         })()
         return localId

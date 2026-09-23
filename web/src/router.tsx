@@ -58,6 +58,7 @@ import FilePage from '@/routes/sessions/file'
 import TerminalPage from '@/routes/sessions/terminal'
 import SettingsPage from '@/routes/settings'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { AutoRetryIcon } from '@/components/icons'
 import { ShareClient } from '@/api/shareClient'
 import { SharePasswordGate } from '@/components/share/SharePasswordGate'
 import { SharedSessionChat } from '@/components/share/SharedSessionChat'
@@ -295,16 +296,17 @@ function SessionsPage() {
                             </button>
                             <button
                                 type="button"
+                                aria-label="AUTO"
                                 aria-pressed={autoRetryEnabled}
                                 disabled={autoRetryPending || !api}
                                 onClick={handleToggleAutoRetry}
-                                className={`inline-flex h-8 items-center rounded-full border px-2.5 text-[11px] font-semibold tracking-wide transition-colors disabled:cursor-wait disabled:opacity-60 ${autoRetryEnabled
-                                    ? 'border-[var(--app-link)] bg-[var(--app-link)] text-[var(--app-bg)]'
-                                    : 'border-[var(--app-border)] bg-[var(--app-secondary-bg)] text-[var(--app-hint)] hover:text-[var(--app-fg)]'
+                                className={`inline-flex h-8 w-8 items-center justify-center rounded-full transition-colors disabled:cursor-wait disabled:opacity-60 ${autoRetryEnabled
+                                    ? 'bg-[var(--app-subtle-bg)] text-[var(--app-link)]'
+                                    : 'text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]'
                                 }`}
                                 title={t(autoRetryEnabled ? 'session.autoRetryOn' : 'session.autoRetryOff')}
                             >
-                                AUTO
+                                <AutoRetryIcon className="h-5 w-5" />
                             </button>
                             <button
                                 type="button"

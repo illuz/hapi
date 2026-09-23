@@ -12,7 +12,7 @@ import { RenameSessionDialog } from '@/components/RenameSessionDialog'
 import { ShareSessionDialog } from '@/components/ShareSessionDialog'
 import { SessionShareListPopover } from '@/components/SessionShareListPopover'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
-import { ShareIcon } from '@/components/icons'
+import { AutoRetryIcon, ShareIcon } from '@/components/icons'
 import { canForkSession, canSpawnSessionFromConfig } from '@/lib/sessionBranching'
 import { getSessionModelLabel } from '@/lib/sessionModelLabel'
 import { getSessionMarkerColorHex } from '@/lib/sessionMarkers'
@@ -292,16 +292,17 @@ export function SessionHeader(props: {
                     {props.onToggleAutoRetry ? (
                         <button
                             type="button"
+                            aria-label="AUTO"
                             aria-pressed={props.autoRetryEnabled === true}
                             disabled={props.autoRetryPending}
                             onClick={props.onToggleAutoRetry}
-                            className={`inline-flex h-8 items-center rounded-full border px-2.5 text-[11px] font-semibold tracking-wide transition-colors disabled:cursor-wait disabled:opacity-60 ${props.autoRetryEnabled === true
-                                ? 'border-[var(--app-link)] bg-[var(--app-link)] text-[var(--app-bg)]'
-                                : 'border-[var(--app-border)] bg-[var(--app-secondary-bg)] text-[var(--app-hint)] hover:text-[var(--app-fg)]'
+                            className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors disabled:cursor-wait disabled:opacity-60 ${props.autoRetryEnabled === true
+                                ? 'bg-[var(--app-subtle-bg)] text-[var(--app-link)]'
+                                : 'text-[var(--app-hint)] hover:bg-[var(--app-secondary-bg)] hover:text-[var(--app-fg)]'
                             }`}
                             title={t(props.autoRetryEnabled === true ? 'session.autoRetryOn' : 'session.autoRetryOff')}
                         >
-                            AUTO
+                            <AutoRetryIcon className="h-5 w-5" />
                         </button>
                     ) : null}
 

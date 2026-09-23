@@ -137,6 +137,8 @@ describe('SessionHeader', () => {
 
         const autoButton = screen.getByRole('button', { name: 'AUTO' })
         expect(autoButton).toHaveAttribute('aria-pressed', 'true')
+        expect(autoButton).not.toHaveTextContent('AUTO')
+        expect(autoButton.querySelector('svg')).not.toBeNull()
         fireEvent.click(autoButton)
         expect(onToggleAutoRetry).toHaveBeenCalledOnce()
 

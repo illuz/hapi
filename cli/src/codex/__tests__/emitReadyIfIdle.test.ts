@@ -10,6 +10,7 @@ describe('emitReadyIfIdle', () => {
             pending: null,
             queueSize: () => 0,
             shouldExit: false,
+            inFlight: false,
             sendReady,
             notify,
         });
@@ -26,6 +27,7 @@ describe('emitReadyIfIdle', () => {
             pending: {},
             queueSize: () => 0,
             shouldExit: false,
+            inFlight: false,
             sendReady,
         });
 
@@ -40,6 +42,7 @@ describe('emitReadyIfIdle', () => {
             pending: null,
             queueSize: () => 2,
             shouldExit: false,
+            inFlight: false,
             sendReady,
         });
 
@@ -54,10 +57,29 @@ describe('emitReadyIfIdle', () => {
             pending: null,
             queueSize: () => 0,
             shouldExit: true,
+            inFlight: false,
             sendReady,
         });
 
         expect(emitted).toBe(false);
         expect(sendReady).not.toHaveBeenCalled();
+    });
+
+    it('skips while a retry turn is still in flight', () => {
+        const sendReady = vi.fn();
+        const notify = vi.fn();
+
+        const emitted = emitReadyIfIdle({
+            pending: null,
+            queueSize: () => 0,
+            shouldExit: false,
+            inFlight: true,
+            sendReady,
+            notify,
+        });
+
+        expect(emitted).toBe(false);
+        expect(sendReady).not.toHaveBeenCalled();
+        expect(notify).not.toHaveBeenCalled();
     });
 });

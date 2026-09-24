@@ -900,6 +900,7 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                     pending: pending ?? (recoveryInFlight ? activeMessage : null),
                     queueSize: () => session.queue.size(),
                     shouldExit: this.shouldExit,
+                    inFlight: turnInFlight,
                     sendReady
                 });
             }, 120);
@@ -1305,6 +1306,7 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
                         pending: pending ?? (recoveryInFlight ? activeMessage : null),
                         queueSize: () => session.queue.size(),
                         shouldExit: this.shouldExit,
+                        inFlight: turnInFlight,
                         sendReady
                     });
                 }

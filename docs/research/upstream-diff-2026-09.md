@@ -121,7 +121,7 @@
 
 - 上游活跃 Codex history guard 依赖当前分支不存在的 `codexDesktop` transcript-import 路由。当前 CLI 的 `codexLocalLauncher` 已拒绝非 primary transcript/session，继续引入上游路由会扩大合并面，因此留待 Codex history/import 专项。
 
-验证结果：`bun typecheck` 通过；Web SessionList/search 测试 36 项通过；Hub permissions/RpcGateway 测试通过；CLI permissionHandler 测试通过。
+验证结果：`bun typecheck` 通过；Web SessionList/search 测试 36 项通过；Hub permissions/RpcGateway 测试通过；CLI permissionHandler 测试通过；现有 Codex launcher 历史过滤测试 14 项通过。`bun run build:single-exe`（宿主平台）也已通过。
 
 第 3 步仅完成评估，Prepared Statement Cache、Content Codec、用户配置 MCP 未在本次主线上实现；具体风险与估算见 4.2。
 

@@ -21,13 +21,13 @@ import {
     normalizeSessionManagementSearch,
     SESSION_MANAGEMENT_UPDATE_WINDOW_OPTIONS,
     sessionMatchesManagementMarkerColor,
-    sessionMatchesManagementQuery,
     sessionMatchesManagementUpdateWindow
 } from '@/lib/sessionManagementFilters'
 import { useSessionAttentionTokens } from '@/lib/sessionAttention'
 import { canForkSession, canSpawnSessionFromConfig } from '@/lib/sessionBranching'
 import {
     buildSessionSearchScoreIndex,
+    sessionMatchesQuery as sessionSearchMatchesQuery,
     sortSessionsBySearchRelevance
 } from '@/lib/sessionListSearch'
 import { SESSION_MARKER_COLORS, getSessionMarkerColorHex } from '@/lib/sessionMarkers'
@@ -523,7 +523,7 @@ export function normalizeSearch(value: string | null | undefined): string {
 }
 
 export function sessionMatchesQuery(session: SessionSummary, query: string, machineLabel: string): boolean {
-    return sessionMatchesManagementQuery(session, query, machineLabel)
+    return sessionSearchMatchesQuery(session, query, machineLabel)
 }
 
 export function sessionMatchesMarkerColor(

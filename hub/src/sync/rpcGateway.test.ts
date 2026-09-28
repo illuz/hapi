@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'bun:test'
+import { PERMISSION_REQUEST_NOT_FOUND_MESSAGE } from '@hapi/protocol/rpcMethods'
 import type { Server } from 'socket.io'
 import type { RpcRegistry } from '../socket/rpcRegistry'
-import { RpcGateway } from './rpcGateway'
+import { PermissionRequestNotFoundError, RpcGateway } from './rpcGateway'
 
-function createGateway() {
+function createGateway(rpcResponse?: string) {
     const timeouts: number[] = []
     const requests: Array<{ method: string; params: unknown }> = []
     const socket = {
@@ -15,7 +16,7 @@ function createGateway() {
                         method: payload.method,
                         params: JSON.parse(payload.params) as unknown
                     })
-                    return JSON.stringify({
+                    return rpcResponse ?? JSON.stringify({
                         success: true,
                         method: payload.method,
                         params: JSON.parse(payload.params) as unknown
@@ -83,5 +84,15 @@ describe('RpcGateway RPC timeouts', () => {
                 maxDimension: 640
             }
         }])
+    })
+})
+
+describe('RpcGateway stale permission responses', () => {
+    it('surfaces a typed error when the CLI already resolved the request', async () => {
+        const { gateway } = createGateway(JSON.stringify({ error: PERMISSION_REQUEST_NOT_FOUND_MESSAGE }))
+
+        await expect(gateway.approvePermission('session-1', 'request-1')).rejects.toBeInstanceOf(
+            PermissionRequestNotFoundError
+        )
     })
 })

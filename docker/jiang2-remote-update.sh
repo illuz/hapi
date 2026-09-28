@@ -11,8 +11,8 @@ CURRENT_IMAGE_FILE="$REMOTE_DIR/current-image"
 IMAGE="hapi-hub:jiang2-$VERSION"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 
-services=(hapi-me hapi-zzy hapi-xcr hapi-wxh hapi-jiajia)
-ports=(13300 13301 13302 13303 13304)
+services=(hapi-me hapi-zzy hapi-xcr hapi-wxh hapi-jiajia hapi-eric)
+ports=(13300 13301 13302 13303 13304 13305)
 
 if [[ ! -f "$COMPOSE_FILE" ]]; then
     printf 'Compose file not found: %s\n' "$COMPOSE_FILE" >&2

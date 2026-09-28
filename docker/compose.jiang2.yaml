@@ -65,6 +65,15 @@ services:
         volumes:
             - hapi-jiajia-data:/data
 
+    hapi-eric:
+        <<: *hapi-common
+        container_name: hapi-eric
+        env_file: ./env/hapi-eric.env
+        ports:
+            - "127.0.0.1:13305:3006"
+        volumes:
+            - hapi-eric-data:/data
+
 volumes:
     hapi-me-data:
         name: hapi-me-data
@@ -76,3 +85,5 @@ volumes:
         name: hapi-wxh-data
     hapi-jiajia-data:
         name: hapi-jiajia-data
+    hapi-eric-data:
+        name: hapi-eric-data

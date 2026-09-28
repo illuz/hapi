@@ -94,6 +94,7 @@ SQLite volume and CLI token:
 | `hapi-xcr` | `127.0.0.1:13302` | `hapi-xcr-data` |
 | `hapi-wxh` | `127.0.0.1:13303` | `hapi-wxh-data` |
 | `hapi-jiajia` | `127.0.0.1:13304` | `hapi-jiajia-data` |
+| `hapi-eric` | `127.0.0.1:13305` | `hapi-eric-data` |
 
 Run the following from the repository root to sync the current checkout to
 `jiang2`, build the new image there, back up each existing volume, recreate the

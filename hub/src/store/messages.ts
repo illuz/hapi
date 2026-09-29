@@ -253,6 +253,36 @@ export function getUninvokedLocalMessages(
     return rows.map(toStoredMessage)
 }
 
+export type LocalMessageState = {
+    localId: string
+    invokedAt: number | null
+}
+
+/** Read queued/invoked state for a bounded set of client ids in one query. */
+export function getLocalMessageStates(
+    db: Database,
+    sessionId: string,
+    localIds: string[]
+): LocalMessageState[] {
+    if (localIds.length === 0) return []
+
+    const placeholders = localIds.map(() => '?').join(', ')
+    const rows = db.prepare(`
+        SELECT local_id, invoked_at
+        FROM messages
+        WHERE session_id = ? AND local_id IN (${placeholders})
+        ORDER BY seq ASC
+    `).all(sessionId, ...localIds) as Array<{
+        local_id: string
+        invoked_at: number | null
+    }>
+
+    return rows.map((row) => ({
+        localId: row.local_id,
+        invokedAt: row.invoked_at
+    }))
+}
+
 export function getUserTurnMessages(
     db: Database,
     sessionId: string
@@ -281,6 +311,96 @@ export function getMaxSeq(db: Database, sessionId: string): number {
         'SELECT COALESCE(MAX(seq), 0) AS maxSeq FROM messages WHERE session_id = ?'
     ).get(sessionId) as { maxSeq: number } | undefined
     return row?.maxSeq ?? 0
+}
+
+/** Resolve a stored message by either its server id or client local id. */
+export function getMessageByIdOrLocalId(
+    db: Database,
+    sessionId: string,
+    messageId: string
+): StoredMessage | null {
+    const row = db.prepare(`
+        SELECT * FROM messages
+        WHERE session_id = ? AND (id = ? OR local_id = ?)
+        LIMIT 1
+    `).get(sessionId, messageId, messageId) as DbMessageRow | undefined
+    return row ? toStoredMessage(row) : null
+}
+
+/**
+ * Remove the transcript suffix beginning at a local message id.
+ *
+ * Native agent history is rewound first; this operation then makes the hub
+ * transcript converge to the same boundary.  The epoch bump tells incremental
+ * clients to discard any cached window that still contains the removed rows.
+ */
+export function truncateMessagesFromLocalId(
+    db: Database,
+    sessionId: string,
+    localId: string,
+    replacement: Array<{
+        content: unknown
+        localId?: string | null
+        createdAt?: number
+        invokedAt?: number | null
+    }> = []
+): { deleted: number; deletedIds: string[]; inserted: number; epoch: number } {
+    return db.transaction(() => {
+        const target = db.prepare(`
+            SELECT seq
+            FROM messages
+            WHERE session_id = ? AND local_id = ?
+            LIMIT 1
+        `).get(sessionId, localId) as { seq: number } | undefined
+
+        if (!target) {
+            throw new Error(`Message not found for localId: ${localId}`)
+        }
+
+        const deletedRows = db.prepare(`
+            SELECT id
+            FROM messages
+            WHERE session_id = ? AND seq >= ?
+        `).all(sessionId, target.seq) as Array<{ id: string }>
+        const deleted = db.prepare(`
+            DELETE FROM messages
+            WHERE session_id = ? AND seq >= ?
+        `).run(sessionId, target.seq)
+
+        let inserted = 0
+        let nextSeq = getMaxSeq(db, sessionId) + 1
+        const insert = db.prepare(`
+            INSERT INTO messages (
+                id, session_id, content, created_at, seq, local_id, invoked_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        `)
+
+        for (const message of replacement) {
+            const createdAt = Number.isFinite(message.createdAt) ? message.createdAt! : Date.now()
+            const localMessageId = message.localId ?? null
+            // Replacement rows represent the native transcript returned after a
+            // successful rewind.  Unless the caller explicitly supplies a
+            // timestamp, they are already invoked even when they retain a
+            // localId (there is no second queue acknowledgement for them).
+            const invokedAt = message.invokedAt === undefined
+                ? createdAt
+                : message.invokedAt
+            insert.run(
+                randomUUID(),
+                sessionId,
+                JSON.stringify(message.content),
+                createdAt,
+                nextSeq,
+                localMessageId,
+                invokedAt
+            )
+            nextSeq += 1
+            inserted += 1
+        }
+
+        const epoch = bumpMessageEpoch(db, sessionId)
+        return { deleted: deleted.changes, deletedIds: deletedRows.map((row) => row.id), inserted, epoch }
+    })()
 }
 
 function isHistoricalQueuedRow(row: DbMessageRow): boolean {

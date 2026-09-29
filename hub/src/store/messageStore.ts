@@ -1,7 +1,7 @@
 import type { Database } from 'bun:sqlite'
 
 import type { StoredMessage } from './types'
-import { addMessage, cancelQueuedMessage, copySessionMessages, deleteQueuedMessageById, lookupQueuedMessage, getMaxSeq, getMessages, getMessagesAfter, getMessagesSince, getMessagesByPosition, getMessagesAfterPosition, getNewestMessagePosition, getMessageEpoch, bumpMessageEpoch, getUninvokedLocalMessages, getUserTurnMessages, markMessagesInvoked, mergeSessionMessages, type CancelQueuedMessageResult, type LookupQueuedMessageResult, type MessagePosition } from './messages'
+import { addMessage, cancelQueuedMessage, copySessionMessages, deleteQueuedMessageById, lookupQueuedMessage, getMaxSeq, getMessages, getMessagesAfter, getMessagesSince, getMessagesByPosition, getMessagesAfterPosition, getNewestMessagePosition, getMessageEpoch, bumpMessageEpoch, getMessageByIdOrLocalId, getLocalMessageStates, getUninvokedLocalMessages, getUserTurnMessages, markMessagesInvoked, mergeSessionMessages, truncateMessagesFromLocalId, type CancelQueuedMessageResult, type LocalMessageState, type LookupQueuedMessageResult, type MessagePosition } from './messages'
 
 export class MessageStore {
     private readonly db: Database
@@ -55,12 +55,20 @@ export class MessageStore {
         return getUninvokedLocalMessages(this.db, sessionId)
     }
 
+    getLocalMessageStates(sessionId: string, localIds: string[]): LocalMessageState[] {
+        return getLocalMessageStates(this.db, sessionId, localIds)
+    }
+
     getUserTurnMessages(sessionId: string): StoredMessage[] {
         return getUserTurnMessages(this.db, sessionId)
     }
 
     getMaxSeq(sessionId: string): number {
         return getMaxSeq(this.db, sessionId)
+    }
+
+    getMessageByIdOrLocalId(sessionId: string, messageId: string): StoredMessage | null {
+        return getMessageByIdOrLocalId(this.db, sessionId, messageId)
     }
 
     cancelQueuedMessage(sessionId: string, messageId: string): CancelQueuedMessageResult {
@@ -89,5 +97,18 @@ export class MessageStore {
         options?: { keepUserTurns?: number; dropLastUserTurns?: number; upToClaudeMessageUuid?: string }
     ): { copied: number } {
         return copySessionMessages(this.db, fromSessionId, toSessionId, options)
+    }
+
+    truncateMessagesFromLocalId(
+        sessionId: string,
+        localId: string,
+        replacement: Array<{
+            content: unknown
+            localId?: string | null
+            createdAt?: number
+            invokedAt?: number | null
+        }> = []
+    ): { deleted: number; deletedIds: string[]; inserted: number; epoch: number } {
+        return truncateMessagesFromLocalId(this.db, sessionId, localId, replacement)
     }
 }

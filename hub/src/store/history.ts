@@ -62,6 +62,26 @@ export type MergeHistoryEntriesResult = {
     duplicatesRemoved: number
 }
 
+/** Remove history rows whose message locators were removed by a rewind. */
+export function deleteHistoryEntriesForMessages(
+    db: Database,
+    sessionId: string,
+    messageIds: string[]
+): number {
+    if (messageIds.length === 0) return 0
+
+    const placeholders = messageIds.map(() => '?').join(', ')
+    const result = db.prepare(`
+        DELETE FROM conversation_history
+        WHERE session_id = ?
+          AND (
+              user_message_id IN (${placeholders})
+              OR assistant_message_id IN (${placeholders})
+          )
+    `).run(sessionId, ...messageIds, ...messageIds)
+    return result.changes
+}
+
 function toStoredHistoryEntry(row: DbHistoryRow): StoredHistoryEntry {
     return {
         id: row.id,

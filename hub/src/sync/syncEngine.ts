@@ -9,6 +9,7 @@
 
 import type { AutoContinueSettings } from '@hapi/protocol/types'
 import type { CodexCollaborationMode, DecryptedMessage, PermissionMode, Session, SessionMarkerColor, SyncEvent } from '@hapi/protocol/types'
+import type { QueuedStateResponse, SteerQueuedMessageResponse } from '@hapi/protocol/schemas'
 import type {
     ProjectToolCountsResult,
     ProjectCronConfig,
@@ -126,6 +127,8 @@ export class SyncEngine {
     private readonly portMappingService: PortMappingService
     private readonly conversationHistoryService: ConversationHistoryService
     private inactivityTimer: NodeJS.Timeout | null = null
+    /** Serialize native history mutations per session. */
+    private readonly historyActionsInFlight = new Set<string>()
 
     constructor(
         private readonly store: Store,
@@ -499,6 +502,9 @@ export class SyncEngine {
             meta?: SendMessageMeta
         }
     ): Promise<void> {
+        if (this.historyActionsInFlight.has(sessionId)) {
+            throw new Error('Conversation history action already in progress')
+        }
         if (payload.sentFrom !== 'auto-retry') {
             this.autoRetryService.cancelPending(sessionId)
         }
@@ -546,6 +552,176 @@ export class SyncEngine {
         return this.messageService.cancelQueuedMessage(sessionId, messageId)
     }
 
+    /**
+     * Deliver one queued message to the active agent turn through the CLI RPC.
+     *
+     * The CLI owns the native queue and decides whether a steer is safe.  A
+     * successful RPC only acknowledges that the item was accepted by the
+     * native queue; the CLI's existing `messages-consumed` event remains the
+     * durable `invokedAt` commit.  This avoids racing the queue's own dequeue
+     * acknowledgement and keeps secondary Web clients on one source of truth.
+     */
+    async steerQueuedMessage(
+        sessionId: string,
+        messageId: string
+    ): Promise<SteerQueuedMessageResponse> {
+        const session = this.getSession(sessionId)
+        if (!session) {
+            return { status: 'failed', error: 'Session not found', localId: null }
+        }
+        if (!session.active) {
+            return { status: 'failed', error: 'Session is inactive', localId: null }
+        }
+        if (session.agentState?.controlledByUser === true) {
+            return { status: 'failed', error: 'Steering is only available for remote sessions', localId: null }
+        }
+
+        const lookup = this.store.messages.lookupQueuedMessage(sessionId, messageId)
+        if (lookup.status === 'absent') {
+            return { status: 'failed', error: 'Message not found', localId: null }
+        }
+        if (lookup.status === 'invoked') {
+            return {
+                status: 'invoked',
+                message: {
+                    id: lookup.message.id,
+                    seq: lookup.message.seq,
+                    localId: lookup.message.localId,
+                    content: lookup.message.content,
+                    createdAt: lookup.message.createdAt,
+                    invokedAt: lookup.message.invokedAt
+                }
+            }
+        }
+
+        const localId = lookup.localId
+        if (!localId) {
+            return { status: 'failed', error: 'Message has no localId', localId: null }
+        }
+
+        try {
+            const result = await this.rpcGateway.steerQueuedMessage(sessionId, localId)
+            if (!result?.steered) {
+                return {
+                    status: 'failed',
+                    error: result?.error ?? 'Steer is not supported by this agent',
+                    localId
+                }
+            }
+
+            return { status: 'steered', localId }
+        } catch (error) {
+            return {
+                status: 'failed',
+                error: error instanceof Error ? error.message : 'Steer failed',
+                localId
+            }
+        }
+    }
+
+    /** Return authoritative queued/invoked state for a set of local ids. */
+    getQueuedState(sessionId: string, localIds: string[]): QueuedStateResponse {
+        return this.messageService.getQueuedState(sessionId, localIds)
+    }
+
+    /**
+     * Rewind the native agent transcript and then truncate the hub transcript
+     * at the same user-turn boundary.  Native history is always changed first;
+     * a storage failure is reported as `hydrateFailed` so callers do not retry
+     * blindly and create a second native mutation.
+     */
+    async rewindConversation(
+        sessionId: string,
+        namespace: string,
+        messageId: string
+    ): Promise<{ type: 'success' } | { type: 'error'; message: string; code?: string; hydrateFailed?: boolean }> {
+        if (this.historyActionsInFlight.has(sessionId)) {
+            return { type: 'error', message: 'Conversation history action already in progress' }
+        }
+        this.historyActionsInFlight.add(sessionId)
+
+        try {
+            const access = this.resolveSessionAccess(sessionId, namespace)
+            if (!access.ok) {
+                return {
+                    type: 'error',
+                    message: access.reason === 'access-denied' ? 'Session access denied' : 'Session not found'
+                }
+            }
+
+            const session = access.session
+            if (!session.active) {
+                return { type: 'error', message: 'Session is inactive' }
+            }
+            if (session.agentState?.controlledByUser === true) {
+                return { type: 'error', message: 'Conversation history actions require a remote session' }
+            }
+            if (session.thinking) {
+                return { type: 'error', message: 'Session is busy' }
+            }
+            if (this.store.messages.getUninvokedLocalMessages(sessionId).length > 0) {
+                return { type: 'error', message: 'Session has queued messages' }
+            }
+
+            const boundary = this.store.messages.getMessageByIdOrLocalId(sessionId, messageId)
+            if (!boundary || boundary.invokedAt === null || !boundary.localId) {
+                return { type: 'error', message: 'History boundary message not found or not yet invoked' }
+            }
+            const isUserTurn = this.store.messages.getUserTurnMessages(sessionId)
+                .some((message) => message.id === boundary.id)
+            if (!isUserTurn) {
+                return { type: 'error', message: 'History boundary must be a user message' }
+            }
+
+            let rpcResult: Awaited<ReturnType<RpcGateway['rewindConversation']>>
+            try {
+                rpcResult = await this.rpcGateway.rewindConversation(sessionId, {
+                    messageLocalId: boundary.localId
+                })
+            } catch (error) {
+                return {
+                    type: 'error',
+                    message: error instanceof Error ? error.message : 'Native rewind failed'
+                }
+            }
+
+            if (!rpcResult || rpcResult.success !== true) {
+                return {
+                    type: 'error',
+                    message: rpcResult?.error ?? 'Native rewind is not supported by this agent',
+                    ...(rpcResult?.code ? { code: rpcResult.code } : {})
+                }
+            }
+
+            try {
+                const truncateFromLocalId = rpcResult.truncateFromLocalId ?? boundary.localId
+                const truncation = this.store.messages.truncateMessagesFromLocalId(
+                    sessionId,
+                    truncateFromLocalId,
+                    rpcResult.messages ?? []
+                )
+                this.store.history.deleteEntriesForMessages(sessionId, truncation.deletedIds)
+                this.eventPublisher.emit({
+                    type: 'messages-invalidated',
+                    sessionId,
+                    namespace,
+                    reason: 'rewind',
+                    truncateFromLocalId
+                })
+                this.sessionCache.refreshSession(sessionId)
+                return { type: 'success' }
+            } catch (error) {
+                return {
+                    type: 'error',
+                    message: error instanceof Error ? error.message : 'Failed to hydrate rewound history',
+                    hydrateFailed: true
+                }
+            }
+        } finally {
+            this.historyActionsInFlight.delete(sessionId)
+        }
+    }
+
     async approvePermission(
         sessionId: string,
         requestId: string,
@@ -576,6 +752,9 @@ export class SyncEngine {
     }
 
     async switchSession(sessionId: string, to: 'remote' | 'local'): Promise<void> {
+        if (this.historyActionsInFlight.has(sessionId)) {
+            throw new Error('Conversation history action already in progress')
+        }
         await this.rpcGateway.switchSession(sessionId, to)
     }
 
@@ -743,6 +922,26 @@ export class SyncEngine {
     }
 
     async forkSession(
+        sessionId: string,
+        namespace: string,
+        options?: ForkSessionOptions
+    ): Promise<ForkSessionResult> {
+        if (this.historyActionsInFlight.has(sessionId)) {
+            return {
+                type: 'error',
+                message: 'Conversation history action already in progress',
+                code: 'fork_unavailable'
+            }
+        }
+        this.historyActionsInFlight.add(sessionId)
+        try {
+            return await this.forkSessionUnlocked(sessionId, namespace, options)
+        } finally {
+            this.historyActionsInFlight.delete(sessionId)
+        }
+    }
+
+    private async forkSessionUnlocked(
         sessionId: string,
         namespace: string,
         options?: ForkSessionOptions

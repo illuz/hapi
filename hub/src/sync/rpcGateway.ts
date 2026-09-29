@@ -1,4 +1,4 @@
-import { PERMISSION_REQUEST_NOT_FOUND_MESSAGE } from '@hapi/protocol/rpcMethods'
+import { PERMISSION_REQUEST_NOT_FOUND_MESSAGE, RPC_METHODS } from '@hapi/protocol/rpcMethods'
 import type { CodexCollaborationMode, PermissionMode } from '@hapi/protocol/types'
 import type {
     ProjectToolKind,
@@ -448,6 +448,59 @@ export class RpcGateway {
 
     async listOpencodeModelsForSession(sessionId: string): Promise<RpcListOpencodeModelsResponse> {
         return await this.sessionRpc(sessionId, 'listOpencodeModels', {}) as RpcListOpencodeModelsResponse
+    }
+
+    /** Ask the owning CLI to inject one queued message into its active turn. */
+    async steerQueuedMessage(
+        sessionId: string,
+        localId: string
+    ): Promise<{ steered: boolean; error?: string }> {
+        return await this.sessionRpc(
+            sessionId,
+            RPC_METHODS.SteerQueuedMessage,
+            { localId }
+        ) as { steered: boolean; error?: string }
+    }
+
+    /** Ask the owning CLI to rewind its native transcript to a local message. */
+    async rewindConversation(
+        sessionId: string,
+        params: { messageLocalId: string }
+    ): Promise<{
+        success: true
+        truncateFromLocalId?: string
+        messages?: Array<{
+            content: unknown
+            localId?: string | null
+            createdAt?: number
+            invokedAt?: number | null
+        }>
+    } | {
+        success: false
+        error?: string
+        code?: string
+        outcome?: string
+    }> {
+        return await this.sessionRpc(
+            sessionId,
+            RPC_METHODS.RewindConversation,
+            params,
+            120_000
+        ) as {
+            success: true
+            truncateFromLocalId?: string
+            messages?: Array<{
+                content: unknown
+                localId?: string | null
+                createdAt?: number
+                invokedAt?: number | null
+            }>
+        } | {
+            success: false
+            error?: string
+            code?: string
+            outcome?: string
+        }
     }
 
     async listOpencodeModelsForCwd(machineId: string, cwd: string): Promise<RpcListOpencodeModelsResponse> {

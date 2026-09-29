@@ -85,6 +85,29 @@ describe('RpcGateway RPC timeouts', () => {
             }
         }])
     })
+
+    it('routes native steer and rewind through the session RPC namespace', async () => {
+        const { gateway, requests, timeouts } = createGateway(JSON.stringify({
+            success: true,
+            steered: true,
+            truncateFromLocalId: 'local-1'
+        }))
+
+        await gateway.steerQueuedMessage('session-1', 'local-1')
+        await gateway.rewindConversation('session-1', { messageLocalId: 'local-1' })
+
+        expect(requests).toEqual([
+            {
+                method: 'session-1:steer-queued-message',
+                params: { localId: 'local-1' }
+            },
+            {
+                method: 'session-1:rewind-conversation',
+                params: { messageLocalId: 'local-1' }
+            }
+        ])
+        expect(timeouts).toEqual([30_000, 120_000])
+    })
 })
 
 describe('RpcGateway stale permission responses', () => {

@@ -229,7 +229,9 @@ export const SyncEventSchema = z.discriminatedUnion('type', [
         message: DecryptedMessageSchema
     }),
     SessionChangedSchema.extend({
-        type: z.literal('messages-invalidated')
+        type: z.literal('messages-invalidated'),
+        reason: z.literal('rewind').optional(),
+        truncateFromLocalId: z.string().optional()
     }),
     SessionChangedSchema.extend({
         type: z.literal('session-ended'),
@@ -308,3 +310,54 @@ export const CancelMessageResponseSchema = z.discriminatedUnion('status', [
 ])
 
 export type CancelMessageResponse = z.infer<typeof CancelMessageResponseSchema>
+
+/** Request body for a native conversation rewind.
+ *
+ * The local id is used instead of the database row id because agent runtimes
+ * persist this identifier alongside the native turn and can therefore validate
+ * the boundary before mutating their own transcript.
+ */
+export const RewindConversationRequestSchema = z.object({
+    messageLocalId: z.string().trim().min(1)
+})
+
+export type RewindConversationRequest = z.infer<typeof RewindConversationRequestSchema>
+
+export const RewindConversationResponseSchema = z.object({
+    success: z.literal(true)
+})
+
+export type RewindConversationResponse = z.infer<typeof RewindConversationResponseSchema>
+
+/** Result returned by a CLI native queued-message steer request. */
+export const SteerQueuedMessageResponseSchema = z.discriminatedUnion('status', [
+    z.object({
+        status: z.literal('steered'),
+        localId: z.string().min(1)
+    }),
+    z.object({
+        status: z.literal('invoked'),
+        message: DecryptedMessageSchema
+    }),
+    z.object({
+        status: z.literal('failed'),
+        error: z.string(),
+        localId: z.string().nullable()
+    })
+])
+
+export type SteerQueuedMessageResponse = z.infer<typeof SteerQueuedMessageResponseSchema>
+
+export const QueuedStateRequestSchema = z.object({
+    localIds: z.array(z.string().trim().min(1)).max(1000)
+})
+
+export type QueuedStateRequest = z.infer<typeof QueuedStateRequestSchema>
+
+export type QueuedStateResponse = {
+    queuedLocalIds: string[]
+    invokedLocalMessages: Array<{
+        localId: string
+        invokedAt: number
+    }>
+}

@@ -28,7 +28,7 @@ export type {
     StoredUser,
     VersionedUpdateResult
 } from './types'
-export type { CancelQueuedMessageResult, LookupQueuedMessageResult } from './messages'
+export type { CancelQueuedMessageResult, LocalMessageState, LookupQueuedMessageResult } from './messages'
 export type { MessagePosition } from './messages'
 export { CronRunsStore } from './cronRunsStore'
 export { CustomCodexModelStore } from './customCodexModels'

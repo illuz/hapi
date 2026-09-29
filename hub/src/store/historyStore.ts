@@ -3,6 +3,7 @@ import type { Database } from 'bun:sqlite'
 import type { StoredHistoryEntry } from './types'
 import {
     addHistoryEntry,
+    deleteHistoryEntriesForMessages,
     mergeHistoryEntries,
     searchHistory,
     type AddHistoryEntryInput,
@@ -20,6 +21,10 @@ export class HistoryStore {
 
     addEntry(input: AddHistoryEntryInput): StoredHistoryEntry {
         return addHistoryEntry(this.db, input)
+    }
+
+    deleteEntriesForMessages(sessionId: string, messageIds: string[]): number {
+        return deleteHistoryEntriesForMessages(this.db, sessionId, messageIds)
     }
 
     mergeSessionEntries(

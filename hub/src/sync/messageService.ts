@@ -1,4 +1,5 @@
 import type { AttachmentMetadata, DecryptedMessage } from '@hapi/protocol/types'
+import type { QueuedStateResponse } from '@hapi/protocol/schemas'
 import { unwrapRoleWrappedRecordEnvelope } from '@hapi/protocol/messages'
 import type { Server } from 'socket.io'
 import { randomUUID } from 'node:crypto'
@@ -128,6 +129,19 @@ export class MessageService {
             createdAt: message.createdAt,
             seq: message.seq
         }))
+    }
+
+    /** Return the hub's authoritative invocation state for client local ids. */
+    getQueuedState(sessionId: string, localIds: string[]): QueuedStateResponse {
+        const states = this.store.messages.getLocalMessageStates(sessionId, [...new Set(localIds)])
+        return {
+            queuedLocalIds: states
+                .filter((state) => state.invokedAt === null)
+                .map((state) => state.localId),
+            invokedLocalMessages: states.flatMap((state) => state.invokedAt === null
+                ? []
+                : [{ localId: state.localId, invokedAt: state.invokedAt }])
+        }
     }
 
     getRollbackTurnsAfterMessage(sessionId: string, messageId: string): number | null {

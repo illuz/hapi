@@ -1,6 +1,6 @@
 import { AutoContinueSettingsSchema, normalizeAutoContinueSettings } from '@hapi/protocol/autoContinue'
 import { getPermissionModesForFlavor, isPermissionModeAllowedForFlavor, supportsModelChange, toSessionSummary } from '@hapi/protocol'
-import { CodexCollaborationModeSchema, PermissionModeSchema, SessionMarkerColorSchema } from '@hapi/protocol/schemas'
+import { CodexCollaborationModeSchema, PermissionModeSchema, RewindConversationRequestSchema, SessionMarkerColorSchema } from '@hapi/protocol/schemas'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import type { SyncEngine, Session } from '../../sync/syncEngine'
@@ -389,6 +389,39 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
         }
 
         return c.json({ type: 'success', sessionId: result.sessionId })
+    })
+
+    app.post('/sessions/:id/rewind', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) {
+            return engine
+        }
+
+        const sessionResult = requireSessionFromParam(c, engine, { requireActive: true })
+        if (sessionResult instanceof Response) {
+            return sessionResult
+        }
+
+        const body = await c.req.json().catch(() => null)
+        const parsed = RewindConversationRequestSchema.safeParse(body)
+        if (!parsed.success) {
+            return c.json({ error: 'Invalid body' }, 400)
+        }
+
+        const result = await engine.rewindConversation(
+            sessionResult.sessionId,
+            c.get('namespace'),
+            parsed.data.messageLocalId
+        )
+        if (result.type === 'error') {
+            return c.json({
+                error: result.message,
+                ...(result.code ? { code: result.code } : {}),
+                hydrateFailed: result.hydrateFailed === true
+            }, result.hydrateFailed ? 500 : 409)
+        }
+
+        return c.json({ success: true as const })
     })
 
     app.post('/sessions/:id/upload', async (c) => {

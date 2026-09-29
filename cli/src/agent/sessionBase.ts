@@ -10,6 +10,7 @@ import type {
     SessionPermissionMode
 } from '@/api/types';
 import { logger } from '@/ui/logger';
+import { RPC_METHODS } from '@hapi/protocol/rpcMethods';
 
 export type AgentSessionBaseOptions<Mode> = {
     api: ApiClient;
@@ -73,6 +74,20 @@ export class AgentSessionBase<Mode> {
         this.serviceTier = opts.serviceTier;
         this.effort = opts.effort;
         this.collaborationMode = opts.collaborationMode;
+
+        // Keep the Hub protocol explicit even for agents that do not yet expose
+        // native mid-turn/history controls.  Agent-specific launchers may
+        // replace these handlers with real implementations after construction;
+        // otherwise the Hub receives a structured unsupported result instead of
+        // an opaque "RPC handler not registered" error.
+        this.client.rpcHandlerManager.registerHandler(RPC_METHODS.SteerQueuedMessage, async () => ({
+            steered: false,
+            error: 'Native queued-message steering is not supported by this agent'
+        }));
+        this.client.rpcHandlerManager.registerHandler(RPC_METHODS.RewindConversation, async () => ({
+            success: false,
+            error: 'Native conversation rewind is not supported by this agent'
+        }));
 
         this.queue.onBatchConsumed = (localIds) => this.client.emitMessagesConsumed(localIds);
 

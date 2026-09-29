@@ -56,6 +56,7 @@ function createApp(session: Session, opts?: {
     resumeSession?: (sessionId: string, namespace: string, resumeOpts?: { permissionMode?: string }) => Promise<{ type: string; sessionId?: string; message?: string; code?: string }>
     spawnSessionFromConfig?: (sessionId: string, namespace: string, options?: { agent?: 'claude' | 'codex' }) => Promise<{ type: string; sessionId?: string; message?: string; code?: string }>
     forkSession?: (sessionId: string, namespace: string, options?: { rollbackTurns?: number; resumeSessionAt?: string; forkFromMessageId?: string }) => Promise<{ type: string; sessionId?: string; message?: string; code?: string }>
+    rewindConversation?: (sessionId: string, namespace: string, messageLocalId: string) => Promise<{ type: string; message?: string; code?: string; hydrateFailed?: boolean }>
     resolveSessionAccess?: SyncEngine['resolveSessionAccess']
     archiveSession?: (sessionId: string) => Promise<void>
     deleteSession?: (sessionId: string) => Promise<void>
@@ -94,6 +95,7 @@ function createApp(session: Session, opts?: {
     const resumeSession = opts?.resumeSession ?? (async (sessionId: string) => ({ type: 'success', sessionId }))
     const spawnSessionFromConfig = opts?.spawnSessionFromConfig ?? (async (sessionId: string) => ({ type: 'success', sessionId }))
     const forkSession = opts?.forkSession ?? (async (sessionId: string) => ({ type: 'success', sessionId }))
+    const rewindConversation = opts?.rewindConversation ?? (async () => ({ type: 'success' }))
     const archiveSession = opts?.archiveSession ?? (async (sessionId: string) => {
         archiveSessionCalls.push(sessionId)
     })
@@ -116,6 +118,7 @@ function createApp(session: Session, opts?: {
         resumeSession,
         spawnSessionFromConfig,
         forkSession,
+        rewindConversation,
         archiveSession,
         deleteSession,
         updateAutoContinueSettings,
@@ -289,6 +292,47 @@ describe('sessions routes', () => {
 
         expect(response.status).toBe(400)
         expect(await response.json()).toEqual({ error: 'Invalid body' })
+    })
+
+    it('rewinds a session at a message local id', async () => {
+        let captured: { sessionId: string; namespace: string; messageLocalId: string } | null = null
+        const { app } = createApp(createSession(), {
+            rewindConversation: async (sessionId, namespace, messageLocalId) => {
+                captured = { sessionId, namespace, messageLocalId }
+                return { type: 'success' }
+            }
+        })
+
+        const response = await app.request('/api/sessions/session-1/rewind', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ messageLocalId: 'local-1' })
+        })
+
+        expect(response.status).toBe(200)
+        expect(captured!).toEqual({ sessionId: 'session-1', namespace: 'default', messageLocalId: 'local-1' })
+        expect(await response.json()).toEqual({ success: true })
+    })
+
+    it('returns 409 when native rewind is unavailable', async () => {
+        const { app } = createApp(createSession(), {
+            rewindConversation: async () => ({
+                type: 'error',
+                message: 'Native rewind is not supported by this agent'
+            })
+        })
+
+        const response = await app.request('/api/sessions/session-1/rewind', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ messageLocalId: 'local-1' })
+        })
+
+        expect(response.status).toBe(409)
+        expect(await response.json()).toEqual({
+            error: 'Native rewind is not supported by this agent',
+            hydrateFailed: false
+        })
     })
 
     it('returns 400 when fork is unsupported for the session flavor', async () => {

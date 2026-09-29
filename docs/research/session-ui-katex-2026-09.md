@@ -68,7 +68,7 @@
 - **1 / KaTeX**：字体产物复制、嵌入式资源 MIME、支持 `\(...\)` / `\[...\]` bracket math，保留回归测试（`8151f1ce`）。
 - **2 / Markdown**：关闭 `remark-math` 的默认 single-dollar 解析，再通过安全插件兼容明确的 `$...$`；补 hard breaks、仓库文件路径链接与文件链接行为（`0e83444a`）。
 - **3 / Tail Sync**：冷启动小页、缓存重入拉取最新尾部、版本/历史变更触发滚动恢复，避免旧游标覆盖新状态（`17af1c9f`）。
-- **4 / 消息操作与工具展示**：新增复制/分享/消息级 Fork；连续普通工具调用折叠为 Tool Group；增加 Codex Review JSON 的结构化卡片。Rewind、Steer、Queued 仍未接入，因为当前 Hub 没有对应 Web API（本地已有 fork/rollback 能力，后续可单独扩展）。
+- **4 / 消息操作与工具展示**：新增复制/分享/消息级 Fork；连续普通工具调用折叠为 Tool Group；增加 Codex Review JSON 的结构化卡片。补齐 Hub 侧 Rewind、Steer、Queued State REST API、CLI RPC 网关、消息截断与 epoch 失效广播；当前分支的 Claude/Codex 等 CLI 尚未提供原生 Rewind/Steer handler，Hub 会返回结构化“不支持”结果，不会只改 Hub transcript 造成双端分叉。
 - **5 / 会话列表**：增加本地 last-seen 未读水位及“只看未读”过滤、机器在线/启动/异常/离线指示、按本地日历日期过滤；不替换现有搜索、颜色筛选、项目工具入口和 Pin 语义。
 
 验证：`bun run typecheck` 通过；Web 全量测试 93 个文件、571 个测试通过。根目录完整测试仍有既有的 CLI Darwin/Windows 模拟测试失败（与本轮变更无关）。

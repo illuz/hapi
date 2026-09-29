@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { AttachmentMetadataSchema } from '@hapi/protocol/schemas'
+import { AttachmentMetadataSchema, QueuedStateRequestSchema } from '@hapi/protocol/schemas'
 import { z } from 'zod'
 import type { SyncEngine } from '../../sync/syncEngine'
 import type { WebAppEnv } from '../middleware/auth'
@@ -125,6 +125,26 @@ export function createMessagesRoutes(getSyncEngine: () => SyncEngine | null): Ho
         return c.json(engine.getMessagesPage(sessionId, { limit, beforeSeq }))
     })
 
+    app.post('/sessions/:id/messages/queued-state', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) {
+            return engine
+        }
+
+        const sessionResult = requireSessionFromParam(c, engine)
+        if (sessionResult instanceof Response) {
+            return sessionResult
+        }
+
+        const body = await c.req.json().catch(() => null)
+        const parsed = QueuedStateRequestSchema.safeParse(body)
+        if (!parsed.success) {
+            return c.json({ error: 'Invalid body' }, 400)
+        }
+
+        return c.json(engine.getQueuedState(sessionResult.sessionId, [...new Set(parsed.data.localIds)]))
+    })
+
     app.delete('/sessions/:id/messages/:messageId', async (c) => {
         const engine = requireSyncEngine(c, getSyncEngine)
         if (engine instanceof Response) {
@@ -139,6 +159,24 @@ export function createMessagesRoutes(getSyncEngine: () => SyncEngine | null): Ho
         const messageId = c.req.param('messageId')
 
         const result = await engine.cancelQueuedMessage(sessionId, messageId)
+        return c.json(result)
+    })
+
+    app.post('/sessions/:id/messages/:messageId/steer', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) {
+            return engine
+        }
+
+        const sessionResult = requireSessionFromParam(c, engine, { requireActive: true })
+        if (sessionResult instanceof Response) {
+            return sessionResult
+        }
+
+        const result = await engine.steerQueuedMessage(
+            sessionResult.sessionId,
+            c.req.param('messageId')
+        )
         return c.json(result)
     })
 

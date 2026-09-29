@@ -53,7 +53,7 @@ import type {
     CreateSessionSharePayload,
     UpdateSessionSharePayload
 } from '@/types/api'
-import type { CancelMessageResponse } from '@hapi/protocol/schemas'
+import type { CancelMessageResponse, QueuedStateResponse, SteerQueuedMessageResponse } from '@hapi/protocol/schemas'
 
 type ApiClientOptions = {
     baseUrl?: string
@@ -451,6 +451,34 @@ export class ApiClient {
             { method: 'DELETE' }
         )
         return response as CancelMessageResponse
+    }
+
+    async steerMessage(sessionId: string, messageId: string): Promise<SteerQueuedMessageResponse> {
+        const response = await this.request(
+            `/api/sessions/${encodeURIComponent(sessionId)}/messages/${encodeURIComponent(messageId)}/steer`,
+            { method: 'POST' }
+        )
+        return response as SteerQueuedMessageResponse
+    }
+
+    async getQueuedState(sessionId: string, localIds: string[]): Promise<QueuedStateResponse> {
+        return await this.request<QueuedStateResponse>(
+            `/api/sessions/${encodeURIComponent(sessionId)}/messages/queued-state`,
+            {
+                method: 'POST',
+                body: JSON.stringify({ localIds })
+            }
+        )
+    }
+
+    async rewindSession(sessionId: string, messageLocalId: string): Promise<{ success: true }> {
+        return await this.request<{ success: true }>(
+            `/api/sessions/${encodeURIComponent(sessionId)}/rewind`,
+            {
+                method: 'POST',
+                body: JSON.stringify({ messageLocalId })
+            }
+        )
     }
 
     async abortSession(sessionId: string): Promise<void> {

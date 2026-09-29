@@ -214,6 +214,76 @@ describe('getUserTurnMessages', () => {
     })
 })
 
+describe('getLocalMessageStates', () => {
+    it('returns requested ids in transcript order with invocation timestamps', () => {
+        const store = makeStore()
+        const session = makeSession(store, 'local-message-states')
+        store.messages.addMessage(session.id, { role: 'user', content: { type: 'text', text: 'queued' } }, 'local-queued')
+        store.messages.addMessage(session.id, { role: 'user', content: { type: 'text', text: 'invoked' } }, 'local-invoked')
+        store.messages.markMessagesInvoked(session.id, ['local-invoked'], 123)
+
+        expect(store.messages.getLocalMessageStates(session.id, ['missing', 'local-invoked', 'local-queued'])).toEqual([
+            { localId: 'local-queued', invokedAt: null },
+            { localId: 'local-invoked', invokedAt: 123 }
+        ])
+    })
+})
+
+describe('truncateMessagesFromLocalId', () => {
+    it('removes the selected turn and all later transcript rows', () => {
+        const store = makeStore()
+        const session = makeSession(store, 'rewind-truncate')
+        const first = store.messages.addMessage(session.id, {
+            role: 'user',
+            content: { type: 'text', text: 'first' }
+        }, 'local-first')
+        store.messages.markMessagesInvoked(session.id, ['local-first'], Date.now())
+        const second = store.messages.addMessage(session.id, {
+            role: 'user',
+            content: { type: 'text', text: 'second' }
+        }, 'local-second')
+        store.messages.markMessagesInvoked(session.id, ['local-second'], Date.now())
+        store.messages.addMessage(session.id, {
+            role: 'agent',
+            content: { type: 'text', text: 'answer' }
+        })
+
+        const result = store.messages.truncateMessagesFromLocalId(session.id, 'local-second')
+
+        expect(result.deleted).toBe(2)
+        expect(store.messages.getMessages(session.id).map((message) => message.id)).toEqual([first.id])
+        expect(store.messages.getMessageEpoch(session.id)).toBe(1)
+    })
+
+    it('can hydrate replacement messages in the same transaction', () => {
+        const store = makeStore()
+        const session = makeSession(store, 'rewind-replacement')
+        store.messages.addMessage(session.id, {
+            role: 'user',
+            content: { type: 'text', text: 'old' }
+        }, 'local-old')
+
+        const result = store.messages.truncateMessagesFromLocalId(session.id, 'local-old', [{
+            content: {
+                role: 'user',
+                content: { type: 'text', text: 'replacement' }
+            },
+            localId: 'local-replacement'
+        }])
+
+        expect(result.deleted).toBe(1)
+        expect(result.inserted).toBe(1)
+        expect(store.messages.getMessages(session.id)[0]).toMatchObject({
+            content: {
+                role: 'user',
+                content: { type: 'text', text: 'replacement' }
+            },
+            localId: 'local-replacement',
+            invokedAt: expect.any(Number)
+        })
+    })
+})
+
 describe('incremental display-position storage', () => {
     it('reads strictly after a cursor and respects a fixed until head', () => {
         const store = makeStore()

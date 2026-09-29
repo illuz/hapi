@@ -139,7 +139,11 @@ export function buildVisibleChatBlocks(
         const lastToolId = tools[tools.length - 1]?.id ?? firstToolId
         const previous = previousGroups.find((group) => group.firstToolId === firstToolId || group.lastToolId === lastToolId)
         const needsOlderHistory = Boolean(options.hasMoreMessages && visible.length === 0)
-        const id = previous?.id ?? (needsOlderHistory ? `tool-group:${lastToolId}` : `tool-group:${firstToolId}`)
+        // Keep the group identity anchored to the first visible tool.  The
+        // `hasMoreMessages` flag can flip after a tail refresh; using it in the
+        // id would make assistant-ui remount the whole group and lose its
+        // open/closed state.
+        const id = previous?.id ?? `tool-group:${firstToolId}`
         visible.push({
             kind: 'tool-group',
             id,
@@ -196,4 +200,3 @@ export function getToolGroupFromArtifact(value: unknown): ToolGroupBlock | null 
     if (!isObject(candidate) || candidate.kind !== 'tool-group' || !Array.isArray(candidate.tools)) return null
     return candidate as unknown as ToolGroupBlock
 }
-

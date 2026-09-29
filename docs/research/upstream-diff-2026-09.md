@@ -83,7 +83,7 @@
 | 特性 | 上游证据 | 价值 | 主要风险 | 估算 |
 | --- | --- | --- | --- | --- |
 | Prepared Statement Cache | [d14683a4](https://github.com/tiann/hapi/commit/d14683a4) 涉及 Hub store、Socket 和 session invalidation | 降低 SQLite 高频读写开销 | 当前 store 有自定义 AUTO、Pin、分享表和迁移；直接覆盖会破坏缓存失效语义 | L，3–7 天 |
-| 增量 Tail Sync | [faf70c64](https://github.com/tiann/hapi/commit/faf70c64) 同时改 Hub store/sync 与 Web 消息窗口 | 长会话首屏和追尾更新更快 | 与本地历史面板、消息标记、AUTO 事件顺序耦合；模拟约 25 个冲突 | XL，2–4 周 |
+| 增量 Tail Sync | [faf70c64](https://github.com/tiann/hapi/commit/faf70c64) 同时改 Hub store/sync 与 Web 消息窗口 | 长会话首屏和追尾更新更快 | 已按本地消息窗口和历史 API 适配；仍需关注旧客户端兼容与高并发回归 | 已实现；M，约 3–5 天 |
 | Content Codec（截断 + zstd） | [05ba050e](https://github.com/tiann/hapi/commit/05ba050e) 描述大消息压缩与截断，提交含 schema/fixtures | 降低 SQLite 和网络占用 | 需要迁移、备份、旧消息读取和大消息回放测试 | L，1–2 周 |
 | 用户配置 MCP Servers | [5c5c8b3a](https://github.com/tiann/hapi/commit/5c5c8b3a) 增加 HAPI-owned MCP proxy、Windows shim 和配置持久化 | 与当前 Project Tools 组合，扩展用户工具 | 两套 MCP bridge、命令白名单和 Windows 路径安全规则需统一 | L，1–2 周 |
 | Kimi / Pi / Copilot 等 Agent | [Kimi](https://github.com/tiann/hapi/commit/763f45ac)、[Pi](https://github.com/tiann/hapi/commit/e23ae1b2)、[Copilot ACP](https://github.com/tiann/hapi/commit/f10fbc74) | 扩大模型和供应商范围 | 每个 Agent 都牵涉 flavor、权限、resume、模型列表、CLI/Hub/Web 三端；逐个模拟冲突约 9–63 个 | 单 Agent L；按需求排序 |
@@ -107,7 +107,7 @@
 2. 先移植 P0：SSE gzip、活跃历史 guard、取消权限状态；每个特性一个 PR，保留本地 API 和数据库表。
 3. 再移植搜索排序；之后单独评审 Prepared Statement Cache、Content Codec、MCP。
 4. 每次只引入一个 Agent（优先 Kimi 或 Pi，取决于用户需求），通过共享 flavor/session factory 接入，不复制上游整套 Web 页面。
-5. 对 Shared Sessions、Steer、Tail Sync 建立独立 RFC；只有在决定采用上游状态机后才实施。
+5. 对 Shared Sessions、Steer 建立独立 RFC；Tail Sync 已按本地协议完成选择性迁移，后续只需跟踪上游兼容性修复。
 
 ### 路线 A 执行结果（2026-09-29）
 
@@ -120,6 +120,18 @@
 未直接移植：
 
 - 上游活跃 Codex history guard 依赖当前分支不存在的 `codexDesktop` transcript-import 路由。当前 CLI 的 `codexLocalLauncher` 已拒绝非 primary transcript/session，继续引入上游路由会扩大合并面，因此留待 Codex history/import 专项。
+
+### 增量 Tail Sync 迁移结果（2026-09-29）
+
+本次已完成上游 `faf70c64` 的选择性迁移，未覆盖上游整套 Web 页面：
+
+- **Hub / SQLite**：Schema 升至 v20，新增 `message_epochs`；消息读取支持 `(position_at, seq)` 复合游标、`after` 增量页、`until` 固定快照头和 epoch reset。
+- **一致性保护**：队列删除、会话复制/合并、可能改变显示顺序的 late invocation 会递增 epoch；客户端发现 epoch 不一致时用最新页替换陈旧窗口。
+- **REST / Client**：`GET /api/sessions/:id/messages` 支持 `afterAt/afterSeq`、`untilAt/untilSeq`、`epoch`，保留 seq-only 和 V8 by-position 兼容路径。
+- **Web 消息窗口**：加入 tail/history 模式、增量追尾、older history 分页、unseen 计数、窗口裁剪与 `sessionStorage` 恢复；保留当前 `SessionChat`、AUTO、队列栏和会话大纲 UI。
+- **边界取舍**：没有引入上游 `shared/src/apiTypes.ts`、原生客户端或 Codex Shared Sessions；本地类型仍位于 `web/src/types/api.ts`，减少协议冲突。
+
+验证：`bun typecheck`、Hub 280 项测试、Web 546 项测试、Tail Sync 定向测试及 Web/Hub production build 均通过。构建中的 KaTeX 字体 unresolved 与 Browserslist stale 为既有 warning，不影响产物。
 
 验证结果：`bun typecheck` 通过；Web SessionList/search 测试 36 项通过；Hub permissions/RpcGateway 测试通过；CLI permissionHandler 测试通过；现有 Codex launcher 历史过滤测试 14 项通过。`bun run build:single-exe`（宿主平台）也已通过。
 

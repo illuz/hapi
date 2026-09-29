@@ -1,8 +1,9 @@
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import { resolve } from 'node:path'
 import { createRequire } from 'node:module'
+import { getKaTeXFontAssets } from './src/lib/katex-font-assets'
 
 const require = createRequire(import.meta.url)
 const base = process.env.VITE_BASE_URL || '/'
@@ -32,6 +33,29 @@ function getVendorChunkName(id: string): string | undefined {
     return undefined
 }
 
+/**
+ * KaTeX's stylesheet keeps its font URLs relative to the package's `dist`
+ * directory. Tailwind's CSS import pipeline inlines that stylesheet before
+ * Vite can follow those URLs, so production builds otherwise leave references
+ * such as `fonts/KaTeX_Main-Regular.woff2` pointing at a non-existent path.
+ * Emit the font files beside the generated CSS and let the unchanged KaTeX
+ * URLs resolve under `assets/fonts/`.
+ */
+export function copyKaTeXFonts(): Plugin {
+    return {
+        name: 'copy-katex-fonts',
+        apply: 'build',
+        generateBundle() {
+            for (const asset of getKaTeXFontAssets()) {
+                this.emitFile({
+                    type: 'asset',
+                    ...asset
+                })
+            }
+        }
+    }
+}
+
 export default defineConfig({
     define: {
         __APP_VERSION__: JSON.stringify(require('../cli/package.json').version),
@@ -52,6 +76,7 @@ export default defineConfig({
     },
     plugins: [
         react(),
+        copyKaTeXFonts(),
         VitePWA({
             registerType: 'autoUpdate',
             includeAssets: ['favicon.ico', 'apple-touch-icon-180x180.png', 'mask-icon.svg'],

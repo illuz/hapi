@@ -11,6 +11,8 @@ import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import remarkDisableIndentedCode from '@/lib/remark-disable-indented-code'
+import remarkLatexBracketMath from '@/lib/remark-latex-bracket-math'
+import remarkRepairTables from '@/lib/remark-repair-tables'
 import remarkStripCjkAutolink from '@/lib/remark-strip-cjk-autolink'
 import { cn } from '@/lib/utils'
 import { SyntaxHighlighter } from '@/components/assistant-ui/shiki-highlighter'
@@ -21,7 +23,16 @@ import { MarkdownAnchor, useMarkdownLinkUrlTransform } from '@/components/assist
 
 import type { MarkdownTextPrimitiveProps } from '@assistant-ui/react-markdown'
 
-export const MARKDOWN_PLUGINS = [remarkGfm, remarkStripCjkAutolink, remarkMath, remarkDisableIndentedCode] satisfies NonNullable<MarkdownTextPrimitiveProps['remarkPlugins']>
+// Bracket math must run before remarkMath so Markdown escape handling cannot
+// turn `\(` / `\[` into plain text before the AST transformer sees them.
+export const MARKDOWN_PLUGINS = [
+    remarkGfm,
+    remarkRepairTables,
+    remarkLatexBracketMath,
+    remarkStripCjkAutolink,
+    remarkMath,
+    remarkDisableIndentedCode,
+] satisfies NonNullable<MarkdownTextPrimitiveProps['remarkPlugins']>
 export const MARKDOWN_REHYPE_PLUGINS = [rehypeKatex] satisfies NonNullable<MarkdownTextPrimitiveProps['rehypePlugins']>
 export const MARKDOWN_CLASSNAME = 'aui-md happy-chat-text min-w-0 max-w-full break-words text-[var(--app-fg)]'
 export const MARKDOWN_COMPONENTS_BY_LANGUAGE = {

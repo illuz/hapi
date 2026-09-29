@@ -35,6 +35,30 @@ describe('MarkdownRenderer', () => {
         expect(screen.getByRole('link', { name: 'notes' })).toHaveAttribute('href', './notes.md')
     })
 
+    it('renders inline and block math as KaTeX markup', () => {
+        const { container } = render(
+            <MarkdownRenderer content={'Inline $e^{i\\pi}+1=0$.\n\n$$\\int_0^1 x^2 dx$$'} />
+        )
+
+        expect(container.querySelectorAll('.katex')).toHaveLength(2)
+        expect(container.querySelector('.katex-html')).toBeInTheDocument()
+    })
+
+    it('renders bracket-delimited inline and block math', () => {
+        const { container } = render(
+            <MarkdownRenderer content={String.raw`Inline \(x^2\).
+
+\[
+E = mc^2
+\]`} />
+        )
+
+        expect(container.querySelectorAll('.katex')).toHaveLength(2)
+        expect(container.querySelector('.katex-display')).toBeInTheDocument()
+        expect(container.textContent).not.toContain('\\(')
+        expect(container.textContent).not.toContain('\\[')
+    })
+
     it('copies ordinary links instead of navigating in session Markdown', async () => {
         render(
             <MarkdownLinkBehaviorProvider behavior="copy-non-file">

@@ -111,6 +111,25 @@ E = mc^2
         expect(link).not.toHaveAttribute('title', 'Copy link')
     })
 
+    it('turns bare repository paths into session file preview links', () => {
+        render(
+            <MarkdownLinkBehaviorProvider
+                behavior="navigate"
+                sessionId="session-1"
+                workingDirectory="/workspace/project"
+            >
+                <MarkdownRenderer content={'Changed src/app.ts:42 and docs/guide.md.'} />
+            </MarkdownLinkBehaviorProvider>
+        )
+
+        const links = screen.getAllByRole('link').filter((link) =>
+            link.getAttribute('href')?.includes('/sessions/session-1/file')
+        )
+        expect(links).toHaveLength(2)
+        expect(links[0]).toHaveAttribute('href', expect.stringContaining('/sessions/session-1/file'))
+        expect(links[1]).toHaveAttribute('href', expect.stringContaining('/sessions/session-1/file'))
+    })
+
     it('turns file URLs into session file preview links before URL sanitization', () => {
         render(
             <MarkdownLinkBehaviorProvider

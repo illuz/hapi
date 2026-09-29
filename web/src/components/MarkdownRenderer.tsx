@@ -4,6 +4,7 @@ import { createContext, isValidElement, useContext } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import {
     MARKDOWN_PLUGINS,
+    MARKDOWN_PLUGINS_WITH_BREAKS,
     MARKDOWN_REHYPE_PLUGINS,
     MARKDOWN_COMPONENTS_BY_LANGUAGE,
     MARKDOWN_CLASSNAME,
@@ -18,6 +19,7 @@ interface MarkdownRendererProps {
     content: string
     components?: MarkdownTextPrimitiveProps['components']
     className?: string
+    preserveSingleLineBreaks?: boolean
 }
 
 const StaticPreContext = createContext<ComponentPropsWithoutRef<'pre'> | null>(null)
@@ -250,7 +252,7 @@ function MarkdownContent(props: MarkdownRendererProps) {
     return (
         <div className={cn(MARKDOWN_CLASSNAME, props.className)}>
             <ReactMarkdown
-                remarkPlugins={MARKDOWN_PLUGINS}
+                remarkPlugins={props.preserveSingleLineBreaks ? MARKDOWN_PLUGINS_WITH_BREAKS : MARKDOWN_PLUGINS}
                 rehypePlugins={MARKDOWN_REHYPE_PLUGINS}
                 components={mergedComponents}
                 urlTransform={urlTransform}

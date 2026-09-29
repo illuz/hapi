@@ -8,11 +8,14 @@ import {
     type CodeHeaderProps,
 } from '@assistant-ui/react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkBreaks from 'remark-breaks'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import remarkDisableIndentedCode from '@/lib/remark-disable-indented-code'
 import remarkLatexBracketMath from '@/lib/remark-latex-bracket-math'
 import remarkRepairTables from '@/lib/remark-repair-tables'
+import remarkSafeDollarMath from '@/lib/remark-safe-dollar-math'
+import remarkFilePathLinks from '@/lib/remark-file-path-links'
 import remarkStripCjkAutolink from '@/lib/remark-strip-cjk-autolink'
 import { cn } from '@/lib/utils'
 import { SyntaxHighlighter } from '@/components/assistant-ui/shiki-highlighter'
@@ -25,13 +28,30 @@ import type { MarkdownTextPrimitiveProps } from '@assistant-ui/react-markdown'
 
 // Bracket math must run before remarkMath so Markdown escape handling cannot
 // turn `\(` / `\[` into plain text before the AST transformer sees them.
+// Single-dollar parsing is disabled in remark-math; the safe-dollar pass below
+// restores TeX-like shorthand while leaving currency prose literal.
+const MARKDOWN_PLUGIN_TAIL = [
+    remarkStripCjkAutolink,
+    [remarkMath, { singleDollarTextMath: false }],
+    remarkSafeDollarMath,
+    remarkDisableIndentedCode,
+    [remarkFilePathLinks, { rewriteExplicitLinks: false }],
+] satisfies NonNullable<MarkdownTextPrimitiveProps['remarkPlugins']>
+
 export const MARKDOWN_PLUGINS = [
     remarkGfm,
     remarkRepairTables,
     remarkLatexBracketMath,
-    remarkStripCjkAutolink,
-    remarkMath,
-    remarkDisableIndentedCode,
+    ...MARKDOWN_PLUGIN_TAIL,
+] satisfies NonNullable<MarkdownTextPrimitiveProps['remarkPlugins']>
+
+/** User-authored prompts preserve intentional single line breaks. */
+export const MARKDOWN_PLUGINS_WITH_BREAKS = [
+    remarkGfm,
+    remarkRepairTables,
+    remarkLatexBracketMath,
+    remarkBreaks,
+    ...MARKDOWN_PLUGIN_TAIL,
 ] satisfies NonNullable<MarkdownTextPrimitiveProps['remarkPlugins']>
 export const MARKDOWN_REHYPE_PLUGINS = [rehypeKatex] satisfies NonNullable<MarkdownTextPrimitiveProps['rehypePlugins']>
 export const MARKDOWN_CLASSNAME = 'aui-md happy-chat-text min-w-0 max-w-full break-words text-[var(--app-fg)]'
@@ -238,6 +258,7 @@ export const defaultComponents = memoizeMarkdownComponents({
 
 type MarkdownTextProps = {
     preprocess?: MarkdownTextPrimitiveProps['preprocess']
+    preserveSingleLineBreaks?: boolean
 }
 
 export function MarkdownText(props: MarkdownTextProps) {
@@ -245,7 +266,7 @@ export function MarkdownText(props: MarkdownTextProps) {
 
     return (
         <MarkdownTextPrimitive
-            remarkPlugins={MARKDOWN_PLUGINS}
+            remarkPlugins={props.preserveSingleLineBreaks ? MARKDOWN_PLUGINS_WITH_BREAKS : MARKDOWN_PLUGINS}
             rehypePlugins={MARKDOWN_REHYPE_PLUGINS}
             components={defaultComponents}
             componentsByLanguage={MARKDOWN_COMPONENTS_BY_LANGUAGE}

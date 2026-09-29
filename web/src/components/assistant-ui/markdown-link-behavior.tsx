@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useMemo } from 'react'
 import { defaultUrlTransform, type UrlTransform } from 'react-markdown'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
 import { resolveLocalFileHref } from '@/lib/filePathLinks'
+import { decodeFilePathHref } from '@/lib/remark-file-path-links'
 import { I18nContext } from '@/lib/i18n-context'
 import { cn } from '@/lib/utils'
 
@@ -54,6 +55,13 @@ export function useMarkdownLinkUrlTransform(): UrlTransform {
     const { behavior, sessionId, workingDirectory } = useContext(MarkdownLinkBehaviorContext)
 
     return useCallback<UrlTransform>((url, key) => {
+        if (key === 'href' && url.startsWith('hapi-file:')) {
+            const filePath = decodeFilePathHref(url)
+            const sessionFileHref = filePath
+                ? resolveLocalFileHref(filePath, sessionId, workingDirectory)
+                : null
+            return sessionFileHref ?? url
+        }
         if (key === 'href' && behavior === 'copy-non-file' && !isSessionFileHref(url)) {
             const localFileHref = resolveLocalFileHref(url, sessionId, workingDirectory)
             if (localFileHref) return localFileHref

@@ -41,6 +41,7 @@
         "react-pdf": "^10.4.1",
         "read-excel-file": "^9.3.10",
         "rehype-katex": "^7.0.1",
+        "remark-breaks": "^4.0.0",
         "remark-gfm": "^4.0.1",
         "remark-math": "^6.0.0",
         "shiki": "^3.20.0",

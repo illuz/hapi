@@ -212,6 +212,21 @@ export function reduceTimeline(
                     continue
                 }
 
+                if (c.type === 'codex-review') {
+                    blocks.push({
+                        kind: 'codex-review',
+                        id: `${msg.id}:${idx}`,
+                        localId: msg.localId,
+                        createdAt: msg.createdAt,
+                        invokedAt: msg.invokedAt,
+                        usage: msg.usage,
+                        model: msg.model,
+                        review: c.review,
+                        meta: msg.meta
+                    })
+                    continue
+                }
+
                 if (c.type === 'summary') {
                     blocks.push({
                         kind: 'agent-event',

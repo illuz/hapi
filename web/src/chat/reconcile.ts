@@ -5,6 +5,7 @@ import type {
     AgentTextBlock,
     ChatBlock,
     CliOutputBlock,
+    CodexReviewBlock,
     ToolCallBlock,
     ToolPermission,
     UserTextBlock,
@@ -127,6 +128,13 @@ function areAgentReasoningBlocksEqual(left: AgentReasoningBlock, right: AgentRea
         && left.meta === right.meta
 }
 
+function areCodexReviewBlocksEqual(left: CodexReviewBlock, right: CodexReviewBlock): boolean {
+    return left.createdAt === right.createdAt
+        && left.localId === right.localId
+        && left.meta === right.meta
+        && left.review === right.review
+}
+
 function areCliOutputBlocksEqual(left: CliOutputBlock, right: CliOutputBlock): boolean {
     return left.text === right.text
         && left.localId === right.localId
@@ -211,6 +219,11 @@ function reconcileBlock(block: ChatBlock, prevById: ChatBlocksById): ChatBlock {
     if (block.kind === 'agent-reasoning') {
         const prevBlock = prev as AgentReasoningBlock
         return areAgentReasoningBlocksEqual(prevBlock, block) ? prevBlock : block
+    }
+
+    if (block.kind === 'codex-review') {
+        const prevBlock = prev as CodexReviewBlock
+        return areCodexReviewBlocksEqual(prevBlock, block) ? prevBlock : block
     }
 
     const prevBlock = prev as AgentEventBlock

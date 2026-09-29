@@ -3,12 +3,13 @@ import type { AppendMessage, AttachmentAdapter, ThreadMessageLike } from '@assis
 import { useExternalMessageConverter, useExternalStoreRuntime } from '@assistant-ui/react'
 import { safeStringify } from '@hapi/protocol'
 import { renderEventLabel } from '@/chat/presentation'
-import type { ChatBlock, CliOutputBlock, UsageData } from '@/chat/types'
+import type { CliOutputBlock, CodexReview, UsageData } from '@/chat/types'
 import type { AgentEvent, ToolCallBlock } from '@/chat/types'
+import { createToolGroupArtifact, type VisibleChatBlock } from '@/chat/toolGroups'
 import type { AttachmentMetadata, MessageStatus as HappyMessageStatus, Session } from '@/types/api'
 
 export type HappyChatMessageMetadata = {
-    kind: 'user' | 'assistant' | 'tool' | 'event' | 'cli-output'
+    kind: 'user' | 'assistant' | 'tool' | 'event' | 'cli-output' | 'codex-review'
     status?: HappyMessageStatus
     localId?: string | null
     originalText?: string
@@ -20,9 +21,34 @@ export type HappyChatMessageMetadata = {
     durationMs?: number
     usage?: UsageData
     model?: string | null
+    review?: CodexReview
 }
 
-function toThreadMessageLike(block: ChatBlock): ThreadMessageLike {
+function toThreadMessageLike(block: VisibleChatBlock): ThreadMessageLike {
+    if (block.kind === 'tool-group') {
+        const artifact = createToolGroupArtifact(block)
+        return {
+            role: 'assistant',
+            id: `tool-group:${block.id}`,
+            createdAt: new Date(block.createdAt),
+            content: [{
+                type: 'tool-call',
+                toolCallId: artifact.id,
+                toolName: 'Tool group',
+                argsText: '',
+                result: undefined,
+                isError: block.summary.errorCount > 0,
+                artifact
+            }],
+            metadata: {
+                custom: {
+                    kind: 'tool',
+                    toolCallId: artifact.id,
+                    invokedAt: block.invokedAt
+                } satisfies HappyChatMessageMetadata
+            }
+        }
+    }
     if (block.kind === 'user-text') {
         const messageId = `user:${block.id}`
         return {
@@ -76,6 +102,26 @@ function toThreadMessageLike(block: ChatBlock): ThreadMessageLike {
                     durationMs: block.durationMs,
                     usage: block.usage,
                     model: block.model
+                } satisfies HappyChatMessageMetadata
+            }
+        }
+    }
+
+    if (block.kind === 'codex-review') {
+        const messageId = `assistant:${block.id}`
+        return {
+            role: 'assistant',
+            id: messageId,
+            createdAt: new Date(block.createdAt),
+            content: [{ type: 'text', text: '' }],
+            metadata: {
+                custom: {
+                    kind: 'codex-review',
+                    invokedAt: block.invokedAt,
+                    durationMs: block.durationMs,
+                    usage: block.usage,
+                    model: block.model,
+                    review: block.review
                 } satisfies HappyChatMessageMetadata
             }
         }
@@ -206,7 +252,7 @@ function extractMessageContent(message: AppendMessage): { text: string; attachme
 
 export function useHappyRuntime(props: {
     session: Session
-    blocks: readonly ChatBlock[]
+    blocks: readonly VisibleChatBlock[]
     isSending: boolean
     onSendMessage: (text: string, attachments?: AttachmentMetadata[]) => void
     onAbort: () => Promise<void>
@@ -215,9 +261,9 @@ export function useHappyRuntime(props: {
 }) {
     // Use cached message converter for performance optimization
     // This prevents re-converting all messages on every render
-    const convertedMessages = useExternalMessageConverter<ChatBlock>({
+    const convertedMessages = useExternalMessageConverter<VisibleChatBlock>({
         callback: toThreadMessageLike,
-        messages: props.blocks as ChatBlock[],
+        messages: props.blocks as VisibleChatBlock[],
         isRunning: props.session.thinking,
     })
 

@@ -4,8 +4,6 @@ import { MarkdownText } from '@/components/assistant-ui/markdown-text'
 import { Reasoning, ReasoningGroup } from '@/components/assistant-ui/reasoning'
 import { HappyToolMessage } from '@/components/AssistantChat/messages/ToolMessage'
 import { CliOutputBlock } from '@/components/CliOutputBlock'
-import { CopyIcon, CheckIcon } from '@/components/icons'
-import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
 import type { HappyChatMessageMetadata } from '@/lib/assistant-runtime'
 import { getAssistantCopyText } from '@/components/AssistantChat/messages/assistantCopyText'
 import { getConversationMessageAnchorId } from '@/chat/outline'
@@ -13,6 +11,9 @@ import { MessageMetadata } from '@/components/AssistantChat/messages/MessageMeta
 import { isNestedInteractiveEvent } from '@/components/AssistantChat/messages/metadataToggle'
 import { useHappyChatContext } from '@/components/AssistantChat/context'
 import { linkAssistantFilePaths } from '@/lib/filePathLinks'
+import { MessageActions } from '@/components/AssistantChat/messages/MessageActions'
+import { CodexReviewCard } from '@/components/AssistantChat/messages/CodexReviewCard'
+import type { CodexReview } from '@/chat/types'
 
 const TOOL_COMPONENTS = {
     Fallback: HappyToolMessage
@@ -50,16 +51,21 @@ const MESSAGE_PART_COMPONENTS = {
 } as const
 
 export function HappyAssistantMessage() {
-    const { copied, copy } = useCopyToClipboard()
+    const ctx = useHappyChatContext()
     const [showMetadata, setShowMetadata] = useState(false)
     const toggleMetadata = useCallback((event: MouseEvent<HTMLElement>) => {
         if (isNestedInteractiveEvent(event)) return
         setShowMetadata((open) => !open)
     }, [])
     const messageId = useAssistantState(({ message }) => message.id)
+    const forkMessageId = messageId.replace(/^[^:]+:/, '').split(':', 1)[0] ?? messageId
     const isCliOutput = useAssistantState(({ message }) => {
         const custom = message.metadata.custom as Partial<HappyChatMessageMetadata> | undefined
         return custom?.kind === 'cli-output'
+    })
+    const codexReview = useAssistantState(({ message }) => {
+        const custom = message.metadata.custom as Partial<HappyChatMessageMetadata> | undefined
+        return custom?.kind === 'codex-review' ? (custom.review as CodexReview | undefined) : undefined
     })
     const cliText = useAssistantState(({ message }) => {
         const custom = message.metadata.custom as Partial<HappyChatMessageMetadata> | undefined
@@ -98,6 +104,23 @@ export function HappyAssistantMessage() {
         ? 'py-1 min-w-0 max-w-full overflow-x-hidden'
         : 'px-1 min-w-0 max-w-full overflow-x-hidden'
 
+    if (codexReview) {
+        return (
+            <MessagePrimitive.Root
+                id={getConversationMessageAnchorId(messageId)}
+                className="scroll-mt-4 px-1 min-w-0 max-w-full overflow-x-hidden"
+            >
+                <CodexReviewCard review={codexReview} />
+                <MessageActions
+                    align="start"
+                    messageElementId={getConversationMessageAnchorId(messageId)}
+                    showFork={Boolean(ctx.onForkMessage)}
+                    onFork={ctx.onForkMessage ? () => ctx.onForkMessage!(forkMessageId) : undefined}
+                />
+            </MessagePrimitive.Root>
+        )
+    }
+
     if (isCliOutput) {
         return (
             <MessagePrimitive.Root
@@ -124,6 +147,13 @@ export function HappyAssistantMessage() {
                         className="mt-1"
                     />
                 )}
+                <MessageActions
+                    align="start"
+                    copyText={cliText || undefined}
+                    messageElementId={getConversationMessageAnchorId(messageId)}
+                    showFork={Boolean(ctx.onForkMessage)}
+                    onFork={ctx.onForkMessage ? () => ctx.onForkMessage!(forkMessageId) : undefined}
+                />
             </MessagePrimitive.Root>
         )
     }
@@ -153,21 +183,14 @@ export function HappyAssistantMessage() {
                         />
                     )}
                 </div>
-                {copyText ? (
-                    <div className="happy-message-actions-first-line hidden sm:flex shrink-0 opacity-0 group-hover/msg:opacity-100 transition-opacity">
-                        <button
-                            type="button"
-                            title="Copy"
-                            className="p-0.5 rounded hover:bg-[var(--app-subtle-bg)] transition-colors"
-                            onClick={() => copy(copyText)}
-                        >
-                            {copied
-                                ? <CheckIcon className="h-3.5 w-3.5 text-green-500" />
-                                : <CopyIcon className="h-3.5 w-3.5 text-[var(--app-hint)]" />}
-                        </button>
-                    </div>
-                ) : null}
             </div>
+            <MessageActions
+                align="start"
+                copyText={copyText || undefined}
+                messageElementId={getConversationMessageAnchorId(messageId)}
+                showFork={Boolean(ctx.onForkMessage)}
+                onFork={ctx.onForkMessage ? () => ctx.onForkMessage!(forkMessageId) : undefined}
+            />
         </MessagePrimitive.Root>
     )
 }

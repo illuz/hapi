@@ -1,4 +1,4 @@
-import type { AgentEvent, NormalizedAgentContent, NormalizedMessage, ToolResultPermission } from '@/chat/types'
+import type { AgentEvent, CodexReview, CodexReviewFinding, NormalizedAgentContent, NormalizedMessage, ToolResultPermission } from '@/chat/types'
 import { AGENT_MESSAGE_PAYLOAD_TYPE, asNumber, asString, isObject } from '@hapi/protocol'
 import { isClaudeChatVisibleMessage } from '@hapi/protocol/messages'
 
@@ -98,6 +98,68 @@ function normalizePlanEntries(value: unknown): Array<{ step: string; status: 'pe
         })
     }
     return plan
+}
+
+function normalizeCodexReviewFinding(value: unknown): CodexReviewFinding | null {
+    if (!isObject(value)) return null
+    const title = asString(value.title)
+    const body = asString(value.body)
+    if (!title || !body) return null
+
+    const location = isObject(value.code_location)
+        ? value.code_location
+        : isObject(value.codeLocation)
+            ? value.codeLocation
+            : null
+    const lineRange = location && (isObject(location.line_range)
+        ? location.line_range
+        : isObject(location.lineRange)
+            ? location.lineRange
+            : null)
+
+    return {
+        title,
+        body,
+        priority: asNumber(value.priority),
+        confidenceScore: asNumber(value.confidence_score ?? value.confidenceScore),
+        filePath: location
+            ? asString(location.absolute_file_path ?? location.absoluteFilePath ?? location.path)
+            : null,
+        lineStart: lineRange ? asNumber(lineRange.start) : null,
+        lineEnd: lineRange ? asNumber(lineRange.end) : null
+    }
+}
+
+function normalizeCodexReviewJson(value: unknown): CodexReview | null {
+    if (!isObject(value)) return null
+    const hasReviewMarker = Array.isArray(value.findings)
+        || 'overall_correctness' in value
+        || 'overallCorrectness' in value
+        || 'overall_explanation' in value
+        || 'overallExplanation' in value
+    if (!hasReviewMarker) return null
+
+    const findings = Array.isArray(value.findings)
+        ? value.findings
+            .map(normalizeCodexReviewFinding)
+            .filter((finding): finding is CodexReviewFinding => finding !== null)
+        : []
+    const overallCorrectness = asString(value.overall_correctness ?? value.overallCorrectness)
+    const overallExplanation = asString(value.overall_explanation ?? value.overallExplanation)
+    const overallConfidenceScore = asNumber(value.overall_confidence_score ?? value.overallConfidenceScore)
+
+    if (findings.length === 0 && !overallCorrectness && !overallExplanation && overallConfidenceScore === null) return null
+    return { findings, overallCorrectness, overallExplanation, overallConfidenceScore }
+}
+
+function parseCodexReviewMessage(message: string): CodexReview | null {
+    const trimmed = message.trim()
+    if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) return null
+    try {
+        return normalizeCodexReviewJson(JSON.parse(trimmed) as unknown)
+    } catch {
+        return null
+    }
 }
 
 function normalizeAssistantOutput(
@@ -423,6 +485,18 @@ export function normalizeAgentRecord(
         if (!data || typeof data.type !== 'string') return null
 
         if (data.type === 'message' && typeof data.message === 'string') {
+            const review = parseCodexReviewMessage(data.message)
+            if (review) {
+                return {
+                    id: messageId,
+                    localId,
+                    createdAt,
+                    role: 'agent',
+                    isSidechain: false,
+                    content: [{ type: 'codex-review', review, uuid: messageId, parentUUID: null }],
+                    meta
+                }
+            }
             return {
                 id: messageId,
                 localId,

@@ -420,6 +420,7 @@ export function HappyThread(props: {
     disabled: boolean
     onRefresh: () => void
     onRetryMessage?: (localId: string) => void
+    onForkMessage?: (messageId: string) => void | Promise<void>
     onFlushPending: () => void
     onAtBottomChange: (atBottom: boolean) => void
     isLoadingMessages: boolean
@@ -1013,7 +1014,8 @@ export function HappyThread(props: {
             metadata: props.metadata,
             disabled: props.disabled,
             onRefresh: props.onRefresh,
-            onRetryMessage: props.onRetryMessage
+            onRetryMessage: props.onRetryMessage,
+            onForkMessage: props.onForkMessage
         }}>
             <MarkdownLinkBehaviorProvider
                 behavior="copy-non-file"

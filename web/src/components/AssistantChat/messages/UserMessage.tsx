@@ -6,15 +6,13 @@ import { MessageStatusIndicator } from '@/components/AssistantChat/messages/Mess
 import { MessageAttachments } from '@/components/AssistantChat/messages/MessageAttachments'
 import { UserBubbleContent, getUserBubbleClassName, shouldShowMessageStatus } from '@/components/AssistantChat/messages/user-bubble'
 import { CliOutputBlock } from '@/components/CliOutputBlock'
-import { CopyIcon, CheckIcon } from '@/components/icons'
-import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
 import { getConversationMessageAnchorId } from '@/chat/outline'
 import { MessageMetadata } from '@/components/AssistantChat/messages/MessageMetadata'
 import { isNestedInteractiveEvent } from '@/components/AssistantChat/messages/metadataToggle'
+import { MessageActions } from '@/components/AssistantChat/messages/MessageActions'
 
 export function HappyUserMessage() {
     const ctx = useHappyChatContext()
-    const { copied, copy } = useCopyToClipboard()
     const [showMetadata, setShowMetadata] = useState(false)
     const toggleMetadata = useCallback((event: MouseEvent<HTMLElement>) => {
         if (isNestedInteractiveEvent(event)) return
@@ -22,6 +20,7 @@ export function HappyUserMessage() {
     }, [])
     const role = useAssistantState(({ message }) => message.role)
     const messageId = useAssistantState(({ message }) => message.id)
+    const forkMessageId = messageId.replace(/^[^:]+:/, '').split(':', 1)[0] ?? messageId
     const text = useAssistantState(({ message }) => {
         if (message.role !== 'user') return ''
         return message.content.find((part) => part.type === 'text')?.text ?? ''
@@ -90,6 +89,13 @@ export function HappyUserMessage() {
                     {showMetadata && invokedAt != null && (
                         <MessageMetadata invokedAt={invokedAt} className="mt-1 justify-end" />
                     )}
+                    <MessageActions
+                        align="end"
+                        copyText={cliText || undefined}
+                        messageElementId={getConversationMessageAnchorId(messageId)}
+                        showFork={Boolean(ctx.onForkMessage)}
+                        onFork={ctx.onForkMessage ? () => ctx.onForkMessage!(forkMessageId) : undefined}
+                    />
                 </div>
             </MessagePrimitive.Root>
         )
@@ -116,21 +122,6 @@ export function HappyUserMessage() {
                     </div>
                     {(hasText || showStatus) && (
                         <div className="happy-message-actions-first-line flex shrink-0 items-center gap-1">
-                            {hasText && (
-                                <button
-                                    type="button"
-                                    title="Copy"
-                                    className="rounded-md p-0.5 opacity-60 transition-[opacity,background-color] hover:bg-[var(--app-chat-user-chip-bg)] sm:opacity-0 sm:group-hover/msg:opacity-100"
-                                    onClick={(event) => {
-                                        event.stopPropagation()
-                                        copy(text)
-                                    }}
-                                >
-                                    {copied
-                                        ? <CheckIcon className="h-3.5 w-3.5 text-green-500" />
-                                        : <CopyIcon className="h-3.5 w-3.5 text-[var(--app-hint)]" />}
-                                </button>
-                            )}
                             {showStatus ? <MessageStatusIndicator status={status} onRetry={onRetry} /> : null}
                         </div>
                     )}
@@ -139,6 +130,13 @@ export function HappyUserMessage() {
                     <MessageMetadata invokedAt={invokedAt} className="justify-end opacity-60" />
                 )}
             </div>
+            <MessageActions
+                align="end"
+                copyText={hasText ? text : undefined}
+                messageElementId={getConversationMessageAnchorId(messageId)}
+                showFork={Boolean(ctx.onForkMessage)}
+                onFork={ctx.onForkMessage ? () => ctx.onForkMessage!(forkMessageId) : undefined}
+            />
         </MessagePrimitive.Root>
     )
 }

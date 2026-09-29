@@ -11,6 +11,7 @@ import type {
     SlashCommand
 } from '@/types/api'
 import type { ChatBlock, NormalizedMessage } from '@/chat/types'
+import { buildVisibleChatBlocks, type VisibleChatBlock } from '@/chat/toolGroups'
 import type { ConversationOutlineItem } from '@/chat/outline'
 import type { Suggestion } from '@/hooks/useActiveSuggestions'
 import { normalizeDecryptedMessage } from '@/chat/normalize'
@@ -361,6 +362,10 @@ export function SessionChat(props: {
         () => reconcileChatBlocks(reduced.blocks, blocksByIdRef.current),
         [reduced.blocks]
     )
+    const visibleChatBlocks: VisibleChatBlock[] = useMemo(
+        () => buildVisibleChatBlocks(reconciled.blocks, { hasMoreMessages: props.hasMoreMessages }),
+        [reconciled.blocks, props.hasMoreMessages]
+    )
 
     useEffect(() => {
         blocksByIdRef.current = reconciled.byId
@@ -623,7 +628,7 @@ export function SessionChat(props: {
 
     const runtime = useHappyRuntime({
         session: props.session,
-        blocks: reconciled.blocks,
+        blocks: visibleChatBlocks,
         isSending: props.isSending,
         onSendMessage: handleSend,
         onAbort: handleAbort,
@@ -707,6 +712,26 @@ export function SessionChat(props: {
         }
     }, [addToast, agentFlavor, forkSession, haptic, navigate, outlineForkingItemIndex, props.session.id, t])
 
+    const handleForkFromMessage = useCallback(async (messageId: string) => {
+        try {
+            const result = await forkSession({ forkFromMessageId: messageId })
+            haptic.notification('success')
+            await navigate({
+                to: '/sessions/$sessionId',
+                params: { sessionId: result.sessionId }
+            })
+        } catch (error) {
+            haptic.notification('error')
+            addToast({
+                title: t('message.action.fork'),
+                body: error instanceof Error ? error.message : t('dialog.error.default'),
+                sessionId: props.session.id,
+                url: `/sessions/${props.session.id}`,
+                kind: 'failure'
+            })
+        }
+    }, [addToast, forkSession, haptic, navigate, props.session.id, t])
+
     return (
         <div className="flex h-full min-h-0 flex-col">
             <SessionHeader
@@ -759,6 +784,7 @@ export function SessionChat(props: {
                         disabled={sessionInactive}
                         onRefresh={props.onRefresh}
                         onRetryMessage={props.onRetryMessage}
+                        onForkMessage={forkFromOutlineSupported ? handleForkFromMessage : undefined}
                         onFlushPending={props.onFlushPending}
                         onAtBottomChange={props.onAtBottomChange}
                         isLoadingMessages={props.isLoadingMessages}

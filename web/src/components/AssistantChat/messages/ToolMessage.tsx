@@ -12,6 +12,65 @@ import { ToolCard } from '@/components/ToolCard/ToolCard'
 import { useHappyChatContext } from '@/components/AssistantChat/context'
 import { CliOutputBlock } from '@/components/CliOutputBlock'
 import { UserBubbleContent, getUserBubbleClassName, shouldShowMessageStatus } from '@/components/AssistantChat/messages/user-bubble'
+import { buildVisibleChatBlocks, getToolGroupFromArtifact, type ToolGroupBlock } from '@/chat/toolGroups'
+import { useTranslation } from '@/lib/use-translation'
+
+function ToolGroupCard(props: { group: ToolGroupBlock }) {
+    const ctx = useHappyChatContext()
+    const { t } = useTranslation()
+    const summary = props.group.summary
+    const isLive = summary.runningCount > 0 || summary.pendingCount > 0
+    const kindLabels: Array<[keyof typeof summary.countsByKind, string]> = [
+        ['read', t('toolGroup.kind.read')],
+        ['search', t('toolGroup.kind.search')],
+        ['command', t('toolGroup.kind.command')],
+        ['mutation', t('toolGroup.kind.mutation')],
+        ['web', t('toolGroup.kind.web')],
+        ['other', t('toolGroup.kind.other')]
+    ]
+    const kinds = kindLabels
+        .filter(([kind]) => summary.countsByKind[kind] > 0)
+        .map(([kind, label]) => `${label} ${summary.countsByKind[kind]}`)
+        .join(' · ')
+
+    return (
+        <details
+            className="my-1 overflow-hidden rounded-xl border border-[var(--app-border)] bg-[var(--app-subtle-bg)]"
+            open={props.group.defaultOpen || isLive}
+            data-tool-group="true"
+        >
+            <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-xs text-[var(--app-fg)] [&::-webkit-details-marker]:hidden">
+                <span className="font-medium">{t('toolGroup.title', { n: summary.totalTools })}</span>
+                <span className="min-w-0 flex-1 truncate text-[var(--app-hint)]">{kinds}</span>
+                {summary.errorCount > 0 ? (
+                    <span className="shrink-0 text-red-500">{t('toolGroup.errors', { n: summary.errorCount })}</span>
+                ) : null}
+                {isLive ? (
+                    <span className="shrink-0 text-[var(--app-link)]">{t('toolGroup.running')}</span>
+                ) : null}
+            </summary>
+            <div className="flex flex-col gap-2 border-t border-[var(--app-divider)] px-2 py-2">
+                {props.group.tools.map((tool) => (
+                    <div key={tool.id} className="min-w-0">
+                        <ToolCard
+                            api={ctx.api}
+                            sessionId={ctx.sessionId}
+                            metadata={ctx.metadata}
+                            disabled={ctx.disabled}
+                            onDone={ctx.onRefresh}
+                            block={tool}
+                        />
+                        {tool.children.length > 0 ? (
+                            <div className="mt-2 pl-3">
+                                <HappyNestedBlockList blocks={tool.children} />
+                            </div>
+                        ) : null}
+                    </div>
+                ))}
+            </div>
+        </details>
+    )
+}
 
 function isToolCallBlock(value: unknown): value is ToolCallBlock {
     if (!isObject(value)) return false
@@ -51,10 +110,14 @@ function HappyNestedBlockList(props: {
     blocks: ChatBlock[]
 }) {
     const ctx = useHappyChatContext()
+    const visibleBlocks = buildVisibleChatBlocks(props.blocks)
 
     return (
         <div className="flex flex-col gap-3">
-            {props.blocks.map((block) => {
+            {visibleBlocks.map((block) => {
+                if (block.kind === 'tool-group') {
+                    return <ToolGroupCard key={`tool-group:${block.id}`} group={block} />
+                }
                 if (block.kind === 'user-text') {
                     const status = block.status
                     const canRetry = status === 'failed' && typeof block.localId === 'string' && Boolean(ctx.onRetryMessage)
@@ -159,6 +222,11 @@ function HappyNestedBlockList(props: {
 export function HappyToolMessage(props: ToolCallMessagePartProps) {
     const ctx = useHappyChatContext()
     const artifact = props.artifact
+    const toolGroup = getToolGroupFromArtifact(artifact)
+
+    if (toolGroup) {
+        return <ToolGroupCard group={toolGroup} />
+    }
 
     if (!isToolCallBlock(artifact)) {
         const argsText = typeof props.argsText === 'string' ? props.argsText.trim() : ''

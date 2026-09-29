@@ -10,6 +10,7 @@ export type HappyChatContextValue = {
     disabled: boolean
     onRefresh: () => void
     onRetryMessage?: (localId: string) => void
+    onForkMessage?: (messageId: string) => void | Promise<void>
 }
 
 const HappyChatContext = createContext<HappyChatContextValue | null>(null)

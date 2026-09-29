@@ -452,6 +452,49 @@ describe('normalizeDecryptedMessage', () => {
         })
     })
 
+    it('normalizes Codex review JSON as a structured review block', () => {
+        const message = makeMessage({
+            role: 'agent',
+            content: {
+                type: 'codex',
+                data: {
+                    type: 'message',
+                    message: JSON.stringify({
+                        findings: [{
+                            title: 'Missing null check',
+                            body: 'The value can be undefined.',
+                            priority: 1,
+                            confidence_score: 0.9,
+                            code_location: {
+                                absolute_file_path: '/workspace/app.ts',
+                                line_range: { start: 12, end: 14 }
+                            }
+                        }],
+                        overall_correctness: 'mostly_correct',
+                        overall_explanation: 'One issue remains.'
+                    })
+                }
+            }
+        })
+
+        expect(normalizeDecryptedMessage(message)).toMatchObject({
+            role: 'agent',
+            content: [{
+                type: 'codex-review',
+                review: {
+                    findings: [{
+                        title: 'Missing null check',
+                        priority: 1,
+                        filePath: '/workspace/app.ts',
+                        lineStart: 12,
+                        lineEnd: 14
+                    }],
+                    overallCorrectness: 'mostly_correct'
+                }
+            }]
+        })
+    })
+
     it('normalizes Codex token_count as usage data for context display', () => {
         const message = makeMessage({
             role: 'agent',

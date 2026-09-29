@@ -24,7 +24,7 @@ import {
     sessionMatchesManagementUpdateWindow
 } from '@/lib/sessionManagementFilters'
 import { useSessionAttentionTokens } from '@/lib/sessionAttention'
-import { getSessionLastSeenSnapshot, useSessionLastSeenVersion, markSessionSeen } from '@/lib/sessionLastSeen'
+import { getSessionLastSeenSnapshot, initializeSessionLastSeen, useSessionLastSeenVersion, markSessionSeen } from '@/lib/sessionLastSeen'
 import { sessionMatchesCalendarDate } from '@/lib/sessionCalendarFilter'
 import { getMachineHealth, getMachineHealthLabelKey, type MachineHealth } from '@/lib/machineHealth'
 import { canForkSession, canSpawnSessionFromConfig } from '@/lib/sessionBranching'
@@ -1458,6 +1458,9 @@ export function SessionList(props: {
         }
         return ids
     }, [allSessions, lastSeenSnapshot])
+    useEffect(() => {
+        initializeSessionLastSeen('sessions', allSessions)
+    }, [allSessions])
     const markerColorCounts = useMemo(
         () => getMarkerColorCounts(allSessions),
         [allSessions]

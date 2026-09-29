@@ -71,6 +71,7 @@ export function SessionChat(props: {
     isSending: boolean
     pendingCount: number
     messagesVersion: number
+    historyVersion?: number
     onBack: () => void
     onRefresh: () => void
     onLoadMore: () => Promise<unknown>
@@ -769,7 +770,8 @@ export function SessionChat(props: {
                         pendingCount={props.pendingCount}
                         rawMessagesCount={visibleMessages.length}
                         normalizedMessagesCount={normalizedMessages.length}
-                        messagesVersion={props.messagesVersion}
+                messagesVersion={props.messagesVersion}
+                historyVersion={props.historyVersion}
                         forceScrollToken={forceScrollToken}
                         outlineOpen={outlineOpen}
                         outlineTitle={outlineTitle}

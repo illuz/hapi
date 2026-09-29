@@ -522,6 +522,7 @@ function SessionPage() {
         refetch: refetchMessages,
         pendingCount,
         messagesVersion,
+        historyVersion,
         flushPending,
         setAtBottom,
     } = useMessages(api, sessionId)
@@ -644,6 +645,7 @@ function SessionPage() {
             isSending={isSending}
             pendingCount={pendingCount}
             messagesVersion={messagesVersion}
+            historyVersion={historyVersion}
             onBack={goBack}
             onRefresh={refreshSelectedSession}
             onLoadMore={loadMoreMessages}

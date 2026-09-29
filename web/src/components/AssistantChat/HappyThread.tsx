@@ -432,6 +432,7 @@ export function HappyThread(props: {
     rawMessagesCount: number
     normalizedMessagesCount: number
     messagesVersion: number
+    historyVersion?: number
     forceScrollToken: number
     outlineOpen: boolean
     outlineTitle: string
@@ -989,7 +990,7 @@ export function HappyThread(props: {
         if (atBottomRef.current && autoScrollEnabledRef.current) {
             scrollToBottomInstant()
         }
-    }, [props.messagesVersion, scrollToBottomInstant])
+    }, [props.messagesVersion, props.historyVersion, scrollToBottomInstant])
 
     useEffect(() => {
         isLoadingMoreRef.current = props.isLoadingMoreMessages

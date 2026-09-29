@@ -3,6 +3,7 @@ import type { ApiClient } from '@/api/client'
 import type { DecryptedMessage, MessageStatus } from '@/types/api'
 import {
     appendOptimisticMessage,
+    activateMessageWindow,
     clearMessageWindow,
     fetchMessagesAtSeq,
     getMessageWindowState,
@@ -286,7 +287,7 @@ describe('incremental tail synchronization', () => {
         const api = { getMessages } as unknown as ApiClient
 
         await syncTailMessages(api, SESSION_ID)
-        expect(getMessages).toHaveBeenCalledWith(SESSION_ID, { limit: 200 })
+        expect(getMessages).toHaveBeenCalledWith(SESSION_ID, { limit: 20 })
         expect(getMessageWindowState(SESSION_ID).messages.map((message) => message.id)).toEqual(['tail-1', 'tail-2'])
 
         await syncTailMessages(api, SESSION_ID)
@@ -299,6 +300,22 @@ describe('incremental tail synchronization', () => {
             limit: 200,
         })
         expect(getMessageWindowState(SESSION_ID).messages.map((message) => message.id)).toEqual(['tail-1', 'tail-2', 'tail-3'])
+    })
+
+    it('refreshes a cached window from the latest small page on re-entry', async () => {
+        const cached = makeUserMessage({ id: 'cached', seq: 1, createdAt: 100 })
+        const latest = makeUserMessage({ id: 'latest', seq: 2, createdAt: 200 })
+        const getMessages = vi.fn()
+            .mockResolvedValueOnce(response([cached]))
+            .mockResolvedValueOnce(response([latest], { snapshotHeadSeq: 2, snapshotHeadAt: 200 }))
+        const api = { getMessages } as unknown as ApiClient
+
+        await syncTailMessages(api, SESSION_ID)
+        activateMessageWindow(SESSION_ID)
+        await syncTailMessages(api, SESSION_ID)
+
+        expect(getMessages).toHaveBeenLastCalledWith(SESSION_ID, { limit: 20 })
+        expect(getMessageWindowState(SESSION_ID).messages.map((message) => message.id)).toEqual(['latest'])
     })
 
     it('replaces the cached server window when the hub reports an epoch reset', async () => {

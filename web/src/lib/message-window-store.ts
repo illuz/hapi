@@ -23,9 +23,12 @@ export type MessageWindowState = {
 
 export const VISIBLE_WINDOW_SIZE = 400
 export const HISTORY_WINDOW_SIZE = 600
+/** Keep first paint cheap; older rows remain available through pagination. */
+export const INITIAL_PAGE_SIZE = 20
 const AGENT_RUN_WINDOW_SIZE = 800
 const OLDER_LOAD_WINDOW_SIZE = 800
 const PAGE_SIZE = 200
+const CACHED_REENTRY_PAGE_SIZE = 20
 
 type MessagePosition = {
     at: number
@@ -39,6 +42,7 @@ type InternalState = MessageWindowState & {
     newestPositionSeq: number | null
     unseenIds: Set<string>
     requiresLatestReset: boolean
+    preferLatestOnActivation: boolean
     syncGeneration: number
     olderGeneration: number
 }
@@ -225,6 +229,7 @@ function createState(sessionId: string): InternalState {
         newestPositionSeq: null,
         unseenIds: new Set(),
         requiresLatestReset: false,
+        preferLatestOnActivation: false,
         syncGeneration: 0,
         olderGeneration: 0
     }
@@ -294,7 +299,13 @@ function notifyImmediate(sessionId: string): void {
 
 function setState(sessionId: string, next: InternalState, immediate = false): void {
     states.set(sessionId, next)
-    schedulePersist(sessionId)
+    // A latest reset still contains the previous server snapshot. Do not
+    // persist it while the authoritative replacement request is in flight.
+    if (!next.requiresLatestReset) {
+        schedulePersist(sessionId)
+    } else {
+        pendingPersistSessionIds.delete(sessionId)
+    }
     if (immediate) {
         notifyImmediate(sessionId)
     } else {
@@ -375,6 +386,7 @@ function buildState(
         | 'newestPositionSeq'
         | 'unseenIds'
         | 'requiresLatestReset'
+        | 'preferLatestOnActivation'
         | 'syncGeneration'
         | 'olderGeneration'
         | 'historyVersion'
@@ -614,17 +626,28 @@ async function runTailSync(api: ApiClient, sessionId: string): Promise<void> {
         const canIncrement = initialCursor !== null
             && initial.epoch !== null
             && !initial.requiresLatestReset
+            && !initial.preferLatestOnActivation
 
         if (!canIncrement) {
             const requestBaseline = new Map(getState(sessionId).messages.map((message) => [message.id, message]))
-            const response = await api.getMessages(sessionId, { limit: PAGE_SIZE })
+            const latestPageSize = initial.requiresLatestReset
+                ? PAGE_SIZE
+                : initial.preferLatestOnActivation
+                    ? CACHED_REENTRY_PAGE_SIZE
+                    : initialCursor === null
+                        ? INITIAL_PAGE_SIZE
+                        : PAGE_SIZE
+            const response = await api.getMessages(sessionId, { limit: latestPageSize })
             if (!isCurrentTailSync(sessionId, generation)) return
             updateState(sessionId, (previous) => {
                 if (previous.syncGeneration !== generation) return previous
-                return applyLatestResponse(previous, response, {
-                    replaceServerRows: initial.requiresLatestReset || response.page.reset === true,
+                const next = applyLatestResponse(previous, response, {
+                    replaceServerRows: initial.requiresLatestReset
+                        || initial.preferLatestOnActivation
+                        || response.page.reset === true,
                     requestBaseline
                 })
+                return buildState(next, { preferLatestOnActivation: false })
             })
             finishTailSync(sessionId, generation, null)
             return
@@ -685,7 +708,7 @@ async function runTailSync(api: ApiClient, sessionId: string): Promise<void> {
             })
 
             const current = getState(sessionId)
-            if (current.requiresLatestReset || !response.page.hasMore || !nextAfter) {
+            if (current.requiresLatestReset || current.preferLatestOnActivation || !response.page.hasMore || !nextAfter) {
                 break
             }
             if (comparePosition(nextAfter, after) <= 0) {
@@ -749,6 +772,7 @@ function enterTailMode(previous: InternalState): InternalState {
         hasMore: previous.hasMore || dropped.length > 0,
         viewMode: 'tail',
         unseenIds: new Set(),
+        preferLatestOnActivation: false,
         epoch: forceLatest ? null : previous.epoch,
         oldestPositionAt: oldest?.at ?? null,
         oldestPositionSeq: oldest?.seq ?? null,
@@ -758,19 +782,34 @@ function enterTailMode(previous: InternalState): InternalState {
 }
 
 export function activateMessageWindow(sessionId: string): void {
+    let requestedLatest = false
     updateState(sessionId, (previous) => {
         const { kept } = trimPreservingQueued(previous.messages, VISIBLE_WINDOW_SIZE, 'append')
         const forceLatest = previous.requiresLatestReset
+        const hasUsableCursor = getNewestCursor(previous) !== null
+            && previous.epoch !== null
+            && !forceLatest
+        const preferLatestOnActivation = hasUsableCursor && kept.length > 0
+        requestedLatest = preferLatestOnActivation && !previous.preferLatestOnActivation
         if (
             previous.viewMode === 'tail'
             && previous.unseenIds.size === 0
             && kept.length === previous.messages.length
             && !forceLatest
         ) {
-            return previous
+            return preferLatestOnActivation
+                ? buildState(previous, { preferLatestOnActivation: true })
+                : previous
         }
-        return enterTailMode(previous)
+        const next = enterTailMode(previous)
+        return preferLatestOnActivation
+            ? buildState(next, { preferLatestOnActivation: true })
+            : next
     }, true)
+    if (requestedLatest) {
+        const controller = tailSyncControllers.get(sessionId)
+        if (controller?.running) controller.trailingRequested = true
+    }
 }
 
 export function syncTailMessages(
@@ -786,6 +825,9 @@ export function syncTailMessages(
     controller.api = api
     if (!controller.running) {
         return startTailSync(sessionId, controller)
+    }
+    if (getState(sessionId).preferLatestOnActivation) {
+        controller.trailingRequested = true
     }
     const observed = controller.running
     if (!options.ensureAfterCurrent) {

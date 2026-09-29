@@ -112,7 +112,7 @@ E = mc^2
     })
 
     it('turns bare repository paths into session file preview links', () => {
-        render(
+        const { container } = render(
             <MarkdownLinkBehaviorProvider
                 behavior="navigate"
                 sessionId="session-1"
@@ -122,7 +122,7 @@ E = mc^2
             </MarkdownLinkBehaviorProvider>
         )
 
-        const links = screen.getAllByRole('link').filter((link) =>
+        const links = Array.from(container.querySelectorAll<HTMLAnchorElement>('a')).filter((link) =>
             link.getAttribute('href')?.includes('/sessions/session-1/file')
         )
         expect(links).toHaveLength(2)

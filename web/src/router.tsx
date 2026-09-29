@@ -46,6 +46,7 @@ import { filterSessionsByActivityOrMarker } from '@/lib/sessionFilters'
 import { loadSessionColorFilterPreference } from '@/lib/sessionColorFilterPreference'
 import { loadSessionListActivityFilter, saveSessionListActivityFilter } from '@/lib/sessionListFiltersPreference'
 import { cleanupInactiveSessions } from '@/lib/sessionCleanup'
+import { initializeSessionLastSeen } from '@/lib/sessionLastSeen'
 import {
     PLAYBACK_MODE_URL_PARAM,
     getStoredPlaybackMode,
@@ -180,6 +181,9 @@ function SessionsPage() {
         }
         return labels
     }, [machines])
+    useEffect(() => {
+        initializeSessionLastSeen('sessions', sessions)
+    }, [sessions])
     const filteredSessions = useMemo(
         () => filterSessionsByActivityOrMarker(sessions, activityFilterEnabled),
         [activityFilterEnabled, sessions]
@@ -370,6 +374,7 @@ function SessionsPage() {
                         renderHeader={false}
                         api={api}
                         machineLabelsById={machineLabelsById}
+                        machines={machines}
                         projectToolCountsByKey={projectToolCountsByKey}
                         onOpenProjectTools={({ machineId, projectPath, tab }) => navigate({
                             to: '/sessions/project-tools',

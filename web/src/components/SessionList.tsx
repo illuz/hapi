@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import type { AgentFlavor, ProjectToolCounts, SessionMarkerColor, SessionSummary } from '@/types/api'
+import type { AgentFlavor, Machine, ProjectToolCounts, SessionMarkerColor, SessionSummary } from '@/types/api'
 import type { ApiClient } from '@/api/client'
 import { useLongPress } from '@/hooks/useLongPress'
 import { usePlatform } from '@/hooks/usePlatform'
@@ -24,6 +24,9 @@ import {
     sessionMatchesManagementUpdateWindow
 } from '@/lib/sessionManagementFilters'
 import { useSessionAttentionTokens } from '@/lib/sessionAttention'
+import { getSessionLastSeenSnapshot, useSessionLastSeenVersion, markSessionSeen } from '@/lib/sessionLastSeen'
+import { sessionMatchesCalendarDate } from '@/lib/sessionCalendarFilter'
+import { getMachineHealth, getMachineHealthLabelKey, type MachineHealth } from '@/lib/machineHealth'
 import { canForkSession, canSpawnSessionFromConfig } from '@/lib/sessionBranching'
 import {
     buildSessionSearchScoreIndex,
@@ -116,6 +119,7 @@ type MachineGroup = {
     totalSessions: number
     hasActiveSession: boolean
     latestUpdatedAt: number
+    health: MachineHealth | null
 }
 
 function getGroupDisplayName(directory: string): string {
@@ -244,7 +248,8 @@ export function expandSelectedSessionCollapseOverrides(
 
 function groupByMachine(
     groups: SessionGroup[],
-    resolveMachineLabel: (id: string | null) => string
+    resolveMachineLabel: (id: string | null) => string,
+    resolveMachineHealth: (id: string | null) => MachineHealth | null
 ): MachineGroup[] {
     const map = new Map<string, MachineGroup>()
     for (const g of groups) {
@@ -258,6 +263,7 @@ function groupByMachine(
                 totalSessions: 0,
                 hasActiveSession: false,
                 latestUpdatedAt: 0,
+                health: resolveMachineHealth(g.machineId),
             }
             map.set(key, mg)
         }
@@ -598,6 +604,11 @@ function SessionListSearch(props: {
     updateWindow: UpdateWindowKey | null
     updateWindowCounts: Record<UpdateWindowKey, number>
     onUpdateWindowChange: (window: UpdateWindowKey | null) => void
+    unreadOnly: boolean
+    unreadCount: number
+    onUnreadOnlyChange: (enabled: boolean) => void
+    calendarDate: string
+    onCalendarDateChange: (value: string) => void
 }) {
     const { t } = useTranslation()
     const [menuOpen, setMenuOpen] = useState(false)
@@ -654,6 +665,10 @@ function SessionListSearch(props: {
         ? UPDATE_WINDOW_OPTIONS.find(option => option.key === props.updateWindow) ?? null
         : null
 
+    const calendarLabel = props.calendarDate
+        ? t('sessions.calendarFilter.selected', { date: props.calendarDate })
+        : t('sessions.calendarFilter.title')
+
     return (
         <div className="relative px-3 pb-2">
             <div className="flex items-center gap-2">
@@ -677,6 +692,42 @@ function SessionListSearch(props: {
                             title={t('sessions.search.clear')}
                         >
                             <XIcon className="h-3.5 w-3.5" />
+                        </button>
+                    ) : null}
+                </div>
+
+                <button
+                    type="button"
+                    onClick={() => props.onUnreadOnlyChange(!props.unreadOnly)}
+                    aria-pressed={props.unreadOnly}
+                    aria-label={t('sessions.unreadFilter.title')}
+                    title={t('sessions.unreadFilter.title')}
+                    className={`relative flex h-8 shrink-0 items-center justify-center gap-1 rounded-lg border px-2 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] ${props.unreadOnly ? 'border-[var(--app-link)] bg-[var(--app-subtle-bg)] text-[var(--app-link)]' : 'border-[var(--app-border)] text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]'}`}
+                >
+                    <span className="h-2 w-2 rounded-full bg-[var(--app-link)]" aria-hidden="true" />
+                    <span className="tabular-nums">{props.unreadCount}</span>
+                </button>
+
+                <div className="relative flex h-8 shrink-0 items-center">
+                    <label className="sr-only" htmlFor="session-calendar-filter">{t('sessions.calendarFilter.title')}</label>
+                    <input
+                        id="session-calendar-filter"
+                        type="date"
+                        value={props.calendarDate}
+                        onChange={(event) => props.onCalendarDateChange(event.target.value)}
+                        aria-label={calendarLabel}
+                        title={calendarLabel}
+                        className={`h-8 w-[8.5rem] rounded-lg border bg-[var(--app-bg)] px-2 text-xs text-[var(--app-fg)] outline-none transition-colors focus:border-[var(--app-link)] ${props.calendarDate ? 'border-[var(--app-link)]' : 'border-[var(--app-border)]'}`}
+                    />
+                    {props.calendarDate ? (
+                        <button
+                            type="button"
+                            onClick={() => props.onCalendarDateChange('')}
+                            aria-label={t('sessions.calendarFilter.clear')}
+                            title={t('sessions.calendarFilter.clear')}
+                            className="absolute right-1 flex h-5 w-5 items-center justify-center rounded text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]"
+                        >
+                            <XIcon className="h-3 w-3" />
                         </button>
                     ) : null}
                 </div>
@@ -940,10 +991,11 @@ function PinnedSessionRow(props: {
     api: ApiClient | null
     selected?: boolean
     attentionToken?: number
+    unread?: boolean
 }) {
     const { t } = useTranslation()
     const { addToast } = useToast()
-    const { session, onSelect, resolveMachineLabel, api, selected = false, attentionToken } = props
+    const { session, onSelect, resolveMachineLabel, api, selected = false, attentionToken, unread = false } = props
     const { setSessionPinned, isPending } = useSessionActions(
         api,
         session.id,
@@ -996,6 +1048,13 @@ function PinnedSessionRow(props: {
                     {session.active && session.thinking ? (
                         <LoaderIcon className="h-3.5 w-3.5 shrink-0 text-[var(--app-pinned-fg)] animate-spin-slow" />
                     ) : null}
+                    {unread && !selected ? (
+                        <span
+                            className="h-2 w-2 shrink-0 rounded-full bg-[var(--app-link)]"
+                            title={t('session.item.newActivity')}
+                            aria-label={t('session.item.newActivity')}
+                        />
+                    ) : null}
                 </span>
             </button>
             <button
@@ -1019,6 +1078,7 @@ function PinnedSessionsSection(props: {
     api: ApiClient | null
     selectedSessionId?: string | null
     attentionTokens: Readonly<Record<string, number>>
+    unreadSessionIds: ReadonlySet<string>
 }) {
     const { t } = useTranslation()
     const sortedSessions = useMemo(
@@ -1051,6 +1111,7 @@ function PinnedSessionsSection(props: {
                         api={props.api}
                         selected={session.id === props.selectedSessionId}
                         attentionToken={props.attentionTokens[session.id]}
+                        unread={props.unreadSessionIds.has(session.id)}
                     />
                 ))}
             </div>
@@ -1065,9 +1126,10 @@ function SessionItem(props: {
     api: ApiClient | null
     selected?: boolean
     attentionToken?: number
+    unread?: boolean
 }) {
     const { t } = useTranslation()
-    const { session: s, onSelect, showPath = true, api, selected = false, attentionToken } = props
+    const { session: s, onSelect, showPath = true, api, selected = false, attentionToken, unread = false } = props
     const { haptic } = usePlatform()
     const navigate = useNavigate()
     const { addToast } = useToast()
@@ -1200,6 +1262,13 @@ function SessionItem(props: {
                             {s.active && s.thinking ? (
                                 <LoaderIcon className="h-3.5 w-3.5 shrink-0 text-[var(--app-hint)] animate-spin-slow" />
                             ) : null}
+                            {unread && !selected && !attentionToken ? (
+                                <span
+                                    className="h-2 w-2 shrink-0 rounded-full bg-[var(--app-link)]"
+                                    title={t('session.item.newActivity')}
+                                    aria-label={t('session.item.newActivity')}
+                                />
+                            ) : null}
                             {s.shareCount && s.shareCount > 0 ? (
                                 <span
                                     className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-[var(--app-subtle-bg)] px-1.5 py-0.5 text-[10px] text-[var(--app-link)]"
@@ -1308,22 +1377,28 @@ export function SessionList(props: {
     renderHeader?: boolean
     api: ApiClient | null
     machineLabelsById?: Record<string, string>
+    machines?: Machine[]
     selectedSessionId?: string | null
     projectToolCountsByKey?: ProjectToolCountsByKey
     onOpenProjectTools?: (args: { machineId: string; projectPath: string; tab: 'agents' | 'cron' }) => void
     onOpenProjectPorts?: (args: { machineId: string; projectPath: string }) => void
 }) {
     const { t } = useTranslation()
-    const { renderHeader = true, api, selectedSessionId, machineLabelsById = {} } = props
+    const { renderHeader = true, api, selectedSessionId, machineLabelsById = {}, machines = [] } = props
     const attentionTokens = useSessionAttentionTokens()
+    const lastSeenVersion = useSessionLastSeenVersion()
     const [searchQuery, setSearchQuery] = useState(loadSessionListSearchQuery)
     const [markerColorFilter, setMarkerColorFilter] = useState<SessionMarkerColor | null>(loadSessionColorFilterPreference)
     const [updateWindow, setUpdateWindow] = useState<UpdateWindowKey | null>(loadSessionListUpdateWindow)
+    const [unreadOnly, setUnreadOnly] = useState(false)
+    const [calendarDate, setCalendarDate] = useState('')
     const normalizedQuery = normalizeSearch(searchQuery)
     const isSearching = normalizedQuery.length > 0
     const isFilteringByMarkerColor = markerColorFilter !== null
     const isFilteringByUpdateWindow = updateWindow !== null
-    const isFilteringSessions = isSearching || isFilteringByMarkerColor || isFilteringByUpdateWindow
+    const isFilteringByUnread = unreadOnly
+    const isFilteringByCalendar = calendarDate.length > 0
+    const isFilteringSessions = isSearching || isFilteringByMarkerColor || isFilteringByUpdateWindow || isFilteringByUnread || isFilteringByCalendar
 
     const listRef = useRef<HTMLDivElement | null>(null)
 
@@ -1351,10 +1426,12 @@ export function SessionList(props: {
             : Math.max(0, Math.min(ids.length - 1, currentIndex + delta))
         const nextId = ids[nextIndex]
         if (nextId) {
+            const nextSession = props.sessions.find((session) => session.id === nextId)
+            if (nextSession) markSessionSeen(nextSession.id, nextSession.updatedAt)
             props.onSelect(nextId)
             event.preventDefault()
         }
-    }, [props.onSelect, selectedSessionId])
+    }, [props.onSelect, props.sessions, selectedSessionId])
 
     const resolveMachineLabel = (machineId: string | null): string => {
         if (machineId && machineLabelsById[machineId]) {
@@ -1370,6 +1447,17 @@ export function SessionList(props: {
         () => props.sessions,
         [props.sessions]
     )
+    const lastSeenSnapshot = useMemo(
+        () => getSessionLastSeenSnapshot(),
+        [allSessions, lastSeenVersion]
+    )
+    const unreadSessionIds = useMemo(() => {
+        const ids = new Set<string>()
+        for (const session of allSessions) {
+            if (session.updatedAt > (lastSeenSnapshot[session.id] ?? 0)) ids.add(session.id)
+        }
+        return ids
+    }, [allSessions, lastSeenSnapshot])
     const markerColorCounts = useMemo(
         () => getMarkerColorCounts(allSessions),
         [allSessions]
@@ -1380,6 +1468,16 @@ export function SessionList(props: {
             : null,
         [allSessions, isSearching, normalizedQuery, machineLabelsById] // eslint-disable-line react-hooks/exhaustive-deps
     )
+    const handleSelectSession = useCallback((sessionId: string) => {
+        const session = allSessions.find((item) => item.id === sessionId)
+        if (session) markSessionSeen(session.id, session.updatedAt)
+        props.onSelect(sessionId)
+    }, [allSessions, props.onSelect])
+    useEffect(() => {
+        if (!selectedSessionId) return
+        const session = allSessions.find((item) => item.id === selectedSessionId)
+        if (session) markSessionSeen(session.id, session.updatedAt)
+    }, [allSessions, selectedSessionId])
     useEffect(() => {
         saveSessionColorFilterPreference(markerColorFilter)
     }, [markerColorFilter])
@@ -1422,6 +1520,8 @@ export function SessionList(props: {
             ? allSessions.filter(session =>
                 sessionMatchesMarkerColor(session, markerColorFilter)
                 && sessionMatchesUpdateWindow(session, updateWindow)
+                && (!unreadOnly || unreadSessionIds.has(session.id))
+                && sessionMatchesCalendarDate(session, calendarDate)
                 && sessionMatchesQuery(
                     session,
                     normalizedQuery,
@@ -1441,6 +1541,9 @@ export function SessionList(props: {
         normalizedQuery,
         searchScoreIndex,
         updateWindow,
+        unreadOnly,
+        unreadSessionIds,
+        calendarDate,
         machineLabelsById
     ])
     const pinnedSessions = useMemo(
@@ -1521,8 +1624,17 @@ export function SessionList(props: {
     }
 
     const machineGroups = useMemo(
-        () => groupByMachine(groups, resolveMachineLabel),
-        [groups, machineLabelsById] // eslint-disable-line react-hooks/exhaustive-deps
+        () => groupByMachine(
+            groups,
+            resolveMachineLabel,
+            (machineId) => {
+                if (!machineId) return null
+                const machine = machines.find((item) => item.id === machineId)
+                if (machine) return getMachineHealth(machine)
+                return machines.length > 0 ? 'offline' : null
+            }
+        ),
+        [groups, machineLabelsById, machines] // eslint-disable-line react-hooks/exhaustive-deps
     )
 
     const isMachineCollapsed = (mg: MachineGroup): boolean => {
@@ -1611,16 +1723,22 @@ export function SessionList(props: {
                     updateWindow={updateWindow}
                     updateWindowCounts={updateWindowCounts}
                     onUpdateWindowChange={setUpdateWindow}
+                    unreadOnly={unreadOnly}
+                    unreadCount={unreadSessionIds.size}
+                    onUnreadOnlyChange={setUnreadOnly}
+                    calendarDate={calendarDate}
+                    onCalendarDateChange={setCalendarDate}
                 />
             ) : null}
 
             <PinnedSessionsSection
                 sessions={pinnedSessions}
-                onSelect={props.onSelect}
+                onSelect={handleSelectSession}
                 resolveMachineLabel={resolveMachineLabel}
                 api={api}
                 selectedSessionId={selectedSessionId}
                 attentionTokens={attentionTokens}
+                unreadSessionIds={unreadSessionIds}
             />
 
             {props.sessions.length === 0 && (
@@ -1634,6 +1752,8 @@ export function SessionList(props: {
                 <div className="px-4 py-8 text-center text-sm text-[var(--app-hint)]">
                     {isFilteringByMarkerColor
                         ? t('sessions.filter.noResults')
+                        : isFilteringByUnread
+                            ? t('sessions.unreadFilter.noResults')
                         : t('sessions.search.noResults')}
                 </div>
             ) : null}
@@ -1652,6 +1772,13 @@ export function SessionList(props: {
                                 <ChevronIcon className="h-4 w-4 text-[var(--app-hint)] shrink-0" collapsed={machineCollapsed} />
                                 <MachineIcon className="h-4 w-4 text-[var(--app-hint)] shrink-0" />
                                 <span className="text-sm font-semibold truncate flex-1">{mg.label}</span>
+                                {mg.health ? (
+                                    <span
+                                        className={`h-2 w-2 shrink-0 rounded-full ${mg.health === 'healthy' ? 'bg-emerald-500' : mg.health === 'starting' ? 'bg-amber-500 animate-pulse' : mg.health === 'degraded' ? 'bg-red-500' : 'bg-slate-400'}`}
+                                        title={t(getMachineHealthLabelKey(mg.health))}
+                                        aria-label={t(getMachineHealthLabelKey(mg.health))}
+                                    />
+                                ) : null}
                                 <span className="text-[11px] tabular-nums text-[var(--app-hint)] shrink-0">({mg.totalSessions})</span>
                             </button>
 
@@ -1736,11 +1863,12 @@ export function SessionList(props: {
                                                             <SessionItem
                                                                 key={s.id}
                                                                 session={s}
-                                                                onSelect={props.onSelect}
+                                                                onSelect={handleSelectSession}
                                                                 showPath={false}
                                                                 api={api}
                                                                 selected={s.id === selectedSessionId}
                                                                 attentionToken={attentionTokens[s.id]}
+                                                                unread={unreadSessionIds.has(s.id)}
                                                             />
                                                         ))}
                                                         {!isSearching && group.sessions.length > GROUP_SESSION_PREVIEW_LIMIT && (sessionGroupExpanded || hiddenSessionCount > 0) ? (

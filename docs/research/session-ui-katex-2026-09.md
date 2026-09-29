@@ -61,7 +61,19 @@
 6. **P2（L）：Steer、定时发送、多 Provider Composer。** 必须按 CLI → Hub → shared protocol → Web 顺序迁移并做事件顺序回放。
 7. **P3（XL）：Scratchlist、Shared Sessions、原生端/Relay。** 这些是跨存储、协议和客户端的产品线能力，不应作为会话 UI 小改动合入。
 
-## 4. 不建议的合并方式
+## 4. 本轮 1~5 实施结果
+
+按上述顺序完成了前 5 项的可回迁部分：
+
+- **1 / KaTeX**：字体产物复制、嵌入式资源 MIME、支持 `\(...\)` / `\[...\]` bracket math，保留回归测试（`8151f1ce`）。
+- **2 / Markdown**：关闭 `remark-math` 的默认 single-dollar 解析，再通过安全插件兼容明确的 `$...$`；补 hard breaks、仓库文件路径链接与文件链接行为（`0e83444a`）。
+- **3 / Tail Sync**：冷启动小页、缓存重入拉取最新尾部、版本/历史变更触发滚动恢复，避免旧游标覆盖新状态（`17af1c9f`）。
+- **4 / 消息操作与工具展示**：新增复制/分享/消息级 Fork；连续普通工具调用折叠为 Tool Group；增加 Codex Review JSON 的结构化卡片。Rewind、Steer、Queued 仍未接入，因为当前 Hub 没有对应 Web API（本地已有 fork/rollback 能力，后续可单独扩展）。
+- **5 / 会话列表**：增加本地 last-seen 未读水位及“只看未读”过滤、机器在线/启动/异常/离线指示、按本地日历日期过滤；不替换现有搜索、颜色筛选、项目工具入口和 Pin 语义。
+
+验证：`bun run typecheck` 通过；Web 全量测试 93 个文件、571 个测试通过。根目录完整测试仍有既有的 CLI Darwin/Windows 模拟测试失败（与本轮变更无关）。
+
+## 5. 不建议的合并方式
 
 - 不建议直接 `git merge upstream/main`：共同祖先较早，核心会话、消息窗口、Socket、Agent 和部署文件均已分叉；既有差异报告的模拟合并已记录 151 个真实冲突路径。
 - 不要覆盖当前的 AUTO Continue/Retry、Project Tools/Cron、Port Mapping、Docker/自部署认证和本地会话筛选；这些是当前产品差异化能力。

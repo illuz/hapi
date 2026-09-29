@@ -9,6 +9,7 @@ import {
     ingestIncomingMessages,
     markMessagesConsumed,
     removeOptimisticMessage,
+    syncTailMessages,
     updateMessageStatus,
 } from '@/lib/message-window-store'
 
@@ -88,7 +89,7 @@ describe('fetchMessagesAtSeq', () => {
         const state = getMessageWindowState(SESSION_ID)
         expect(state.messages.map((message) => message.id)).toEqual(['before-target', 'target'])
         expect(state.hasMore).toBe(true)
-        expect(state.atBottom).toBe(false)
+        expect(state.viewMode).toBe('history')
     })
 
     it('keeps the current window when the selected message is unavailable', async () => {
@@ -229,5 +230,94 @@ describe('message-window-store status updates', () => {
 
         const message = getMessageWindowState(SESSION_ID).messages.find((entry) => entry.id === 'server-queued')
         expect(message?.status).toBe('sent')
+    })
+})
+
+describe('incremental tail synchronization', () => {
+    const SESSION_ID = 'session-tail-sync-test'
+
+    afterEach(() => {
+        clearMessageWindow(SESSION_ID)
+    })
+
+    function response(messages: DecryptedMessage[], overrides: Record<string, unknown> = {}) {
+        const last = messages[messages.length - 1]
+        return {
+            messages,
+            page: {
+                direction: 'latest' as const,
+                limit: 200,
+                epoch: 0,
+                reset: false,
+                nextBeforeSeq: messages[0]?.seq ?? null,
+                nextBeforeAt: messages[0]?.createdAt ?? null,
+                nextAfterSeq: null,
+                nextAfterAt: null,
+                snapshotHeadSeq: last?.seq ?? null,
+                snapshotHeadAt: last?.createdAt ?? null,
+                hasMore: false,
+                ...overrides,
+            },
+        }
+    }
+
+    it('loads an initial latest window and then requests only the tail', async () => {
+        const first = makeUserMessage({ id: 'tail-1', seq: 1, createdAt: 100 })
+        const second = makeUserMessage({ id: 'tail-2', seq: 2, createdAt: 200 })
+        const third = makeUserMessage({ id: 'tail-3', seq: 3, createdAt: 300 })
+        const getMessages = vi.fn()
+            .mockResolvedValueOnce(response([first, second]))
+            .mockResolvedValueOnce({
+                messages: [third],
+                page: {
+                    direction: 'after',
+                    limit: 200,
+                    epoch: 0,
+                    reset: false,
+                    nextBeforeSeq: null,
+                    nextBeforeAt: null,
+                    nextAfterSeq: 3,
+                    nextAfterAt: 300,
+                    snapshotHeadSeq: 3,
+                    snapshotHeadAt: 300,
+                    hasMore: false,
+                },
+            })
+        const api = { getMessages } as unknown as ApiClient
+
+        await syncTailMessages(api, SESSION_ID)
+        expect(getMessages).toHaveBeenCalledWith(SESSION_ID, { limit: 200 })
+        expect(getMessageWindowState(SESSION_ID).messages.map((message) => message.id)).toEqual(['tail-1', 'tail-2'])
+
+        await syncTailMessages(api, SESSION_ID)
+        expect(getMessages).toHaveBeenLastCalledWith(SESSION_ID, {
+            afterAt: 200,
+            afterSeq: 2,
+            untilAt: null,
+            untilSeq: null,
+            epoch: 0,
+            limit: 200,
+        })
+        expect(getMessageWindowState(SESSION_ID).messages.map((message) => message.id)).toEqual(['tail-1', 'tail-2', 'tail-3'])
+    })
+
+    it('replaces the cached server window when the hub reports an epoch reset', async () => {
+        const oldMessage = makeUserMessage({ id: 'tail-old', seq: 1, createdAt: 100 })
+        const newMessage = makeUserMessage({ id: 'tail-new', seq: 2, createdAt: 200 })
+        const getMessages = vi.fn()
+            .mockResolvedValueOnce(response([oldMessage]))
+            .mockResolvedValueOnce(response([newMessage], {
+                reset: true,
+                snapshotHeadSeq: 2,
+                snapshotHeadAt: 200,
+            }))
+        const api = { getMessages } as unknown as ApiClient
+
+        await syncTailMessages(api, SESSION_ID)
+        await syncTailMessages(api, SESSION_ID)
+
+        const state = getMessageWindowState(SESSION_ID)
+        expect(state.messages.map((message) => message.id)).toEqual(['tail-new'])
+        expect(state.warning).toBeNull()
     })
 })

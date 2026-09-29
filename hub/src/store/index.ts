@@ -29,6 +29,7 @@ export type {
     VersionedUpdateResult
 } from './types'
 export type { CancelQueuedMessageResult, LookupQueuedMessageResult } from './messages'
+export type { MessagePosition } from './messages'
 export { CronRunsStore } from './cronRunsStore'
 export { CustomCodexModelStore } from './customCodexModels'
 export type { CustomCodexModelInput } from './customCodexModels'
@@ -50,11 +51,12 @@ export { UserStore } from './userStore'
 export { NamespaceSettingsStore } from './namespaceSettings'
 export type { NamespaceSettings } from './namespaceSettings'
 
-const SCHEMA_VERSION: number = 19
+const SCHEMA_VERSION: number = 20
 const REQUIRED_TABLES = [
     'sessions',
     'machines',
     'messages',
+    'message_epochs',
     'users',
     'push_subscriptions',
     'cron_projects',
@@ -155,6 +157,7 @@ export class Store {
             16: () => this.migrateFromV16ToV17(),
             17: () => this.migrateFromV17ToV18(),
             18: () => this.migrateFromV18ToV19(),
+            19: () => this.migrateFromV19ToV20(),
         })
 
         if (currentVersion === 0) {
@@ -310,6 +313,12 @@ export class Store {
             CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_local_id ON messages(session_id, local_id) WHERE local_id IS NOT NULL;
             CREATE INDEX IF NOT EXISTS idx_messages_session_position
                 ON messages(session_id, COALESCE(invoked_at, created_at) DESC, seq DESC);
+
+            CREATE TABLE IF NOT EXISTS message_epochs (
+                session_id TEXT PRIMARY KEY,
+                epoch INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+            );
 
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -695,6 +704,16 @@ export class Store {
 
     private migrateFromV18ToV19(): void {
         this.createNamespaceSettingsSchema()
+    }
+
+    private migrateFromV19ToV20(): void {
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS message_epochs (
+                session_id TEXT PRIMARY KEY,
+                epoch INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+            )
+        `)
     }
 
     private getMessageColumnNames(): Set<string> {

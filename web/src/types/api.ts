@@ -210,10 +210,17 @@ export type ConversationHistoryResponse = {
 export type MessagesResponse = {
     messages: DecryptedMessage[]
     page: {
+        direction?: 'latest' | 'before' | 'after'
         limit: number
         beforeSeq?: number | null
+        epoch?: number
+        reset?: boolean
         nextBeforeSeq: number | null
         nextBeforeAt?: number | null
+        nextAfterSeq?: number | null
+        nextAfterAt?: number | null
+        snapshotHeadSeq?: number | null
+        snapshotHeadAt?: number | null
         hasMore: boolean
     }
 }

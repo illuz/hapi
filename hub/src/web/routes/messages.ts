@@ -10,7 +10,36 @@ const querySchema = z.object({
     beforeSeq: z.coerce.number().int().min(1).optional(),
     byPosition: z.string().optional(),
     beforeAt: z.coerce.number().int().min(0).optional(),
+    afterSeq: z.coerce.number().int().min(1).optional(),
+    afterAt: z.coerce.number().int().min(0).optional(),
+    untilSeq: z.coerce.number().int().min(1).optional(),
+    untilAt: z.coerce.number().int().min(0).optional(),
+    epoch: z.coerce.number().int().min(0).optional(),
 })
+    .refine((data) => (data.beforeAt === undefined) === (data.beforeSeq === undefined), {
+        message: 'beforeAt and beforeSeq must be provided together',
+        path: ['beforeAt']
+    })
+    .refine((data) => (data.afterAt === undefined) === (data.afterSeq === undefined), {
+        message: 'afterAt and afterSeq must be provided together',
+        path: ['afterAt']
+    })
+    .refine((data) => (data.untilAt === undefined) === (data.untilSeq === undefined), {
+        message: 'untilAt and untilSeq must be provided together',
+        path: ['untilAt']
+    })
+    .refine((data) => data.beforeAt === undefined || data.afterAt === undefined, {
+        message: 'before and after cursors are mutually exclusive',
+        path: ['afterAt']
+    })
+    .refine((data) => data.untilAt === undefined || data.afterAt !== undefined, {
+        message: 'until cursor requires an after cursor',
+        path: ['untilAt']
+    })
+    .refine((data) => data.epoch === undefined || data.afterAt !== undefined, {
+        message: 'epoch requires an after cursor',
+        path: ['epoch']
+    })
 
 const sendMessageBodySchema = z.object({
     text: z.string(),
@@ -48,10 +77,41 @@ export function createMessagesRoutes(getSyncEngine: () => SyncEngine | null): Ho
         const sessionId = sessionResult.sessionId
 
         const parsed = querySchema.safeParse(c.req.query())
-        const limit = parsed.success ? (parsed.data.limit ?? 200) : 200
+        if (!parsed.success) {
+            return c.json({ error: 'Invalid query', issues: parsed.error.flatten() }, 400)
+        }
+        const limit = parsed.data.limit ?? 200
+
+        // Tail-sync clients use the composite cursor contract. A cursorless
+        // request is also incremental's initial/latest page; retain the old
+        // seq-only response only for legacy callers that explicitly send
+        // `beforeSeq` without a display-position pair.
+        const useIncremental = parsed.data.beforeAt !== undefined
+            || parsed.data.afterAt !== undefined
+            || parsed.data.untilAt !== undefined
+            || parsed.data.epoch !== undefined
+            || parsed.data.beforeSeq === undefined
+        if (useIncremental) {
+            const after = parsed.data.afterAt !== undefined && parsed.data.afterSeq !== undefined
+                ? { at: parsed.data.afterAt, seq: parsed.data.afterSeq }
+                : null
+            const until = parsed.data.untilAt !== undefined && parsed.data.untilSeq !== undefined
+                ? { at: parsed.data.untilAt, seq: parsed.data.untilSeq }
+                : null
+            const before = parsed.data.beforeAt !== undefined && parsed.data.beforeSeq !== undefined
+                ? { at: parsed.data.beforeAt, seq: parsed.data.beforeSeq }
+                : null
+            return c.json(engine.getIncrementalMessagesPage(sessionId, {
+                limit,
+                before,
+                after,
+                until,
+                epoch: parsed.data.epoch ?? null
+            }))
+        }
 
         // V8 byPosition mode: use composite (position_at, seq) cursor
-        if (parsed.success && parsed.data.byPosition === '1') {
+        if (parsed.data.byPosition === '1') {
             const beforeAt = parsed.data.beforeAt
             const beforeSeq = parsed.data.beforeSeq
             const before = (beforeAt !== undefined && beforeSeq !== undefined)

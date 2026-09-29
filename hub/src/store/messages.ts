@@ -15,6 +15,12 @@ type DbMessageRow = {
     invoked_at: number | null
 }
 
+/** Stable display-order cursor used by incremental tail pagination. */
+export type MessagePosition = {
+    at: number
+    seq: number
+}
+
 function toStoredMessage(row: DbMessageRow): StoredMessage {
     return {
         id: row.id,
@@ -34,6 +40,7 @@ export function addMessage(
     localId?: string
 ): StoredMessage {
     const now = Date.now()
+    const previousHead = getNewestMessagePosition(db, sessionId)
 
     if (localId) {
         const existing = db.prepare(
@@ -72,6 +79,13 @@ export function addMessage(
         local_id: localId ?? null,
         invoked_at: invokedAt
     })
+
+    // A late-arriving row can sort behind a cached composite tail cursor.
+    // Bump the epoch so the next incremental reader performs a safe reset.
+    const positionAt = invokedAt ?? now
+    if (previousHead && positionAt < previousHead.at) {
+        bumpMessageEpoch(db, sessionId)
+    }
 
     const row = db.prepare('SELECT * FROM messages WHERE id = ?').get(id) as DbMessageRow | undefined
     if (!row) {
@@ -137,7 +151,7 @@ export function getMessagesByPosition(
     db: Database,
     sessionId: string,
     limit: number,
-    before?: { at: number; seq: number }
+    before?: MessagePosition
 ): StoredMessage[] {
     const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(200, limit)) : 200
     const beforeClause = before
@@ -158,6 +172,71 @@ export function getMessagesByPosition(
     }) as DbMessageRow[]
     // Reverse so results are in ascending display order (oldest first)
     return rows.reverse().map(toStoredMessage)
+}
+
+/** Return messages strictly after a display-position cursor in ascending order.
+ * `until`, when supplied, pins the response to a fixed snapshot head. */
+export function getMessagesAfterPosition(
+    db: Database,
+    sessionId: string,
+    limit: number,
+    after: MessagePosition,
+    until?: MessagePosition
+): StoredMessage[] {
+    const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(200, limit)) : 200
+    const untilClause = until
+        ? `AND (
+            COALESCE(invoked_at, created_at) < @untilAt
+            OR (COALESCE(invoked_at, created_at) = @untilAt AND seq <= @untilSeq)
+        )`
+        : ''
+    const rows = db.prepare(`
+        SELECT *, COALESCE(invoked_at, created_at) AS position_at
+        FROM messages
+        WHERE session_id = @sessionId
+          AND (
+            COALESCE(invoked_at, created_at) > @afterAt
+            OR (COALESCE(invoked_at, created_at) = @afterAt AND seq > @afterSeq)
+          )
+          ${untilClause}
+        ORDER BY position_at ASC, seq ASC
+        LIMIT @limit
+    `).all({
+        sessionId,
+        afterAt: after.at,
+        afterSeq: after.seq,
+        untilAt: until?.at ?? null,
+        untilSeq: until?.seq ?? null,
+        limit: safeLimit
+    }) as DbMessageRow[]
+    return rows.map(toStoredMessage)
+}
+
+export function getNewestMessagePosition(db: Database, sessionId: string): MessagePosition | null {
+    const row = db.prepare(`
+        SELECT COALESCE(invoked_at, created_at) AS position_at, seq
+        FROM messages
+        WHERE session_id = ?
+        ORDER BY position_at DESC, seq DESC
+        LIMIT 1
+    `).get(sessionId) as { position_at: number; seq: number } | undefined
+    return row ? { at: row.position_at, seq: row.seq } : null
+}
+
+export function getMessageEpoch(db: Database, sessionId: string): number {
+    const row = db.prepare(
+        'SELECT epoch FROM message_epochs WHERE session_id = ?'
+    ).get(sessionId) as { epoch: number } | undefined
+    return row?.epoch ?? 0
+}
+
+export function bumpMessageEpoch(db: Database, sessionId: string): number {
+    db.prepare(`
+        INSERT INTO message_epochs (session_id, epoch)
+        VALUES (?, 1)
+        ON CONFLICT(session_id) DO UPDATE SET epoch = epoch + 1
+    `).run(sessionId)
+    return getMessageEpoch(db, sessionId)
 }
 
 /** Returns user messages that have a localId but no invoked_at.
@@ -329,6 +408,8 @@ export function copySessionMessages(
             })
         })
 
+        bumpMessageEpoch(db, toSessionId)
+
         db.exec('COMMIT')
         return { copied: rowsToCopy.length }
     } catch (error) {
@@ -382,10 +463,14 @@ export function cancelQueuedMessage(
             return { status: 'invoked' as const, message: toStoredMessage(row) }
         }
 
-        db.prepare(`
+        const deleted = db.prepare(`
             DELETE FROM messages
             WHERE session_id = ? AND (id = ? OR local_id = ?) AND invoked_at IS NULL
         `).run(sessionId, messageId, messageId)
+
+        if (deleted.changes > 0) {
+            bumpMessageEpoch(db, sessionId)
+        }
 
         return { status: 'cancelled' as const, localId: row.local_id }
     })()
@@ -436,11 +521,18 @@ export function deleteQueuedMessageById(
     db: Database,
     sessionId: string,
     messageId: string
-): void {
-    db.prepare(`
-        DELETE FROM messages
-        WHERE session_id = ? AND (id = ? OR local_id = ?) AND invoked_at IS NULL
-    `).run(sessionId, messageId, messageId)
+): boolean {
+    return db.transaction(() => {
+        const deleted = db.prepare(`
+            DELETE FROM messages
+            WHERE session_id = ? AND (id = ? OR local_id = ?) AND invoked_at IS NULL
+        `).run(sessionId, messageId, messageId)
+        if (deleted.changes > 0) {
+            bumpMessageEpoch(db, sessionId)
+            return true
+        }
+        return false
+    })()
 }
 
 /** Mark messages as invoked at the given server timestamp.
@@ -456,13 +548,27 @@ export function markMessagesInvoked(
 ): void {
     if (localIds.length === 0) return
     const placeholders = localIds.map(() => '?').join(', ')
+    const currentHead = getNewestMessagePosition(db, sessionId)
+    const rows = db.prepare(
+        `SELECT seq FROM messages
+         WHERE session_id = ?
+           AND local_id IN (${placeholders})
+           AND invoked_at IS NULL`
+    ).all(sessionId, ...localIds) as Array<{ seq: number }>
     db.prepare(
         `UPDATE messages
          SET invoked_at = ?
          WHERE session_id = ?
            AND local_id IN (${placeholders})
-           AND invoked_at IS NULL`
+         AND invoked_at IS NULL`
     ).run(invokedAt, sessionId, ...localIds)
+
+    if (currentHead && rows.some((row) => (
+        invokedAt < currentHead.at
+        || (invokedAt === currentHead.at && row.seq < currentHead.seq)
+    ))) {
+        bumpMessageEpoch(db, sessionId)
+    }
 }
 
 export function mergeSessionMessages(
@@ -512,6 +618,11 @@ export function mergeSessionMessages(
         const result = db.prepare(
             'UPDATE messages SET session_id = ? WHERE session_id = ?'
         ).run(toSessionId, fromSessionId)
+
+        if (result.changes > 0) {
+            bumpMessageEpoch(db, fromSessionId)
+            bumpMessageEpoch(db, toSessionId)
+        }
 
         db.exec('COMMIT')
         return { moved: result.changes, oldMaxSeq, newMaxSeq }

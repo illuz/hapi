@@ -5,6 +5,60 @@ import { randomUUID } from 'node:crypto'
 import type { Store, CancelQueuedMessageResult } from '../store'
 import { EventPublisher } from './eventPublisher'
 
+type MessagePosition = { at: number; seq: number }
+
+export type IncrementalMessagesResponse = {
+    messages: DecryptedMessage[]
+    page: {
+        direction: 'latest' | 'before' | 'after'
+        limit: number
+        epoch: number
+        reset: boolean
+        nextBeforeSeq: number | null
+        nextBeforeAt: number | null
+        nextAfterSeq: number | null
+        nextAfterAt: number | null
+        snapshotHeadSeq: number | null
+        snapshotHeadAt: number | null
+        hasMore: boolean
+    }
+}
+
+export type IncrementalMessagesOptions = {
+    limit: number
+    before?: MessagePosition | null
+    after?: MessagePosition | null
+    until?: MessagePosition | null
+    epoch?: number | null
+}
+
+type LegacyMessagesOptions = { limit: number; beforeSeq: number | null }
+
+type LegacyMessagesResponse = {
+    messages: DecryptedMessage[]
+    page: {
+        limit: number
+        beforeSeq: number | null
+        nextBeforeSeq: number | null
+        hasMore: boolean
+    }
+}
+
+function comparePosition(a: MessagePosition, b: MessagePosition): number {
+    return a.at !== b.at ? a.at - b.at : a.seq - b.seq
+}
+
+function toDecryptedMessage(message: ReturnType<Store['messages']['getMessages']>[number]): DecryptedMessage {
+    return {
+        id: message.id,
+        seq: message.seq,
+        localId: message.localId,
+        content: message.content,
+        createdAt: message.createdAt,
+        invokedAt: message.invokedAt
+    }
+}
+
 export type MessageSentFrom = 'telegram-bot' | 'webapp' | 'auto-continue' | 'auto-retry' | 'project-agent' | 'cron' | 'shared-guest'
 type MessageMetaPatch = {
     appendSystemPrompt?: string | null
@@ -82,15 +136,19 @@ export class MessageService {
         return index < 0 ? null : turns.length - index - 1
     }
 
-    getMessagesPage(sessionId: string, options: { limit: number; beforeSeq: number | null }): {
-        messages: DecryptedMessage[]
-        page: {
-            limit: number
-            beforeSeq: number | null
-            nextBeforeSeq: number | null
-            hasMore: boolean
+    getMessagesPage(sessionId: string, options: LegacyMessagesOptions): LegacyMessagesResponse
+    getMessagesPage(sessionId: string, options: IncrementalMessagesOptions): IncrementalMessagesResponse
+    getMessagesPage(
+        sessionId: string,
+        options: LegacyMessagesOptions | IncrementalMessagesOptions
+    ): LegacyMessagesResponse | IncrementalMessagesResponse {
+        if ('beforeSeq' in options) {
+            return this.getLegacyMessagesPage(sessionId, options)
         }
-    } {
+        return this.getIncrementalMessagesPage(sessionId, options)
+    }
+
+    private getLegacyMessagesPage(sessionId: string, options: LegacyMessagesOptions): LegacyMessagesResponse {
         const stored = this.store.messages.getMessages(sessionId, options.limit, options.beforeSeq ?? undefined)
         const messages: DecryptedMessage[] = stored.map((message) => ({
             id: message.id,
@@ -188,6 +246,165 @@ export class MessageService {
                 limit: options.limit,
                 nextBeforeSeq: oldestSeq,
                 nextBeforeAt: oldestPositionAt,
+                hasMore
+            }
+        }
+    }
+
+    /**
+     * Read the message window using a composite display-position cursor.
+     * `after` requests only the incremental tail; an epoch mismatch returns a
+     * latest page with `reset: true` so clients can replace stale cached rows.
+     */
+    getIncrementalMessagesPage(
+        sessionId: string,
+        options: IncrementalMessagesOptions
+    ): IncrementalMessagesResponse {
+        const epoch = this.store.messages.getMessageEpoch(sessionId)
+        if (options.after) {
+            if (options.epoch !== undefined && options.epoch !== null && options.epoch !== epoch) {
+                return this.getLatestOrBeforeMessagesPage(sessionId, options.limit, null, epoch, true)
+            }
+            return this.getAfterMessagesPage(
+                sessionId,
+                options.limit,
+                options.after,
+                options.until ?? null,
+                epoch
+            )
+        }
+        return this.getLatestOrBeforeMessagesPage(
+            sessionId,
+            options.limit,
+            options.before ?? null,
+            epoch,
+            false
+        )
+    }
+
+    private getLatestOrBeforeMessagesPage(
+        sessionId: string,
+        limit: number,
+        requestedBefore: MessagePosition | null,
+        epoch: number,
+        reset: boolean
+    ): IncrementalMessagesResponse {
+        const direction = requestedBefore ? 'before' as const : 'latest' as const
+        const snapshotHead = this.store.messages.getNewestMessagePosition(sessionId)
+        let pageRows = this.store.messages.getMessagesByPosition(sessionId, limit, requestedBefore ?? undefined)
+        const queuedRows = requestedBefore === null
+            ? this.store.messages.getUninvokedLocalMessages(sessionId)
+            : []
+
+        const byId = new Map<string, typeof pageRows[number]>()
+        for (const row of pageRows) byId.set(row.id, row)
+        for (const row of queuedRows) byId.set(row.id, row)
+        let messages = [...byId.values()]
+            .sort((a, b) => {
+                const at = (a.invokedAt ?? a.createdAt) - (b.invokedAt ?? b.createdAt)
+                return at !== 0 ? at : a.seq - b.seq
+            })
+            .map(toDecryptedMessage)
+
+        let oldest = pageRows[0] ?? null
+        let oldestPosition: MessagePosition | null = oldest
+            ? { at: oldest.invokedAt ?? oldest.createdAt, seq: oldest.seq }
+            : null
+        let hasMore = oldestPosition !== null
+            && this.store.messages.getMessagesByPosition(sessionId, 1, oldestPosition).length > 0
+
+        // A page containing only filtered/queued rows should still advance over
+        // older rows; keep the cursor anchored to the actual database page.
+        while (messages.length === 0 && hasMore && oldestPosition) {
+            pageRows = this.store.messages.getMessagesByPosition(sessionId, limit, oldestPosition)
+            messages = pageRows
+                .sort((a, b) => {
+                    const at = (a.invokedAt ?? a.createdAt) - (b.invokedAt ?? b.createdAt)
+                    return at !== 0 ? at : a.seq - b.seq
+                })
+                .map(toDecryptedMessage)
+            oldest = pageRows[0] ?? null
+            oldestPosition = oldest
+                ? { at: oldest.invokedAt ?? oldest.createdAt, seq: oldest.seq }
+                : null
+            hasMore = oldestPosition !== null
+                && this.store.messages.getMessagesByPosition(sessionId, 1, oldestPosition).length > 0
+        }
+
+        return {
+            messages,
+            page: {
+                direction,
+                limit,
+                epoch,
+                reset,
+                nextBeforeSeq: oldestPosition?.seq ?? null,
+                nextBeforeAt: oldestPosition?.at ?? null,
+                nextAfterSeq: null,
+                nextAfterAt: null,
+                snapshotHeadSeq: snapshotHead?.seq ?? null,
+                snapshotHeadAt: snapshotHead?.at ?? null,
+                hasMore
+            }
+        }
+    }
+
+    private getAfterMessagesPage(
+        sessionId: string,
+        limit: number,
+        after: MessagePosition,
+        requestedUntil: MessagePosition | null,
+        epoch: number
+    ): IncrementalMessagesResponse {
+        const currentHead = this.store.messages.getNewestMessagePosition(sessionId)
+        const snapshotHead = currentHead && requestedUntil
+            ? (comparePosition(requestedUntil, currentHead) <= 0 ? requestedUntil : currentHead)
+            : requestedUntil ?? currentHead
+
+        if (!snapshotHead || comparePosition(snapshotHead, after) <= 0) {
+            return {
+                messages: [],
+                page: {
+                    direction: 'after',
+                    limit,
+                    epoch,
+                    reset: false,
+                    nextBeforeSeq: null,
+                    nextBeforeAt: null,
+                    nextAfterSeq: after.seq,
+                    nextAfterAt: after.at,
+                    snapshotHeadSeq: snapshotHead?.seq ?? null,
+                    snapshotHeadAt: snapshotHead?.at ?? null,
+                    hasMore: false
+                }
+            }
+        }
+
+        const pageRows = this.store.messages.getMessagesAfterPosition(
+            sessionId,
+            limit,
+            after,
+            snapshotHead
+        )
+        const last = pageRows[pageRows.length - 1] ?? null
+        const nextAfter = last
+            ? { at: last.invokedAt ?? last.createdAt, seq: last.seq }
+            : snapshotHead
+        const hasMore = last !== null && comparePosition(nextAfter, snapshotHead) < 0
+
+        return {
+            messages: pageRows.map(toDecryptedMessage),
+            page: {
+                direction: 'after',
+                limit,
+                epoch,
+                reset: false,
+                nextBeforeSeq: null,
+                nextBeforeAt: null,
+                nextAfterSeq: nextAfter.seq,
+                nextAfterAt: nextAfter.at,
+                snapshotHeadSeq: snapshotHead.seq,
+                snapshotHeadAt: snapshotHead.at,
                 hasMore
             }
         }

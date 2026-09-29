@@ -24,7 +24,24 @@ function createApp() {
                 createdAt: 2000,
                 seq: 451
             }
-        ])
+        ]),
+        getIncrementalMessagesPage: (_sessionId: string, options: { limit?: number }) => ({
+            messages: [],
+            page: {
+                direction: 'latest',
+                limit: options.limit ?? 20,
+                epoch: 0,
+                reset: false,
+                nextBeforeSeq: null,
+                nextBeforeAt: null,
+                nextAfterSeq: null,
+                nextAfterAt: null,
+                snapshotHeadSeq: null,
+                snapshotHeadAt: null,
+                hasMore: false,
+                receivedOptions: options
+            }
+        })
     } as unknown as Partial<SyncEngine>
     const app = new Hono<WebAppEnv>()
     app.use('*', async (c, next) => {
@@ -56,5 +73,21 @@ describe('messages routes', () => {
                 }
             ]
         })
+    })
+
+    it('accepts a tail cursor and routes it to incremental pagination', async () => {
+        const response = await createApp().request(
+            '/api/sessions/session-1/messages?afterAt=100&afterSeq=4&epoch=2&limit=10'
+        )
+
+        expect(response.status).toBe(200)
+        const body = await response.json() as { page: { direction: string; limit: number } }
+        expect(body.page.direction).toBe('latest')
+        expect(body.page.limit).toBe(10)
+    })
+
+    it('rejects incomplete composite cursors', async () => {
+        const response = await createApp().request('/api/sessions/session-1/messages?afterSeq=4')
+        expect(response.status).toBe(400)
     })
 })

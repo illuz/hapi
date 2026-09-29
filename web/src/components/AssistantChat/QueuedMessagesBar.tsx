@@ -42,8 +42,7 @@ function useQueuedMessages(sessionId: string): DecryptedMessage[] {
     // `invokedAt` is the source of truth for invocation; see isQueuedForInvocation
     // (lib/messages) for the shared predicate used by the thread filter and the
     // window store trim helpers.
-    const allMessages = [...state.messages, ...state.pending]
-    return allMessages.filter(isQueuedForInvocation)
+    return state.messages.filter(isQueuedForInvocation)
 }
 
 function getTextFromMessage(msg: DecryptedMessage): string {

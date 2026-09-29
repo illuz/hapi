@@ -1,137 +1,206 @@
 import type { ApiClient } from '@/api/client'
-import type { DecryptedMessage, MessageStatus } from '@/types/api'
 import { normalizeDecryptedMessage } from '@/chat/normalize'
-import { isQueuedForInvocation, isUserMessage, mergeMessages } from '@/lib/messages'
+import type { DecryptedMessage, MessageStatus, MessagesResponse } from '@/types/api'
+import { isQueuedForInvocation, mergeMessages } from '@/lib/messages'
+
+export type MessageViewMode = 'tail' | 'history'
 
 export type MessageWindowState = {
     sessionId: string
     messages: DecryptedMessage[]
-    pending: DecryptedMessage[]
-    pendingCount: number
     hasMore: boolean
     oldestSeq: number | null
     newestSeq: number | null
-    isLoading: boolean
+    epoch: number | null
+    isSyncingTail: boolean
     isLoadingMore: boolean
     warning: string | null
-    atBottom: boolean
+    viewMode: MessageViewMode
+    unseenCount: number
     messagesVersion: number
+    historyVersion: number
 }
 
 export const VISIBLE_WINDOW_SIZE = 400
-export const PENDING_WINDOW_SIZE = 200
+export const HISTORY_WINDOW_SIZE = 600
+const AGENT_RUN_WINDOW_SIZE = 800
+const OLDER_LOAD_WINDOW_SIZE = 800
 const PAGE_SIZE = 200
-const PENDING_OVERFLOW_WARNING = 'New messages arrived while you were away. Scroll to bottom to refresh.'
 
-type InternalState = MessageWindowState & {
-    pendingOverflowCount: number
-    pendingVisibleCount: number
-    pendingOverflowVisibleCount: number
-    // V8 composite cursor: defined when hub responded with nextBeforeAt
-    oldestPositionAt: number | null
-    // Paired with oldestPositionAt — the server returns both as a cursor; keep them
-    // together so we don't accidentally combine `nextBeforeAt` from the server with
-    // a recomputed minimum `seq` from the local window (those can refer to
-    // different rows after a low-seq message is invoked late).
-    oldestPositionSeq: number | null
+type MessagePosition = {
+    at: number
+    seq: number
 }
 
-type PendingVisibilityCacheEntry = {
-    source: DecryptedMessage
-    visible: boolean
+type InternalState = MessageWindowState & {
+    oldestPositionAt: number | null
+    oldestPositionSeq: number | null
+    newestPositionAt: number | null
+    newestPositionSeq: number | null
+    unseenIds: Set<string>
+    requiresLatestReset: boolean
+    syncGeneration: number
+    olderGeneration: number
+}
+
+type PersistedMessageWindowState = {
+    messages: DecryptedMessage[]
+    hasMore: boolean
+    oldestPositionAt: number | null
+    oldestPositionSeq: number | null
+    newestPositionAt: number | null
+    newestPositionSeq: number | null
+    epoch: number | null
+}
+
+type TailSyncController = {
+    api: ApiClient
+    running: Promise<void> | null
+    trailingRequested: boolean
 }
 
 const states = new Map<string, InternalState>()
 const listeners = new Map<string, Set<() => void>>()
-const pendingVisibilityCacheBySession = new Map<string, Map<string, PendingVisibilityCacheEntry>>()
+const tailSyncControllers = new Map<string, TailSyncController>()
 
-// Throttled notification: coalesce rapid state updates into at most one
-// notification per NOTIFY_THROTTLE_MS during streaming. This prevents
-// Windows UI jank caused by excessive React re-renders during SSE streaming.
 const NOTIFY_THROTTLE_MS = 150
+const PERSIST_THROTTLE_MS = 200
+const STORAGE_KEY_PREFIX = 'hapi:message-window:v2:'
 const pendingNotifySessionIds = new Set<string>()
+const pendingPersistSessionIds = new Set<string>()
 let notifyRafId: ReturnType<typeof requestAnimationFrame> | null = null
+let notifyTimerId: ReturnType<typeof setTimeout> | null = null
+let persistTimerId: ReturnType<typeof setTimeout> | null = null
 let lastNotifyAt = 0
 
-function scheduleNotify(sessionId: string): void {
-    pendingNotifySessionIds.add(sessionId)
+function requestNotifyFrame(): void {
     if (notifyRafId !== null) {
         return
     }
-    const elapsed = Date.now() - lastNotifyAt
-    if (elapsed >= NOTIFY_THROTTLE_MS) {
-        // Enough time has passed — flush on next animation frame
+    if (typeof requestAnimationFrame === 'function') {
         notifyRafId = requestAnimationFrame(flushNotifications)
-    } else {
-        // Too soon — delay until the throttle window expires, then use rAF
-        const remaining = NOTIFY_THROTTLE_MS - elapsed
-        setTimeout(() => {
-            notifyRafId = requestAnimationFrame(flushNotifications)
-        }, remaining)
-        // Use a sentinel so we don't double-schedule
-        notifyRafId = -1 as unknown as ReturnType<typeof requestAnimationFrame>
+        return
     }
+    notifyRafId = setTimeout(flushNotifications, 0) as unknown as ReturnType<typeof requestAnimationFrame>
+}
+
+function scheduleNotify(sessionId: string): void {
+    pendingNotifySessionIds.add(sessionId)
+    if (notifyRafId !== null || notifyTimerId !== null) {
+        return
+    }
+    const remaining = NOTIFY_THROTTLE_MS - (Date.now() - lastNotifyAt)
+    if (remaining <= 0) {
+        requestNotifyFrame()
+        return
+    }
+    notifyTimerId = setTimeout(() => {
+        notifyTimerId = null
+        requestNotifyFrame()
+    }, remaining)
 }
 
 function flushNotifications(): void {
     notifyRafId = null
     lastNotifyAt = Date.now()
-    const sessionIds = Array.from(pendingNotifySessionIds)
+    const sessionIds = [...pendingNotifySessionIds]
     pendingNotifySessionIds.clear()
     for (const sessionId of sessionIds) {
-        const subs = listeners.get(sessionId)
-        if (!subs) continue
-        for (const listener of subs) {
+        const subscribers = listeners.get(sessionId)
+        if (!subscribers) continue
+        for (const listener of subscribers) {
             listener()
         }
     }
 }
 
-function getPendingVisibilityCache(sessionId: string): Map<string, PendingVisibilityCacheEntry> {
-    const existing = pendingVisibilityCacheBySession.get(sessionId)
-    if (existing) {
-        return existing
+function getStorageKey(sessionId: string): string {
+    return `${STORAGE_KEY_PREFIX}${sessionId}`
+}
+
+function isSessionStorageAvailable(): boolean {
+    try {
+        return typeof sessionStorage?.getItem === 'function'
+    } catch {
+        return false
     }
-    const created = new Map<string, PendingVisibilityCacheEntry>()
-    pendingVisibilityCacheBySession.set(sessionId, created)
-    return created
 }
 
-function clearPendingVisibilityCache(sessionId: string): void {
-    pendingVisibilityCacheBySession.delete(sessionId)
+function toNullableNumber(value: unknown): number | null {
+    return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
-function isVisiblePendingMessage(sessionId: string, message: DecryptedMessage): boolean {
-    const cache = getPendingVisibilityCache(sessionId)
-    const cached = cache.get(message.id)
-    if (cached && cached.source === message) {
-        return cached.visible
-    }
-    const visible = normalizeDecryptedMessage(message) !== null
-    cache.set(message.id, { source: message, visible })
-    return visible
+function readPosition(at: unknown, seq: unknown): MessagePosition | null {
+    const positionAt = toNullableNumber(at)
+    const positionSeq = toNullableNumber(seq)
+    return positionAt !== null && positionSeq !== null
+        ? { at: positionAt, seq: positionSeq }
+        : null
 }
 
-function countVisiblePendingMessages(sessionId: string, messages: DecryptedMessage[]): number {
-    let count = 0
-    for (const message of messages) {
-        if (isVisiblePendingMessage(sessionId, message)) {
-            count += 1
-        }
-    }
-    return count
+function shouldPersistState(state: InternalState): boolean {
+    return state.messages.length > 0
+        || state.hasMore
+        || state.epoch !== null
+        || state.oldestPositionAt !== null
+        || state.newestPositionAt !== null
 }
 
-function syncPendingVisibilityCache(sessionId: string, pending: DecryptedMessage[]): void {
-    const cache = pendingVisibilityCacheBySession.get(sessionId)
-    if (!cache) {
+function persistState(sessionId: string, state: InternalState): void {
+    if (!isSessionStorageAvailable()) {
         return
     }
-    const keep = new Set(pending.map((message) => message.id))
-    for (const id of cache.keys()) {
-        if (!keep.has(id)) {
-            cache.delete(id)
+    try {
+        if (!shouldPersistState(state)) {
+            sessionStorage.removeItem(getStorageKey(sessionId))
+            return
         }
+        const persisted: PersistedMessageWindowState = {
+            messages: state.messages,
+            hasMore: state.hasMore,
+            oldestPositionAt: state.oldestPositionAt,
+            oldestPositionSeq: state.oldestPositionSeq,
+            newestPositionAt: state.newestPositionAt,
+            newestPositionSeq: state.newestPositionSeq,
+            epoch: state.epoch
+        }
+        sessionStorage.setItem(getStorageKey(sessionId), JSON.stringify(persisted))
+    } catch {
+    }
+}
+
+function clearPersistedState(sessionId: string): void {
+    pendingPersistSessionIds.delete(sessionId)
+    if (!isSessionStorageAvailable()) {
+        return
+    }
+    try {
+        sessionStorage.removeItem(getStorageKey(sessionId))
+    } catch {
+    }
+}
+
+function flushPersistedStates(): void {
+    persistTimerId = null
+    const sessionIds = [...pendingPersistSessionIds]
+    pendingPersistSessionIds.clear()
+    for (const sessionId of sessionIds) {
+        const state = states.get(sessionId)
+        if (state) {
+            persistState(sessionId, state)
+        } else {
+            clearPersistedState(sessionId)
+        }
+    }
+}
+
+function schedulePersist(sessionId: string): void {
+    if (!isSessionStorageAvailable()) {
+        return
+    }
+    pendingPersistSessionIds.add(sessionId)
+    if (persistTimerId === null) {
+        persistTimerId = setTimeout(flushPersistedStates, PERSIST_THROTTLE_MS)
     }
 }
 
@@ -139,21 +208,69 @@ function createState(sessionId: string): InternalState {
     return {
         sessionId,
         messages: [],
-        pending: [],
-        pendingCount: 0,
-        pendingVisibleCount: 0,
-        pendingOverflowVisibleCount: 0,
         hasMore: false,
         oldestSeq: null,
-        oldestPositionAt: null,
-        oldestPositionSeq: null,
         newestSeq: null,
-        isLoading: false,
+        epoch: null,
+        isSyncingTail: false,
         isLoadingMore: false,
         warning: null,
-        atBottom: true,
+        viewMode: 'tail',
+        unseenCount: 0,
         messagesVersion: 0,
-        pendingOverflowCount: 0,
+        historyVersion: 0,
+        oldestPositionAt: null,
+        oldestPositionSeq: null,
+        newestPositionAt: null,
+        newestPositionSeq: null,
+        unseenIds: new Set(),
+        requiresLatestReset: false,
+        syncGeneration: 0,
+        olderGeneration: 0
+    }
+}
+
+function hydrateState(sessionId: string): InternalState | null {
+    if (!isSessionStorageAvailable()) {
+        return null
+    }
+    try {
+        const raw = sessionStorage.getItem(getStorageKey(sessionId))
+        if (!raw) {
+            return null
+        }
+        const parsed = JSON.parse(raw) as Partial<PersistedMessageWindowState> | null
+        if (!parsed || !Array.isArray(parsed.messages)) {
+            clearPersistedState(sessionId)
+            return null
+        }
+        const restoreMessage = (message: DecryptedMessage): DecryptedMessage => {
+            if (message.status !== 'sending') {
+                return message
+            }
+            return {
+                ...message,
+                status: message.invokedAt === null ? 'queued' : 'sent'
+            }
+        }
+        const oldest = readPosition(parsed.oldestPositionAt, parsed.oldestPositionSeq)
+        const newest = readPosition(parsed.newestPositionAt, parsed.newestPositionSeq)
+        const epoch = typeof parsed.epoch === 'number' && Number.isInteger(parsed.epoch) && parsed.epoch >= 0
+            ? parsed.epoch
+            : null
+        return buildState(createState(sessionId), {
+            messages: mergeMessages([], parsed.messages.map(restoreMessage)),
+            hasMore: parsed.hasMore === true,
+            oldestPositionAt: oldest?.at ?? null,
+            oldestPositionSeq: oldest?.seq ?? null,
+            newestPositionAt: newest?.at ?? null,
+            newestPositionSeq: newest?.seq ?? null,
+            epoch,
+            requiresLatestReset: parsed.messages.length > 0 && (newest === null || epoch === null)
+        })
+    } catch {
+        clearPersistedState(sessionId)
+        return null
     }
 }
 
@@ -162,316 +279,593 @@ function getState(sessionId: string): InternalState {
     if (existing) {
         return existing
     }
-    const created = createState(sessionId)
+    const created = hydrateState(sessionId) ?? createState(sessionId)
     states.set(sessionId, created)
     return created
 }
 
-function notify(sessionId: string): void {
-    scheduleNotify(sessionId)
-}
-
 function notifyImmediate(sessionId: string): void {
-    // Bypass throttle for user-initiated actions (flush, clear, etc.)
-    const subs = listeners.get(sessionId)
-    if (!subs) return
-    for (const listener of subs) {
+    const subscribers = listeners.get(sessionId)
+    if (!subscribers) return
+    for (const listener of subscribers) {
         listener()
     }
 }
 
-function setState(sessionId: string, next: InternalState, immediate?: boolean): void {
+function setState(sessionId: string, next: InternalState, immediate = false): void {
     states.set(sessionId, next)
+    schedulePersist(sessionId)
     if (immediate) {
         notifyImmediate(sessionId)
     } else {
-        notify(sessionId)
+        scheduleNotify(sessionId)
     }
 }
 
-function updateState(sessionId: string, updater: (prev: InternalState) => InternalState, immediate?: boolean): void {
-    const prev = getState(sessionId)
-    const next = updater(prev)
-    if (next !== prev) {
+function updateState(
+    sessionId: string,
+    updater: (previous: InternalState) => InternalState,
+    immediate = false
+): void {
+    const previous = getState(sessionId)
+    const next = updater(previous)
+    if (next !== previous) {
         setState(sessionId, next, immediate)
     }
 }
 
 function deriveSeqBounds(messages: DecryptedMessage[]): { oldestSeq: number | null; newestSeq: number | null } {
-    let oldest: number | null = null
-    let newest: number | null = null
+    let oldestSeq: number | null = null
+    let newestSeq: number | null = null
     for (const message of messages) {
-        if (typeof message.seq !== 'number') {
+        if (typeof message.seq !== 'number') continue
+        oldestSeq = oldestSeq === null ? message.seq : Math.min(oldestSeq, message.seq)
+        newestSeq = newestSeq === null ? message.seq : Math.max(newestSeq, message.seq)
+    }
+    return { oldestSeq, newestSeq }
+}
+
+function messagePosition(message: DecryptedMessage): MessagePosition | null {
+    return typeof message.seq === 'number'
+        ? { at: message.invokedAt ?? message.createdAt, seq: message.seq }
+        : null
+}
+
+function comparePosition(left: MessagePosition, right: MessagePosition): number {
+    return left.at !== right.at ? left.at - right.at : left.seq - right.seq
+}
+
+function derivePosition(
+    messages: DecryptedMessage[],
+    direction: 'oldest' | 'newest'
+): MessagePosition | null {
+    let selected: MessagePosition | null = null
+    for (const message of messages) {
+        const candidate = messagePosition(message)
+        if (!candidate) continue
+        if (!selected) {
+            selected = candidate
             continue
         }
-        if (oldest === null || message.seq < oldest) {
-            oldest = message.seq
-        }
-        if (newest === null || message.seq > newest) {
-            newest = message.seq
+        const comparison = comparePosition(candidate, selected)
+        if ((direction === 'oldest' && comparison < 0) || (direction === 'newest' && comparison > 0)) {
+            selected = candidate
         }
     }
-    return { oldestSeq: oldest, newestSeq: newest }
+    return selected
+}
+
+function getNewestCursor(state: InternalState): MessagePosition | null {
+    return readPosition(state.newestPositionAt, state.newestPositionSeq)
 }
 
 function buildState(
-    prev: InternalState,
-    updates: {
-        messages?: DecryptedMessage[]
-        pending?: DecryptedMessage[]
-        pendingOverflowCount?: number
-        pendingVisibleCount?: number
-        pendingOverflowVisibleCount?: number
-        hasMore?: boolean
-        oldestPositionAt?: number | null
-        oldestPositionSeq?: number | null
-        isLoading?: boolean
-        isLoadingMore?: boolean
-        warning?: string | null
-        atBottom?: boolean
-    }
+    previous: InternalState,
+    updates: Partial<Pick<InternalState,
+        | 'messages'
+        | 'hasMore'
+        | 'epoch'
+        | 'isSyncingTail'
+        | 'isLoadingMore'
+        | 'warning'
+        | 'viewMode'
+        | 'oldestPositionAt'
+        | 'oldestPositionSeq'
+        | 'newestPositionAt'
+        | 'newestPositionSeq'
+        | 'unseenIds'
+        | 'requiresLatestReset'
+        | 'syncGeneration'
+        | 'olderGeneration'
+        | 'historyVersion'
+    >>
 ): InternalState {
-    const messages = updates.messages ?? prev.messages
-    const pending = updates.pending ?? prev.pending
-    const pendingOverflowCount = updates.pendingOverflowCount ?? prev.pendingOverflowCount
-    const pendingOverflowVisibleCount = updates.pendingOverflowVisibleCount ?? prev.pendingOverflowVisibleCount
-    let pendingVisibleCount = updates.pendingVisibleCount ?? prev.pendingVisibleCount
-    const pendingChanged = pending !== prev.pending
-    if (pendingChanged && updates.pendingVisibleCount === undefined) {
-        pendingVisibleCount = countVisiblePendingMessages(prev.sessionId, pending)
-    }
-    if (pendingChanged) {
-        syncPendingVisibilityCache(prev.sessionId, pending)
-    }
-    const pendingCount = pendingVisibleCount + pendingOverflowVisibleCount
-    const { oldestSeq, newestSeq } = deriveSeqBounds(messages)
-    const messagesVersion = messages === prev.messages ? prev.messagesVersion : prev.messagesVersion + 1
-
+    const messages = updates.messages ?? previous.messages
+    const unseenIds = updates.unseenIds ?? previous.unseenIds
+    const bounds = deriveSeqBounds(messages)
     return {
-        ...prev,
+        ...previous,
+        ...updates,
         messages,
-        pending,
-        pendingOverflowCount,
-        pendingVisibleCount,
-        pendingOverflowVisibleCount,
-        pendingCount,
-        oldestSeq,
-        oldestPositionAt: updates.oldestPositionAt !== undefined ? updates.oldestPositionAt : prev.oldestPositionAt,
-        oldestPositionSeq: updates.oldestPositionSeq !== undefined ? updates.oldestPositionSeq : prev.oldestPositionSeq,
-        newestSeq,
-        hasMore: updates.hasMore !== undefined ? updates.hasMore : prev.hasMore,
-        isLoading: updates.isLoading !== undefined ? updates.isLoading : prev.isLoading,
-        isLoadingMore: updates.isLoadingMore !== undefined ? updates.isLoadingMore : prev.isLoadingMore,
-        warning: updates.warning !== undefined ? updates.warning : prev.warning,
-        atBottom: updates.atBottom !== undefined ? updates.atBottom : prev.atBottom,
-        messagesVersion,
+        oldestSeq: bounds.oldestSeq,
+        newestSeq: bounds.newestSeq,
+        unseenIds,
+        unseenCount: unseenIds.size,
+        messagesVersion: messages === previous.messages
+            ? previous.messagesVersion
+            : previous.messagesVersion + 1
     }
 }
 
-/** Trim `messages` down to `limit` while preserving every queued user message.
- *  Queued rows must survive trimming on both windows: the `messages-consumed`
- *  SSE only carries localIds, so a dropped queued row cannot be restored or
- *  repositioned without a full refetch.  Returns the kept slice plus the list
- *  of regular (non-queued) rows that were dropped, so the pending-overflow
- *  warning counter can be advanced symmetrically. */
-function trimPreservingQueued(
-    messages: DecryptedMessage[],
+function sliceForTrim<T>(
+    items: T[],
     limit: number,
     mode: 'append' | 'prepend'
+): { kept: T[]; dropped: T[] } {
+    if (items.length <= limit) {
+        return { kept: items, dropped: [] }
+    }
+    if (limit <= 0) {
+        return { kept: [], dropped: items }
+    }
+    return mode === 'prepend'
+        ? { kept: items.slice(0, limit), dropped: items.slice(limit) }
+        : { kept: items.slice(items.length - limit), dropped: items.slice(0, items.length - limit) }
+}
+
+function isCodexAgentRunMessage(message: DecryptedMessage): boolean {
+    const outer = message.content
+    if (!outer || typeof outer !== 'object' || (outer as { role?: unknown }).role !== 'agent') {
+        return false
+    }
+    const content = (outer as { content?: unknown }).content
+    if (!content || typeof content !== 'object') return false
+    const payload = content as { type?: unknown; data?: unknown }
+    if (payload.type !== 'codex' || !payload.data || typeof payload.data !== 'object') {
+        return false
+    }
+    const type = (payload.data as { type?: unknown }).type
+    return type === 'agent-run-start' || type === 'agent-run-update' || type === 'agent-run-trace'
+}
+
+function trimPreservingQueued(
+    messages: DecryptedMessage[],
+    regularLimit: number,
+    mode: 'append' | 'prepend'
 ): { kept: DecryptedMessage[]; dropped: DecryptedMessage[] } {
-    if (messages.length <= limit) {
-        return { kept: messages, dropped: [] }
-    }
     const queued = messages.filter(isQueuedForInvocation)
-    if (queued.length === 0) {
-        const kept = mode === 'prepend'
-            ? messages.slice(0, limit)
-            : messages.slice(messages.length - limit)
-        const dropped = mode === 'prepend'
-            ? messages.slice(limit)
-            : messages.slice(0, messages.length - limit)
-        return { kept, dropped }
-    }
     const queuedIds = new Set(queued.map((message) => message.id))
-    const regular = messages.filter((message) => !queuedIds.has(message.id))
-    const budget = Math.max(0, limit - queued.length)
-    const trimmedRegular = mode === 'prepend'
-        ? regular.slice(0, budget)
-        : regular.slice(Math.max(0, regular.length - budget))
-    const droppedRegular = mode === 'prepend'
-        ? regular.slice(budget)
-        : regular.slice(0, Math.max(0, regular.length - budget))
-    return { kept: mergeMessages(trimmedRegular, queued), dropped: droppedRegular }
-}
-
-function trimVisible(messages: DecryptedMessage[], mode: 'append' | 'prepend'): DecryptedMessage[] {
-    return trimPreservingQueued(messages, VISIBLE_WINDOW_SIZE, mode).kept
-}
-
-function trimPending(
-    sessionId: string,
-    messages: DecryptedMessage[]
-): { pending: DecryptedMessage[]; dropped: number; droppedVisible: number } {
-    if (messages.length <= PENDING_WINDOW_SIZE) {
-        return { pending: messages, dropped: 0, droppedVisible: 0 }
+    const nonQueued = messages.filter((message) => !queuedIds.has(message.id))
+    const agentRuns = nonQueued.filter(isCodexAgentRunMessage)
+    const regular = nonQueued.filter((message) => !isCodexAgentRunMessage(message))
+    const regularTrim = sliceForTrim(regular, Math.max(0, regularLimit - queued.length), mode)
+    const agentRunTrim = sliceForTrim(agentRuns, AGENT_RUN_WINDOW_SIZE, mode)
+    return {
+        kept: mergeMessages([...regularTrim.kept, ...agentRunTrim.kept], queued),
+        dropped: [...regularTrim.dropped, ...agentRunTrim.dropped]
     }
-    // Symmetric with trimVisible: agents that overflow the pending window
-    // (200) must not evict queued user messages — the floating bar holds the
-    // only client-visible reference to them until the CLI ack arrives.
-    const { kept, dropped } = trimPreservingQueued(messages, PENDING_WINDOW_SIZE, 'append')
-    const droppedVisible = countVisiblePendingMessages(sessionId, dropped)
-    return { pending: kept, dropped: dropped.length, droppedVisible }
 }
 
-function filterPendingAgainstVisible(pending: DecryptedMessage[], visible: DecryptedMessage[]): DecryptedMessage[] {
-    if (pending.length === 0 || visible.length === 0) {
-        return pending
-    }
-    const visibleIds = new Set(visible.map((message) => message.id))
-    return pending.filter((message) => !visibleIds.has(message.id))
-}
-
-function isOptimisticMessage(message: DecryptedMessage): boolean {
+function optimisticMessage(message: DecryptedMessage): boolean {
     return Boolean(message.localId && message.id === message.localId)
 }
 
-function mergeIntoPending(
-    prev: InternalState,
+function unseenIdentity(message: DecryptedMessage): string {
+    return message.localId ? `local:${message.localId}` : `id:${message.id}`
+}
+
+function collectNewUnseenIds(
+    previous: InternalState,
     incoming: DecryptedMessage[]
-): {
-    pending: DecryptedMessage[]
-    pendingVisibleCount: number
-    pendingOverflowCount: number
-    pendingOverflowVisibleCount: number
-    warning: string | null
-} {
+): Set<string> {
+    if (previous.viewMode === 'tail' || incoming.length === 0) {
+        return previous.unseenIds
+    }
+    const representedIds = new Set(previous.messages.map((message) => message.id))
+    const representedLocalIds = new Set(
+        previous.messages.flatMap((message) => message.localId ? [message.localId] : [])
+    )
+    const unseenIds = new Set(previous.unseenIds)
+    for (const message of incoming) {
+        const alreadyRepresented = representedIds.has(message.id)
+            || Boolean(message.localId && representedLocalIds.has(message.localId))
+        representedIds.add(message.id)
+        if (message.localId) representedLocalIds.add(message.localId)
+        if (alreadyRepresented || isQueuedForInvocation(message)) continue
+        if (normalizeDecryptedMessage(message) === null) continue
+        unseenIds.add(unseenIdentity(message))
+    }
+    return unseenIds
+}
+
+function mergeIntoWindow(
+    previous: InternalState,
+    incoming: DecryptedMessage[],
+    options: {
+        countUnseen?: boolean
+        mode?: 'append' | 'prepend'
+        regularLimit?: number
+    } = {}
+): InternalState {
     if (incoming.length === 0) {
-        return {
-            pending: prev.pending,
-            pendingVisibleCount: prev.pendingVisibleCount,
-            pendingOverflowCount: prev.pendingOverflowCount,
-            pendingOverflowVisibleCount: prev.pendingOverflowVisibleCount,
-            warning: prev.warning
-        }
+        return previous
     }
-    const mergedPending = mergeMessages(prev.pending, incoming)
-    const filtered = filterPendingAgainstVisible(mergedPending, prev.messages)
-    const { pending, dropped, droppedVisible } = trimPending(prev.sessionId, filtered)
-    const pendingVisibleCount = countVisiblePendingMessages(prev.sessionId, pending)
-    const pendingOverflowCount = prev.pendingOverflowCount + dropped
-    const pendingOverflowVisibleCount = prev.pendingOverflowVisibleCount + droppedVisible
-    const warning = droppedVisible > 0 && !prev.warning ? PENDING_OVERFLOW_WARNING : prev.warning
-    return { pending, pendingVisibleCount, pendingOverflowCount, pendingOverflowVisibleCount, warning }
-}
-
-export function getMessageWindowState(sessionId: string): MessageWindowState {
-    return getState(sessionId)
-}
-
-export function subscribeMessageWindow(sessionId: string, listener: () => void): () => void {
-    const subs = listeners.get(sessionId) ?? new Set()
-    subs.add(listener)
-    listeners.set(sessionId, subs)
-    return () => {
-        const current = listeners.get(sessionId)
-        if (!current) return
-        current.delete(listener)
-        if (current.size === 0) {
-            listeners.delete(sessionId)
-            states.delete(sessionId)
-            clearPendingVisibilityCache(sessionId)
-        }
-    }
-}
-
-export function clearMessageWindow(sessionId: string): void {
-    clearPendingVisibilityCache(sessionId)
-    if (!states.has(sessionId)) {
-        return
-    }
-    setState(sessionId, createState(sessionId), true)
-}
-
-export function seedMessageWindowFromSession(fromSessionId: string, toSessionId: string): void {
-    if (!fromSessionId || !toSessionId || fromSessionId === toSessionId) {
-        return
-    }
-    const source = getState(fromSessionId)
-    const base = createState(toSessionId)
-    const next = buildState(base, {
-        messages: [...source.messages],
-        pending: [...source.pending],
-        pendingOverflowCount: source.pendingOverflowCount,
-        pendingOverflowVisibleCount: source.pendingOverflowVisibleCount,
-        hasMore: source.hasMore,
-        oldestPositionAt: source.oldestPositionAt,
-        oldestPositionSeq: source.oldestPositionSeq,
-        warning: source.warning,
-        atBottom: source.atBottom,
-        isLoading: false,
-        isLoadingMore: false,
+    const mode = options.mode ?? (previous.viewMode === 'history' ? 'prepend' : 'append')
+    const regularLimit = options.regularLimit
+        ?? (previous.viewMode === 'history' ? HISTORY_WINDOW_SIZE : VISIBLE_WINDOW_SIZE)
+    const merged = mergeMessages(previous.messages, incoming)
+    const { kept, dropped } = trimPreservingQueued(merged, regularLimit, mode)
+    let next = buildState(previous, {
+        messages: kept,
+        unseenIds: options.countUnseen ? collectNewUnseenIds(previous, incoming) : previous.unseenIds
     })
-    setState(toSessionId, next)
+    if (dropped.length === 0) {
+        return next
+    }
+    if (mode === 'append') {
+        const oldest = derivePosition(kept, 'oldest')
+        return buildState(next, {
+            hasMore: true,
+            oldestPositionAt: oldest?.at ?? next.oldestPositionAt,
+            oldestPositionSeq: oldest?.seq ?? next.oldestPositionSeq
+        })
+    }
+    const newest = derivePosition(kept, 'newest')
+    next = buildState(next, {
+        requiresLatestReset: true,
+        newestPositionAt: newest?.at ?? null,
+        newestPositionSeq: newest?.seq ?? null
+    })
+    return next
 }
 
-export async function fetchLatestMessages(api: ApiClient, sessionId: string): Promise<void> {
-    const initial = getState(sessionId)
-    if (initial.isLoading) {
+function pagePosition(at: number | null, seq: number | null): MessagePosition | null {
+    return at !== null && seq !== null ? { at, seq } : null
+}
+
+function applyLatestResponse(
+    previous: InternalState,
+    response: MessagesResponse,
+    options: {
+        replaceServerRows: boolean
+        requestBaseline: Map<string, DecryptedMessage>
+    }
+): InternalState {
+    const concurrentServerRows = previous.messages.filter((message) => (
+        !optimisticMessage(message)
+        && options.requestBaseline.get(message.id) !== message
+    ))
+    const preserved = options.replaceServerRows
+        ? previous.messages.filter((message) => (
+            optimisticMessage(message)
+            || options.requestBaseline.get(message.id) !== message
+        ))
+        : previous.messages
+    const authoritative = mergeMessages(preserved, response.messages)
+    const incoming = mergeMessages(authoritative, concurrentServerRows)
+    const { kept, dropped } = trimPreservingQueued(incoming, VISIBLE_WINDOW_SIZE, 'append')
+    const snapshotHead = pagePosition(response.page.snapshotHeadAt ?? null, response.page.snapshotHeadSeq ?? null)
+        ?? derivePosition(response.messages, 'newest')
+    const newestKept = derivePosition(kept, 'newest')
+    const newest = snapshotHead && newestKept
+        ? (comparePosition(snapshotHead, newestKept) >= 0 ? snapshotHead : newestKept)
+        : snapshotHead ?? newestKept
+    const responseOldest = pagePosition(response.page.nextBeforeAt ?? null, response.page.nextBeforeSeq ?? null)
+    const previousOldest = readPosition(previous.oldestPositionAt, previous.oldestPositionSeq)
+    const oldest = dropped.length > 0
+        ? derivePosition(kept, 'oldest')
+        : options.replaceServerRows
+            ? responseOldest
+            : responseOldest ?? previousOldest
+    return buildState(previous, {
+        messages: kept,
+        hasMore: response.page.hasMore || (!options.replaceServerRows && previous.hasMore) || dropped.length > 0,
+        epoch: response.page.epoch ?? previous.epoch,
+        oldestPositionAt: oldest?.at ?? null,
+        oldestPositionSeq: oldest?.seq ?? null,
+        newestPositionAt: newest?.at ?? null,
+        newestPositionSeq: newest?.seq ?? null,
+        unseenIds: collectNewUnseenIds(previous, response.messages),
+        requiresLatestReset: false,
+        isLoadingMore: options.replaceServerRows ? false : previous.isLoadingMore,
+        olderGeneration: options.replaceServerRows
+            ? previous.olderGeneration + 1
+            : previous.olderGeneration,
+        warning: null
+    })
+}
+
+function beginTailSync(sessionId: string): number {
+    let generation = 0
+    updateState(sessionId, (previous) => {
+        generation = previous.syncGeneration + 1
+        return buildState(previous, {
+            syncGeneration: generation,
+            // Tail reconciliation owns the authoritative epoch. An older-page
+            // response captured before this point must not commit while the tail
+            // request is in flight, or a reset can mistake it for concurrent SSE.
+            olderGeneration: previous.olderGeneration + 1,
+            isSyncingTail: true,
+            isLoadingMore: false,
+            warning: null
+        })
+    })
+    return generation
+}
+
+function isCurrentTailSync(sessionId: string, generation: number): boolean {
+    return getState(sessionId).syncGeneration === generation
+}
+
+function finishTailSync(sessionId: string, generation: number, warning: string | null): void {
+    updateState(sessionId, (previous) => {
+        if (previous.syncGeneration !== generation) {
+            return previous
+        }
+        return buildState(previous, { isSyncingTail: false, warning })
+    })
+}
+
+async function runTailSync(api: ApiClient, sessionId: string): Promise<void> {
+    const generation = beginTailSync(sessionId)
+    try {
+        const initial = getState(sessionId)
+        const initialCursor = getNewestCursor(initial)
+        const canIncrement = initialCursor !== null
+            && initial.epoch !== null
+            && !initial.requiresLatestReset
+
+        if (!canIncrement) {
+            const requestBaseline = new Map(getState(sessionId).messages.map((message) => [message.id, message]))
+            const response = await api.getMessages(sessionId, { limit: PAGE_SIZE })
+            if (!isCurrentTailSync(sessionId, generation)) return
+            updateState(sessionId, (previous) => {
+                if (previous.syncGeneration !== generation) return previous
+                return applyLatestResponse(previous, response, {
+                    replaceServerRows: initial.requiresLatestReset || response.page.reset === true,
+                    requestBaseline
+                })
+            })
+            finishTailSync(sessionId, generation, null)
+            return
+        }
+
+        let after = initialCursor
+        let until: MessagePosition | null = null
+        while (true) {
+            const requestBaseline = new Map(getState(sessionId).messages.map((message) => [message.id, message]))
+            const response = await api.getMessages(sessionId, {
+                afterAt: after.at,
+                afterSeq: after.seq,
+                untilAt: until?.at ?? null,
+                untilSeq: until?.seq ?? null,
+                epoch: initial.epoch,
+                limit: PAGE_SIZE
+            })
+            if (!isCurrentTailSync(sessionId, generation)) return
+
+            if (response.page.reset === true || response.page.direction === 'latest') {
+                updateState(sessionId, (previous) => {
+                    if (previous.syncGeneration !== generation) return previous
+                    return applyLatestResponse(previous, response, {
+                        replaceServerRows: true,
+                        requestBaseline
+                    })
+                })
+                break
+            }
+
+            const nextAfter = pagePosition(response.page.nextAfterAt ?? null, response.page.nextAfterSeq ?? null)
+            const snapshotHead = pagePosition(response.page.snapshotHeadAt ?? null, response.page.snapshotHeadSeq ?? null)
+            if (until === null) {
+                until = snapshotHead
+            }
+
+            updateState(sessionId, (previous) => {
+                if (previous.syncGeneration !== generation) return previous
+                const merged = mergeIntoWindow(previous, response.messages, {
+                    countUnseen: previous.viewMode === 'history'
+                })
+                if (merged.requiresLatestReset) {
+                    return buildState(merged, {
+                        epoch: response.page.epoch ?? previous.epoch,
+                        warning: null
+                    })
+                }
+                const currentNewest = getNewestCursor(merged)
+                const newest = nextAfter && currentNewest
+                    ? (comparePosition(nextAfter, currentNewest) >= 0 ? nextAfter : currentNewest)
+                    : nextAfter ?? currentNewest
+                return buildState(merged, {
+                    epoch: response.page.epoch ?? previous.epoch,
+                    newestPositionAt: newest?.at ?? null,
+                    newestPositionSeq: newest?.seq ?? null,
+                    warning: null
+                })
+            })
+
+            const current = getState(sessionId)
+            if (current.requiresLatestReset || !response.page.hasMore || !nextAfter) {
+                break
+            }
+            if (comparePosition(nextAfter, after) <= 0) {
+                throw new Error('Message tail cursor did not advance')
+            }
+            after = nextAfter
+        }
+
+        finishTailSync(sessionId, generation, null)
+    } catch (error) {
+        if (!isCurrentTailSync(sessionId, generation)) return
+        finishTailSync(
+            sessionId,
+            generation,
+            error instanceof Error ? error.message : 'Failed to synchronize messages'
+        )
+    }
+}
+
+function startTailSync(sessionId: string, controller: TailSyncController): Promise<void> {
+    const running = runTailSync(controller.api, sessionId)
+    controller.running = running
+    const finish = () => {
+        if (tailSyncControllers.get(sessionId) !== controller || controller.running !== running) {
+            return
+        }
+        controller.running = null
+        if (!controller.trailingRequested) {
+            return
+        }
+        controller.trailingRequested = false
+        startTailSync(sessionId, controller)
+    }
+    void running.then(finish, finish)
+    return running
+}
+
+async function waitForTailSyncDrain(
+    sessionId: string,
+    controller: TailSyncController,
+    observed: Promise<void>
+): Promise<void> {
+    await observed
+    if (tailSyncControllers.get(sessionId) !== controller) {
         return
     }
-    updateState(sessionId, (prev) => buildState(prev, { isLoading: true, warning: null }))
+    const current = controller.running
+    if (current && current !== observed) {
+        await waitForTailSyncDrain(sessionId, controller, current)
+    }
+}
+
+function enterTailMode(previous: InternalState): InternalState {
+    const { kept, dropped } = trimPreservingQueued(previous.messages, VISIBLE_WINDOW_SIZE, 'append')
+    const forceLatest = previous.requiresLatestReset
+    const oldest = dropped.length > 0
+        ? derivePosition(kept, 'oldest')
+        : readPosition(previous.oldestPositionAt, previous.oldestPositionSeq)
+    return buildState(previous, {
+        messages: kept,
+        hasMore: previous.hasMore || dropped.length > 0,
+        viewMode: 'tail',
+        unseenIds: new Set(),
+        epoch: forceLatest ? null : previous.epoch,
+        oldestPositionAt: oldest?.at ?? null,
+        oldestPositionSeq: oldest?.seq ?? null,
+        newestPositionAt: forceLatest ? null : previous.newestPositionAt,
+        newestPositionSeq: forceLatest ? null : previous.newestPositionSeq
+    })
+}
+
+export function activateMessageWindow(sessionId: string): void {
+    updateState(sessionId, (previous) => {
+        const { kept } = trimPreservingQueued(previous.messages, VISIBLE_WINDOW_SIZE, 'append')
+        const forceLatest = previous.requiresLatestReset
+        if (
+            previous.viewMode === 'tail'
+            && previous.unseenIds.size === 0
+            && kept.length === previous.messages.length
+            && !forceLatest
+        ) {
+            return previous
+        }
+        return enterTailMode(previous)
+    }, true)
+}
+
+export function syncTailMessages(
+    api: ApiClient,
+    sessionId: string,
+    options: { ensureAfterCurrent?: boolean } = {}
+): Promise<void> {
+    let controller = tailSyncControllers.get(sessionId)
+    if (!controller) {
+        controller = { api, running: null, trailingRequested: false }
+        tailSyncControllers.set(sessionId, controller)
+    }
+    controller.api = api
+    if (!controller.running) {
+        return startTailSync(sessionId, controller)
+    }
+    const observed = controller.running
+    if (!options.ensureAfterCurrent) {
+        return observed
+    }
+    controller.trailingRequested = true
+    return waitForTailSyncDrain(sessionId, controller, observed)
+}
+
+/** Compatibility name for callers that previously performed a full reload. */
+export function fetchLatestMessages(api: ApiClient, sessionId: string): Promise<void> {
+    return syncTailMessages(api, sessionId)
+}
+
+export async function fetchOlderMessages(api: ApiClient, sessionId: string): Promise<boolean> {
+    const initial = getState(sessionId)
+    const before = readPosition(initial.oldestPositionAt, initial.oldestPositionSeq)
+    if (initial.isSyncingTail || initial.isLoadingMore || !initial.hasMore || !before) {
+        return false
+    }
+    const generation = initial.olderGeneration + 1
+    updateState(sessionId, (previous) => buildState(previous, {
+        olderGeneration: generation,
+        isLoadingMore: true,
+        warning: null
+    }))
 
     try {
-        // Always request byPosition mode (V8). If the hub is V7 it ignores byPosition and
-        // returns the standard seq-based response (no nextBeforeAt field) — we fall back
-        // to seq-cursor mode seamlessly.
-        const response = await api.getMessages(sessionId, { byPosition: true, limit: PAGE_SIZE })
-        // Derive composite cursor pair from server response. Both values come from
-        // the same row on the server; we keep them paired so the next older fetch
-        // doesn't mix `beforeAt` from the server with a recomputed minimum `seq`.
-        const nextBeforeAt = response.page.nextBeforeAt ?? null
-        const nextBeforeSeq = response.page.nextBeforeSeq ?? null
-        const isV8Cursor = nextBeforeAt !== null && nextBeforeSeq !== null
+        const response = await api.getMessages(sessionId, {
+            beforeAt: before.at,
+            beforeSeq: before.seq,
+            limit: PAGE_SIZE
+        })
+        if (getState(sessionId).olderGeneration !== generation) return false
 
-        updateState(sessionId, (prev) => {
-            if (prev.atBottom) {
-                const merged = mergeMessages(prev.messages, [...prev.pending, ...response.messages])
-                const trimmed = trimVisible(merged, 'append')
-                return buildState(prev, {
-                    messages: trimmed,
-                    pending: [],
-                    pendingOverflowCount: 0,
-                    pendingVisibleCount: 0,
-                    pendingOverflowVisibleCount: 0,
-                    hasMore: response.page.hasMore,
-                    oldestPositionAt: isV8Cursor ? nextBeforeAt : null,
-                    oldestPositionSeq: isV8Cursor ? nextBeforeSeq : null,
-                    isLoading: false,
-                    warning: null,
+        if (initial.epoch !== null && response.page.epoch !== undefined && response.page.epoch !== initial.epoch) {
+            updateState(sessionId, (previous) => {
+                if (previous.olderGeneration !== generation) return previous
+                return buildState(previous, {
+                    isLoadingMore: false,
+                    epoch: null,
+                    newestPositionAt: null,
+                    newestPositionSeq: null,
+                    requiresLatestReset: true
                 })
-            }
-            const pendingResult = mergeIntoPending(prev, response.messages)
-            return buildState(prev, {
-                pending: pendingResult.pending,
-                pendingVisibleCount: pendingResult.pendingVisibleCount,
-                pendingOverflowCount: pendingResult.pendingOverflowCount,
-                pendingOverflowVisibleCount: pendingResult.pendingOverflowVisibleCount,
-                // Persist the V8 cursor pair on the non-at-bottom path too. Without this
-                // a refresh while scrolled up dropped the composite cursor and the next
-                // loadMore fell back to V7 seq mode against a V8 hub — the same
-                // asymmetric class of bug the at-bottom branch already guards against.
-                oldestPositionAt: isV8Cursor ? nextBeforeAt : null,
-                oldestPositionSeq: isV8Cursor ? nextBeforeSeq : null,
-                isLoading: false,
-                warning: pendingResult.warning,
+            })
+            await syncTailMessages(api, sessionId, { ensureAfterCurrent: true })
+            return false
+        }
+
+        updateState(sessionId, (previous) => {
+            if (previous.olderGeneration !== generation) return previous
+            const merged = mergeIntoWindow(previous, response.messages, {
+                mode: 'prepend',
+                regularLimit: OLDER_LOAD_WINDOW_SIZE
+            })
+            return buildState(merged, {
+                hasMore: response.page.hasMore,
+                epoch: response.page.epoch ?? previous.epoch,
+                oldestPositionAt: response.page.nextBeforeAt ?? null,
+                oldestPositionSeq: response.page.nextBeforeSeq ?? null,
+                isLoadingMore: false,
+                historyVersion: previous.historyVersion + 1,
+                warning: null
             })
         })
+        return true
     } catch (error) {
-        const message = error instanceof Error ? error.message : 'Failed to load messages'
-        updateState(sessionId, (prev) => buildState(prev, { isLoading: false, warning: message }))
+        updateState(sessionId, (previous) => {
+            if (previous.olderGeneration !== generation) return previous
+            return buildState(previous, {
+                isLoadingMore: false,
+                warning: error instanceof Error ? error.message : 'Failed to load older messages'
+            })
+        })
+        return false
     }
 }
 
+/** Load a page ending at a selected legacy seq cursor (conversation outline). */
 export async function fetchMessagesAtSeq(
     api: ApiClient,
     sessionId: string,
@@ -480,313 +874,228 @@ export async function fetchMessagesAtSeq(
     if (!Number.isSafeInteger(targetSeq) || targetSeq < 1 || targetSeq >= Number.MAX_SAFE_INTEGER) {
         return false
     }
-
     const initial = getState(sessionId)
-    if (initial.isLoading || initial.isLoadingMore) {
-        return false
-    }
+    if (initial.isSyncingTail || initial.isLoadingMore) return false
 
-    updateState(sessionId, (prev) => buildState(prev, {
-        isLoading: true,
-        warning: null,
-        atBottom: false,
+    updateState(sessionId, (previous) => buildState(previous, {
+        isSyncingTail: true,
+        viewMode: 'history',
+        warning: null
     }), true)
-
     try {
-        // seq 游标是排他的，传入 seq + 1 即可取得以目标消息结尾的页面，
-        // 无需逐页遍历中间的 200 条消息。
         const response = await api.getMessages(sessionId, {
             beforeSeq: targetSeq + 1,
-            limit: PAGE_SIZE,
+            limit: PAGE_SIZE
         })
         const includesTarget = response.messages.some((message) => message.seq === targetSeq)
-
-        updateState(sessionId, (prev) => {
+        updateState(sessionId, (previous) => {
             if (!includesTarget) {
-                return buildState(prev, {
-                    isLoading: false,
-                    warning: 'Selected message is unavailable.',
+                return buildState(previous, {
+                    isSyncingTail: false,
+                    warning: 'Selected message is unavailable.'
                 })
             }
-
-            const queued = prev.messages.filter(isQueuedForInvocation)
-            const messages = trimVisible(mergeMessages(response.messages, queued), 'append')
-            return buildState(prev, {
+            const queued = previous.messages.filter(isQueuedForInvocation)
+            const messages = trimPreservingQueued(
+                mergeMessages(response.messages, queued),
+                VISIBLE_WINDOW_SIZE,
+                'append'
+            ).kept
+            const oldest = derivePosition(messages, 'oldest')
+            const newest = derivePosition(messages, 'newest')
+            return buildState(previous, {
                 messages,
                 hasMore: response.page.hasMore,
-                oldestPositionAt: null,
-                oldestPositionSeq: null,
-                isLoading: false,
-                warning: null,
-                atBottom: false,
+                epoch: response.page.epoch ?? previous.epoch,
+                oldestPositionAt: response.page.nextBeforeAt ?? oldest?.at ?? null,
+                oldestPositionSeq: response.page.nextBeforeSeq ?? oldest?.seq ?? null,
+                newestPositionAt: newest?.at ?? null,
+                newestPositionSeq: newest?.seq ?? null,
+                isSyncingTail: false,
+                historyVersion: previous.historyVersion + 1,
+                warning: null
             })
         }, true)
-
         return includesTarget
     } catch (error) {
-        const message = error instanceof Error ? error.message : 'Failed to load selected message'
-        updateState(sessionId, (prev) => buildState(prev, {
-            isLoading: false,
-            warning: message,
+        updateState(sessionId, (previous) => buildState(previous, {
+            isSyncingTail: false,
+            warning: error instanceof Error ? error.message : 'Failed to load selected message'
         }), true)
         return false
     }
 }
 
-export async function fetchOlderMessages(api: ApiClient, sessionId: string): Promise<void> {
-    const initial = getState(sessionId)
-    if (initial.isLoadingMore || !initial.hasMore) {
-        return
-    }
-    if (initial.oldestSeq === null) {
-        return
-    }
-    updateState(sessionId, (prev) => buildState(prev, { isLoadingMore: true }))
-
-    try {
-        // V8 mode: use the server-provided cursor pair as-is. Mixing `beforeAt` from
-        // the server with a recomputed minimum `seq` from the local window can refer
-        // to different rows after a low-seq message is invoked late.
-        const useV8Cursor = initial.oldestPositionAt !== null && initial.oldestPositionSeq !== null
-        const response = useV8Cursor
-            ? await api.getMessages(sessionId, {
-                byPosition: true,
-                beforeAt: initial.oldestPositionAt!,
-                beforeSeq: initial.oldestPositionSeq!,
-                limit: PAGE_SIZE
-            })
-            : await api.getMessages(sessionId, { beforeSeq: initial.oldestSeq, limit: PAGE_SIZE })
-
-        const nextBeforeAt = response.page.nextBeforeAt ?? null
-        const nextBeforeSeq = response.page.nextBeforeSeq ?? null
-        const isV8Cursor = nextBeforeAt !== null && nextBeforeSeq !== null
-
-        updateState(sessionId, (prev) => {
-            const merged = mergeMessages(response.messages, prev.messages)
-            const trimmed = trimVisible(merged, 'prepend')
-            return buildState(prev, {
-                messages: trimmed,
-                hasMore: response.page.hasMore,
-                oldestPositionAt: isV8Cursor ? nextBeforeAt : null,
-                oldestPositionSeq: isV8Cursor ? nextBeforeSeq : null,
-                isLoadingMore: false,
-            })
-        })
-    } catch (error) {
-        const message = error instanceof Error ? error.message : 'Failed to load messages'
-        updateState(sessionId, (prev) => buildState(prev, { isLoadingMore: false, warning: message }))
-    }
+export function setMessageViewMode(sessionId: string, mode: MessageViewMode): void {
+    updateState(sessionId, (previous) => {
+        if (previous.viewMode === mode) {
+            return previous
+        }
+        if (mode === 'history') {
+            return buildState(previous, { viewMode: 'history' })
+        }
+        return enterTailMode(previous)
+    }, true)
 }
 
 export function ingestIncomingMessages(sessionId: string, incoming: DecryptedMessage[]): void {
-    if (incoming.length === 0) {
-        return
-    }
-    updateState(sessionId, (prev) => {
-        if (prev.atBottom) {
-            const merged = mergeMessages(prev.messages, incoming)
-            const trimmed = trimVisible(merged, 'append')
-            const pending = filterPendingAgainstVisible(prev.pending, trimmed)
-            return buildState(prev, { messages: trimmed, pending })
+    if (incoming.length === 0) return
+    updateState(sessionId, (previous) => {
+        let merged = mergeIntoWindow(previous, incoming, {
+            countUnseen: previous.viewMode === 'history'
+        })
+        if (merged.epoch === null || merged.requiresLatestReset) {
+            return merged
         }
-        // 不在底部时：agent 消息立即显示，user 消息才放入 pending
-        // 原因：用户必须看到 AI 回复才能继续交互，pending 机制会导致回复滞后
-        const agentMessages = incoming.filter(msg => !isUserMessage(msg))
-        const userMessages = incoming.filter(msg => isUserMessage(msg))
-
-        let state = prev
-        if (agentMessages.length > 0) {
-            const merged = mergeMessages(state.messages, agentMessages)
-            const trimmed = trimVisible(merged, 'append')
-            const pending = filterPendingAgainstVisible(state.pending, trimmed)
-            state = buildState(state, { messages: trimmed, pending })
-        }
-        if (userMessages.length > 0) {
-            const pendingResult = mergeIntoPending(state, userMessages)
-            state = buildState(state, {
-                pending: pendingResult.pending,
-                pendingVisibleCount: pendingResult.pendingVisibleCount,
-                pendingOverflowCount: pendingResult.pendingOverflowCount,
-                pendingOverflowVisibleCount: pendingResult.pendingOverflowVisibleCount,
-                warning: pendingResult.warning,
-            })
-        }
-        return state
+        const incomingNewest = derivePosition(incoming, 'newest')
+        const currentNewest = getNewestCursor(merged)
+        const newest = incomingNewest && (!currentNewest || comparePosition(incomingNewest, currentNewest) > 0)
+            ? incomingNewest
+            : currentNewest
+        merged = buildState(merged, {
+            newestPositionAt: newest?.at ?? null,
+            newestPositionSeq: newest?.seq ?? null
+        })
+        return merged
     })
 }
 
-export function flushPendingMessages(sessionId: string): boolean {
-    const current = getState(sessionId)
-    if (current.pending.length === 0 && current.pendingOverflowVisibleCount === 0) {
-        return false
-    }
-    const needsRefresh = current.pendingOverflowVisibleCount > 0
-    updateState(sessionId, (prev) => {
-        const merged = mergeMessages(prev.messages, prev.pending)
-        const trimmed = trimVisible(merged, 'append')
-        return buildState(prev, {
-            messages: trimmed,
-            pending: [],
-            pendingOverflowCount: 0,
-            pendingVisibleCount: 0,
-            pendingOverflowVisibleCount: 0,
-            warning: needsRefresh ? (prev.warning ?? PENDING_OVERFLOW_WARNING) : prev.warning,
-        })
-    }, true)
-    return needsRefresh
+export function getMessageWindowState(sessionId: string): MessageWindowState {
+    return getState(sessionId)
 }
 
-export function setAtBottom(sessionId: string, atBottom: boolean): void {
-    updateState(sessionId, (prev) => {
-        if (prev.atBottom === atBottom) {
-            return prev
+export function subscribeMessageWindow(sessionId: string, listener: () => void): () => void {
+    const subscribers = listeners.get(sessionId) ?? new Set()
+    subscribers.add(listener)
+    listeners.set(sessionId, subscribers)
+    return () => {
+        const current = listeners.get(sessionId)
+        if (!current) return
+        current.delete(listener)
+        if (current.size === 0) {
+            listeners.delete(sessionId)
         }
-        return buildState(prev, { atBottom })
+    }
+}
+
+export function clearMessageWindow(sessionId: string): void {
+    tailSyncControllers.delete(sessionId)
+    clearPersistedState(sessionId)
+    const previous = states.get(sessionId)
+    if (!previous) return
+    setState(sessionId, {
+        ...createState(sessionId),
+        syncGeneration: previous.syncGeneration + 1,
+        olderGeneration: previous.olderGeneration + 1
+    }, true)
+}
+
+export function seedMessageWindowFromSession(fromSessionId: string, toSessionId: string): void {
+    if (!fromSessionId || !toSessionId || fromSessionId === toSessionId) return
+    const source = getState(fromSessionId)
+    const target = getState(toSessionId)
+    const seeded = buildState(createState(toSessionId), {
+        messages: [...source.messages],
+        hasMore: source.hasMore,
+        oldestPositionAt: source.oldestPositionAt,
+        oldestPositionSeq: source.oldestPositionSeq,
+        requiresLatestReset: true,
+        syncGeneration: target.syncGeneration + 1,
+        olderGeneration: target.olderGeneration + 1
+    })
+    tailSyncControllers.delete(toSessionId)
+    setState(toSessionId, seeded, true)
+}
+
+function isQueuedReconcileCandidate(message: DecryptedMessage): boolean {
+    if (!message.localId || !isQueuedForInvocation(message)) return false
+    if (!optimisticMessage(message)) return true
+    return message.status === 'queued' || message.status === 'sent'
+}
+
+export function getQueuedReconcileCandidateLocalIds(sessionId: string): string[] {
+    const localIds = new Set<string>()
+    for (const message of getState(sessionId).messages) {
+        if (isQueuedReconcileCandidate(message)) {
+            localIds.add(message.localId!)
+        }
+    }
+    return [...localIds]
+}
+
+export function reconcileQueuedLocalIds(
+    sessionId: string,
+    candidateLocalIds: string[],
+    queuedLocalIds: string[]
+): void {
+    if (candidateLocalIds.length === 0) return
+    const candidates = new Set(candidateLocalIds)
+    const queued = new Set(queuedLocalIds)
+    updateState(sessionId, (previous) => {
+        const messages = previous.messages.filter((message) => {
+            if (!message.localId || !candidates.has(message.localId)) return true
+            return queued.has(message.localId) || !isQueuedReconcileCandidate(message)
+        })
+        return messages.length === previous.messages.length
+            ? previous
+            : buildState(previous, { messages })
     }, true)
 }
 
 export function appendOptimisticMessage(sessionId: string, message: DecryptedMessage): void {
-    updateState(sessionId, (prev) => {
-        const merged = mergeMessages(prev.messages, [message])
-        const trimmed = trimVisible(merged, 'append')
-        const pending = filterPendingAgainstVisible(prev.pending, trimmed)
-        return buildState(prev, { messages: trimmed, pending, atBottom: true })
+    updateState(sessionId, (previous) => {
+        return mergeIntoWindow(previous, [message], {
+            mode: previous.viewMode === 'history' ? 'prepend' : 'append'
+        })
     }, true)
 }
 
 export function updateMessageStatus(sessionId: string, localId: string, status: MessageStatus): void {
-    if (!localId) {
-        return
-    }
-    updateState(sessionId, (prev) => {
+    if (!localId) return
+    updateState(sessionId, (previous) => {
         let changed = false
-        const updateList = (list: DecryptedMessage[]) => {
-            return list.map((message) => {
-                if (message.localId !== localId) {
-                    return message
-                }
-                if (message.status === status) {
-                    return message
-                }
-                changed = true
-                return { ...message, status }
-            })
-        }
-        const messages = updateList(prev.messages)
-        const pending = updateList(prev.pending)
-        if (!changed) {
-            return prev
-        }
-        return buildState(prev, { messages, pending })
+        const messages = previous.messages.map((message) => {
+            if (message.localId !== localId || message.status === status) return message
+            changed = true
+            return { ...message, status }
+        })
+        return changed ? buildState(previous, { messages }) : previous
     })
 }
 
-/** Remove an optimistic (not-yet-confirmed) message by its localId or server id.
- *  Used by the cancel affordance: optimistically drop the row immediately so the
- *  floating bar clears before the DELETE /messages/:id round-trip completes. If
- *  the request fails, the caller is responsible for re-inserting the row (e.g.
- *  via ingestIncomingMessages).  Matches against both `localId` and `id` so that
- *  rows loaded from the server (which may have a stable uuid `id` + a localId) are
- *  also handled.
- */
 export function removeOptimisticMessage(sessionId: string, localId: string): void {
     if (!localId) return
-    updateState(sessionId, (prev) => {
-        let changed = false
-        const filterList = (list: DecryptedMessage[]) => {
-            const next = list.filter((message) => {
-                const matchesLocalId = message.localId === localId
-                const matchesId = message.id === localId
-                if (matchesLocalId || matchesId) {
-                    changed = true
-                    return false
-                }
-                return true
-            })
-            return next
-        }
-        const messages = filterList(prev.messages)
-        const pending = filterList(prev.pending)
-        if (!changed) return prev
-        return buildState(prev, { messages, pending })
+    updateState(sessionId, (previous) => {
+        const messages = previous.messages.filter(
+            (message) => message.localId !== localId && message.id !== localId
+        )
+        return messages.length === previous.messages.length
+            ? previous
+            : buildState(previous, { messages })
     }, true)
 }
 
-/** Transition the queued messages whose localIds match to 'sent' and record invokedAt.
- *  Driven by the CLI ack (messages-consumed). Unmatched messages remain queued.
- *  Also handles server-loaded messages (status=undefined) that have a matching localId.
- *  V7 hub compat: if `invokedAt` is undefined the SyncEvent had no server timestamp,
- *  so we fall back to client time — without it the row would stay queued forever
- *  under the strict-null filter. The fallback only affects display ordering on
- *  this client; the persisted server value is the authoritative one when present. */
-export function markMessagesConsumed(sessionId: string, localIds: string[], invokedAt: number | undefined): void {
+export function markMessagesConsumed(sessionId: string, localIds: string[], invokedAt?: number): void {
     if (localIds.length === 0) return
-    const idSet = new Set(localIds)
     const effectiveInvokedAt = invokedAt ?? Date.now()
-    updateState(sessionId, (prev) => {
+    const idSet = new Set(localIds)
+    updateState(sessionId, (previous) => {
         let changed = false
-        const updateList = (list: DecryptedMessage[]) => {
-            return list.map((message) => {
-                if (!message.localId || !idSet.has(message.localId)) {
-                    return message
-                }
-                if (message.status === 'failed') {
-                    return message
-                }
-                // Apply the ack even if the message is already 'sent' (optimistic) — otherwise
-                // a message that flipped to 'sent' before the consume event arrives would
-                // never receive `invokedAt` and keep sorting by send time.
-                // First-write-wins on `invokedAt`: mirror the hub's UPDATE guard so a
-                // duplicate `messages-consumed` (e.g. CLI re-emit) doesn't restamp a
-                // message and shuffle its byPosition slot on live clients while the
-                // DB still holds the original timestamp.
-                const needsStatus = message.status !== 'sent'
-                // Strict null to stay consistent with isQueuedForInvocation and the rest
-                // of this file. The idSet filter already shields V7-stamped rows from
-                // this path, but the strict-null contract should not vary by call site.
-                const needsInvokedAt = message.invokedAt === null
-                if (!needsStatus && !needsInvokedAt) {
-                    return message
-                }
-                changed = true
-                const update: Partial<DecryptedMessage> = {}
-                if (needsStatus) {
-                    update.status = 'sent' as MessageStatus
-                }
-                if (needsInvokedAt) {
-                    update.invokedAt = effectiveInvokedAt
-                }
-                return { ...message, ...update }
-            })
-        }
-        // Migrate just-acked pending entries into the visible thread. Without
-        // this step, an at-bottom=false user that is stuck in pending never
-        // sees their own message at the invocation slot — it stays in the
-        // pending bucket until they scroll, even though the floating bar
-        // already cleared.  Identifying the migrated rows by (localId,
-        // invokedAt = effectiveInvokedAt) ensures we only move rows whose
-        // ack just arrived, not unrelated pending entries.
-        const updatedPending = updateList(prev.pending)
-        const consumedFromPending: DecryptedMessage[] = []
-        const remainingPending = updatedPending.filter((message) => {
-            if (
-                message.localId &&
-                idSet.has(message.localId) &&
-                message.invokedAt === effectiveInvokedAt
-            ) {
-                consumedFromPending.push(message)
-                return false
+        const updated = previous.messages.map((message) => {
+            if (!message.localId || !idSet.has(message.localId) || message.status === 'failed') {
+                return message
             }
-            return true
+            const needsStatus = message.status !== 'sent'
+            const needsInvokedAt = message.invokedAt === null
+            if (!needsStatus && !needsInvokedAt) return message
+            changed = true
+            return {
+                ...message,
+                ...(needsStatus ? { status: 'sent' as MessageStatus } : {}),
+                ...(needsInvokedAt ? { invokedAt: effectiveInvokedAt } : {})
+            }
         })
-        // After update, re-merge to re-sort by the position key (`invokedAt ?? createdAt`):
-        // a queued message that just received `invokedAt` should move to its invocation
-        // position, not stay at its original send-time slot until the next fetch.
-        const messages = mergeMessages(updateList(prev.messages), consumedFromPending)
-        const pending = mergeMessages([], remainingPending)
-        if (!changed) {
-            return prev
-        }
-        return buildState(prev, { messages, pending })
+        if (!changed) return previous
+        return buildState(previous, { messages: mergeMessages([], updated) })
     })
 }

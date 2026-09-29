@@ -1,7 +1,7 @@
 import type { Database } from 'bun:sqlite'
 
 import type { StoredMessage } from './types'
-import { addMessage, cancelQueuedMessage, copySessionMessages, deleteQueuedMessageById, lookupQueuedMessage, getMaxSeq, getMessages, getMessagesAfter, getMessagesSince, getMessagesByPosition, getUninvokedLocalMessages, getUserTurnMessages, markMessagesInvoked, mergeSessionMessages, type CancelQueuedMessageResult, type LookupQueuedMessageResult } from './messages'
+import { addMessage, cancelQueuedMessage, copySessionMessages, deleteQueuedMessageById, lookupQueuedMessage, getMaxSeq, getMessages, getMessagesAfter, getMessagesSince, getMessagesByPosition, getMessagesAfterPosition, getNewestMessagePosition, getMessageEpoch, bumpMessageEpoch, getUninvokedLocalMessages, getUserTurnMessages, markMessagesInvoked, mergeSessionMessages, type CancelQueuedMessageResult, type LookupQueuedMessageResult, type MessagePosition } from './messages'
 
 export class MessageStore {
     private readonly db: Database
@@ -26,8 +26,29 @@ export class MessageStore {
         return getMessagesSince(this.db, sessionId, sinceCreatedAt, limit)
     }
 
-    getMessagesByPosition(sessionId: string, limit: number, before?: { at: number; seq: number }): StoredMessage[] {
+    getMessagesByPosition(sessionId: string, limit: number, before?: MessagePosition): StoredMessage[] {
         return getMessagesByPosition(this.db, sessionId, limit, before)
+    }
+
+    getMessagesAfterPosition(
+        sessionId: string,
+        limit: number,
+        after: MessagePosition,
+        until?: MessagePosition
+    ): StoredMessage[] {
+        return getMessagesAfterPosition(this.db, sessionId, limit, after, until)
+    }
+
+    getNewestMessagePosition(sessionId: string): MessagePosition | null {
+        return getNewestMessagePosition(this.db, sessionId)
+    }
+
+    getMessageEpoch(sessionId: string): number {
+        return getMessageEpoch(this.db, sessionId)
+    }
+
+    bumpMessageEpoch(sessionId: string): number {
+        return bumpMessageEpoch(this.db, sessionId)
     }
 
     getUninvokedLocalMessages(sessionId: string): StoredMessage[] {
@@ -50,8 +71,8 @@ export class MessageStore {
         return lookupQueuedMessage(this.db, sessionId, messageId)
     }
 
-    deleteQueuedMessageById(sessionId: string, messageId: string): void {
-        deleteQueuedMessageById(this.db, sessionId, messageId)
+    deleteQueuedMessageById(sessionId: string, messageId: string): boolean {
+        return deleteQueuedMessageById(this.db, sessionId, messageId)
     }
 
     markMessagesInvoked(sessionId: string, localIds: string[], invokedAt: number): void {

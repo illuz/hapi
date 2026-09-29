@@ -277,6 +277,11 @@ export class ApiClient {
         options: {
             beforeSeq?: number | null
             beforeAt?: number | null
+            afterSeq?: number | null
+            afterAt?: number | null
+            untilSeq?: number | null
+            untilAt?: number | null
+            epoch?: number | null
             byPosition?: boolean
             limit?: number
         }
@@ -290,6 +295,21 @@ export class ApiClient {
         }
         if (options.beforeSeq !== undefined && options.beforeSeq !== null) {
             params.set('beforeSeq', `${options.beforeSeq}`)
+        }
+        if (options.afterAt !== undefined && options.afterAt !== null) {
+            params.set('afterAt', `${options.afterAt}`)
+        }
+        if (options.afterSeq !== undefined && options.afterSeq !== null) {
+            params.set('afterSeq', `${options.afterSeq}`)
+        }
+        if (options.untilAt !== undefined && options.untilAt !== null) {
+            params.set('untilAt', `${options.untilAt}`)
+        }
+        if (options.untilSeq !== undefined && options.untilSeq !== null) {
+            params.set('untilSeq', `${options.untilSeq}`)
+        }
+        if (options.epoch !== undefined && options.epoch !== null) {
+            params.set('epoch', `${options.epoch}`)
         }
         if (options.limit !== undefined && options.limit !== null) {
             params.set('limit', `${options.limit}`)

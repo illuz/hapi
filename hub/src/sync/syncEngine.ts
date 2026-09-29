@@ -22,7 +22,7 @@ import type { RpcRegistry } from '../socket/rpcRegistry'
 import type { SSEManager } from '../sse/sseManager'
 import { EventPublisher, type SyncEventListener } from './eventPublisher'
 import { MachineCache, type Machine } from './machineCache'
-import { MessageService, type MessageSentFrom } from './messageService'
+import { MessageService, type IncrementalMessagesOptions, type IncrementalMessagesResponse, type MessageSentFrom } from './messageService'
 import { AutoContinueService } from './autoContinueService'
 import { AutoRetryService } from './autoRetryService'
 import {
@@ -340,6 +340,13 @@ export class SyncEngine {
         }
     } {
         return this.messageService.getMessagesPageByPosition(sessionId, options)
+    }
+
+    getIncrementalMessagesPage(
+        sessionId: string,
+        options: IncrementalMessagesOptions
+    ): IncrementalMessagesResponse {
+        return this.messageService.getIncrementalMessagesPage(sessionId, options)
     }
 
     getMessagesAfter(sessionId: string, options: { afterSeq: number; limit: number }): DecryptedMessage[] {

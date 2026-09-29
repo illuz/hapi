@@ -213,3 +213,35 @@ describe('getUserTurnMessages', () => {
         ])
     })
 })
+
+describe('incremental display-position storage', () => {
+    it('reads strictly after a cursor and respects a fixed until head', () => {
+        const store = makeStore()
+        const session = makeSession(store, 'tail-store')
+        const first = store.messages.addMessage(session.id, { role: 'agent', content: { type: 'text', text: 'first' } })
+        const second = store.messages.addMessage(session.id, { role: 'agent', content: { type: 'text', text: 'second' } })
+        const third = store.messages.addMessage(session.id, { role: 'agent', content: { type: 'text', text: 'third' } })
+
+        const rows = store.messages.getMessagesAfterPosition(
+            session.id,
+            10,
+            { at: first.createdAt, seq: first.seq },
+            { at: second.createdAt, seq: second.seq }
+        )
+        expect(rows.map((row) => row.id)).toEqual([second.id])
+        expect(store.messages.getNewestMessagePosition(session.id)?.seq).toBe(third.seq)
+    })
+
+    it('bumps the epoch when queued history is deleted', () => {
+        const store = makeStore()
+        const session = makeSession(store, 'tail-epoch-delete')
+        const message = store.messages.addMessage(
+            session.id,
+            { role: 'user', content: { type: 'text', text: 'queued' } },
+            'queued-epoch'
+        )
+        expect(store.messages.getMessageEpoch(session.id)).toBe(0)
+        expect(store.messages.deleteQueuedMessageById(session.id, message.id)).toBe(true)
+        expect(store.messages.getMessageEpoch(session.id)).toBe(1)
+    })
+})

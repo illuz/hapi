@@ -72,7 +72,7 @@ describe('CustomCodexModelStore', () => {
             const version = dbOf(migrated)
                 .prepare('PRAGMA user_version')
                 .get() as { user_version: number }
-            expect(version.user_version).toBe(19)
+            expect(version.user_version).toBe(20)
             dbOf(migrated).close()
         } finally {
             rmSync(dir, { recursive: true, force: true })

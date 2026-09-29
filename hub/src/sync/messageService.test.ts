@@ -345,3 +345,56 @@ describe('MessageService.cancelQueuedMessage race scenarios', () => {
         })
     })
 })
+
+describe('MessageService.incremental tail pages', () => {
+    it('returns a snapshot cursor and follows it with an after page', () => {
+        const store = makeStore()
+        const session = makeSession(store, 'tail-pages')
+        const first = store.messages.addMessage(session.id, {
+            role: 'agent',
+            content: { type: 'text', text: 'first' }
+        })
+        const second = store.messages.addMessage(session.id, {
+            role: 'agent',
+            content: { type: 'text', text: 'second' }
+        })
+
+        const service = new MessageService(store, makeIo(() => {}), makePublisher() as any)
+        const latest = service.getIncrementalMessagesPage(session.id, { limit: 1 })
+        expect(latest.page.direction).toBe('latest')
+        expect(latest.page.epoch).toBe(0)
+        expect(latest.page.snapshotHeadSeq).toBe(second.seq)
+        expect(latest.messages.map((message) => message.id)).toEqual([second.id])
+
+        const after = service.getIncrementalMessagesPage(session.id, {
+            limit: 10,
+            after: { at: first.createdAt, seq: first.seq },
+            until: { at: second.createdAt, seq: second.seq },
+            epoch: latest.page.epoch
+        })
+        expect(after.page.direction).toBe('after')
+        expect(after.messages.map((message) => message.id)).toEqual([second.id])
+        expect(after.page.hasMore).toBe(false)
+    })
+
+    it('returns reset latest data when the structural epoch changes', () => {
+        const store = makeStore()
+        const session = makeSession(store, 'tail-epoch')
+        const message = store.messages.addMessage(session.id, {
+            role: 'agent',
+            content: { type: 'text', text: 'one' }
+        })
+        const service = new MessageService(store, makeIo(() => {}), makePublisher() as any)
+        const latest = service.getIncrementalMessagesPage(session.id, { limit: 20 })
+        store.messages.bumpMessageEpoch(session.id)
+
+        const reset = service.getIncrementalMessagesPage(session.id, {
+            limit: 20,
+            after: { at: message.createdAt, seq: message.seq },
+            epoch: latest.page.epoch
+        })
+        expect(reset.page.reset).toBe(true)
+        expect(reset.page.direction).toBe('latest')
+        expect(reset.messages.map((item) => item.id)).toContain(message.id)
+    })
+})

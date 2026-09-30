@@ -665,10 +665,6 @@ function SessionListSearch(props: {
         ? UPDATE_WINDOW_OPTIONS.find(option => option.key === props.updateWindow) ?? null
         : null
 
-    const calendarLabel = props.calendarDate
-        ? t('sessions.calendarFilter.selected', { date: props.calendarDate })
-        : t('sessions.calendarFilter.title')
-
     return (
         <div className="relative px-3 pb-2">
             <div className="flex items-center gap-2">
@@ -696,42 +692,7 @@ function SessionListSearch(props: {
                     ) : null}
                 </div>
 
-                <button
-                    type="button"
-                    onClick={() => props.onUnreadOnlyChange(!props.unreadOnly)}
-                    aria-pressed={props.unreadOnly}
-                    aria-label={t('sessions.unreadFilter.title')}
-                    title={t('sessions.unreadFilter.title')}
-                    className={`relative flex h-8 shrink-0 items-center justify-center gap-1 rounded-lg border px-2 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] ${props.unreadOnly ? 'border-[var(--app-link)] bg-[var(--app-subtle-bg)] text-[var(--app-link)]' : 'border-[var(--app-border)] text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]'}`}
-                >
-                    <span className="h-2 w-2 rounded-full bg-[var(--app-link)]" aria-hidden="true" />
-                    <span className="tabular-nums">{props.unreadCount}</span>
-                </button>
-
-                <div className="relative flex h-8 shrink-0 items-center">
-                    <label className="sr-only" htmlFor="session-calendar-filter">{t('sessions.calendarFilter.title')}</label>
-                    <input
-                        id="session-calendar-filter"
-                        type="date"
-                        value={props.calendarDate}
-                        onChange={(event) => props.onCalendarDateChange(event.target.value)}
-                        aria-label={calendarLabel}
-                        title={calendarLabel}
-                        className={`h-8 w-[8.5rem] rounded-lg border bg-[var(--app-bg)] px-2 text-xs text-[var(--app-fg)] outline-none transition-colors focus:border-[var(--app-link)] ${props.calendarDate ? 'border-[var(--app-link)]' : 'border-[var(--app-border)]'}`}
-                    />
-                    {props.calendarDate ? (
-                        <button
-                            type="button"
-                            onClick={() => props.onCalendarDateChange('')}
-                            aria-label={t('sessions.calendarFilter.clear')}
-                            title={t('sessions.calendarFilter.clear')}
-                            className="absolute right-1 flex h-5 w-5 items-center justify-center rounded text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]"
-                        >
-                            <XIcon className="h-3 w-3" />
-                        </button>
-                    ) : null}
-                </div>
-
+                {/* 暂时隐藏未读和日历筛选入口，保留对应过滤逻辑以便后续重新开放。 */}
                 <div className="relative shrink-0">
                     <div className="relative">
                         <button

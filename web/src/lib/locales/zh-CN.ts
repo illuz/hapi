@@ -446,6 +446,7 @@ export default {
   'toolGroup.errors': '{n} 次失败',
   'toolGroup.loadingOlderHistory': '正在加载更早的活动…',
   'toolGroup.historyUnavailable': '更早的活动暂时不可用',
+  'toolGroup.badge.pending': '等待中 {n}',
   'toolGroup.kind.read': '读取',
   'toolGroup.kind.search': '搜索',
   'toolGroup.kind.command': '命令',

@@ -160,6 +160,7 @@ export function ToolGroupCard(props: { block: ToolGroupBlock; metadata: SessionM
                         <CardTitle className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--app-fg)]">{title}</CardTitle>
                         <span className="shrink-0 text-xs text-[var(--app-hint)]">{props.block.summary.totalTools}</span>
                         {timing.running ? <span className="shrink-0 text-[var(--app-link)]"><ToolStatusIcon state="running" /></span> : null}
+                        {props.block.summary.pendingCount > 0 ? <span className="shrink-0 text-xs text-amber-700">{t('toolGroup.badge.pending', { n: props.block.summary.pendingCount })}</span> : null}
                         {props.block.summary.errorCount > 0 ? <span className="shrink-0 text-xs text-red-600">{t('toolGroup.errors', { n: props.block.summary.errorCount })}</span> : null}
                     </div>
                     <div className="ml-5 mt-1 flex flex-wrap items-center gap-2 text-xs text-[var(--app-hint)]">

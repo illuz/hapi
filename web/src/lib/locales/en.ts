@@ -444,6 +444,7 @@ export default {
   'toolGroup.errors': '{n} failed',
   'toolGroup.loadingOlderHistory': 'Loading older activity…',
   'toolGroup.historyUnavailable': 'Older activity is unavailable',
+  'toolGroup.badge.pending': '{n} pending',
   'toolGroup.kind.read': 'read',
   'toolGroup.kind.search': 'search',
   'toolGroup.kind.command': 'command',

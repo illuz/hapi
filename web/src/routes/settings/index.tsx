@@ -5,6 +5,7 @@ import { getElevenLabsSupportedLanguages, getLanguageDisplayName, type Language 
 import { getFontScaleOptions, useFontScale, type FontScale } from '@/hooks/useFontScale'
 import { getTerminalFontSizeOptions, useTerminalFontSize, type TerminalFontSize } from '@/hooks/useTerminalFontSize'
 import { getComposerEnterBehaviorOptions, useComposerEnterBehavior, type ComposerEnterBehavior } from '@/hooks/useComposerEnterBehavior'
+import { getTerminalToolDisplayModeOptions, useTerminalToolDisplayMode, type TerminalToolDisplayMode } from '@/hooks/useTerminalToolDisplayMode'
 import { useAppearance, getAppearanceOptions, type AppearancePreference } from '@/hooks/useTheme'
 import { playNotificationSound } from '@/lib/readyChime'
 import {
@@ -121,6 +122,7 @@ export default function SettingsPage() {
     const [isFontOpen, setIsFontOpen] = useState(false)
     const [isTerminalFontOpen, setIsTerminalFontOpen] = useState(false)
     const [isChatOpen, setIsChatOpen] = useState(false)
+    const [isTerminalToolDisplayOpen, setIsTerminalToolDisplayOpen] = useState(false)
     const [isVoiceOpen, setIsVoiceOpen] = useState(false)
     const [isPlaybackModeOpen, setIsPlaybackModeOpen] = useState(false)
     const [isReadySoundOpen, setIsReadySoundOpen] = useState(false)
@@ -134,6 +136,7 @@ export default function SettingsPage() {
     const fontContainerRef = useRef<HTMLDivElement>(null)
     const terminalFontContainerRef = useRef<HTMLDivElement>(null)
     const chatContainerRef = useRef<HTMLDivElement>(null)
+    const terminalToolDisplayContainerRef = useRef<HTMLDivElement>(null)
     const voiceContainerRef = useRef<HTMLDivElement>(null)
     const playbackModeContainerRef = useRef<HTMLDivElement>(null)
     const readySoundContainerRef = useRef<HTMLDivElement>(null)
@@ -144,6 +147,7 @@ export default function SettingsPage() {
     const { fontScale, setFontScale } = useFontScale()
     const { terminalFontSize, setTerminalFontSize } = useTerminalFontSize()
     const { composerEnterBehavior, setComposerEnterBehavior } = useComposerEnterBehavior()
+    const { terminalToolDisplayMode, setTerminalToolDisplayMode } = useTerminalToolDisplayMode()
     const { appearance, setAppearance } = useAppearance()
 
     // Voice language state - read from localStorage
@@ -203,6 +207,7 @@ export default function SettingsPage() {
     const fontScaleOptions = getFontScaleOptions()
     const terminalFontSizeOptions = getTerminalFontSizeOptions()
     const composerEnterBehaviorOptions = getComposerEnterBehaviorOptions()
+    const terminalToolDisplayModeOptions = getTerminalToolDisplayModeOptions()
     const appearanceOptions = getAppearanceOptions()
     const playbackModeOptions = getPlaybackModeOptions()
     const soundVariantOptions = getSoundVariantOptions()
@@ -211,6 +216,7 @@ export default function SettingsPage() {
     const currentFontScaleLabel = fontScaleOptions.find((opt) => opt.value === fontScale)?.label ?? '100%'
     const currentTerminalFontSizeLabel = terminalFontSizeOptions.find((opt) => opt.value === terminalFontSize)?.label ?? '13px'
     const currentComposerEnterBehaviorLabel = composerEnterBehaviorOptions.find((opt) => opt.value === composerEnterBehavior)?.labelKey ?? 'settings.chat.enterBehavior.send'
+    const currentTerminalToolDisplayModeLabel = terminalToolDisplayModeOptions.find((opt) => opt.value === terminalToolDisplayMode)?.labelKey ?? 'settings.chat.terminalToolDisplay.compact'
     const currentVoiceLanguage = voiceLanguages.find((lang) => lang.code === voiceLanguage)
     const currentPlaybackModeLabel = playbackModeOptions.find((opt) => opt.value === playbackMode)?.labelKey ?? 'settings.sound.playback.always'
     const currentReadySoundLabel = soundVariantOptions.find((opt) => opt.value === readySound)?.labelKey ?? 'settings.sound.option.constructionComplete'
@@ -242,6 +248,11 @@ export default function SettingsPage() {
     const handleComposerEnterBehaviorChange = (newBehavior: ComposerEnterBehavior) => {
         setComposerEnterBehavior(newBehavior)
         setIsChatOpen(false)
+    }
+
+    const handleTerminalToolDisplayModeChange = (newMode: TerminalToolDisplayMode) => {
+        setTerminalToolDisplayMode(newMode)
+        setIsTerminalToolDisplayOpen(false)
     }
 
     const handleVoiceLanguageChange = (language: Language) => {
@@ -405,6 +416,9 @@ export default function SettingsPage() {
             if (isChatOpen && chatContainerRef.current && !chatContainerRef.current.contains(event.target as Node)) {
                 setIsChatOpen(false)
             }
+            if (isTerminalToolDisplayOpen && terminalToolDisplayContainerRef.current && !terminalToolDisplayContainerRef.current.contains(event.target as Node)) {
+                setIsTerminalToolDisplayOpen(false)
+            }
             if (isVoiceOpen && voiceContainerRef.current && !voiceContainerRef.current.contains(event.target as Node)) {
                 setIsVoiceOpen(false)
             }
@@ -443,6 +457,7 @@ export default function SettingsPage() {
                 setIsFontOpen(false)
                 setIsTerminalFontOpen(false)
                 setIsChatOpen(false)
+                setIsTerminalToolDisplayOpen(false)
                 setIsVoiceOpen(false)
                 setIsPlaybackModeOpen(false)
                 closeAllSoundMenus()
@@ -711,6 +726,54 @@ export default function SettingsPage() {
                                                 role="option"
                                                 aria-selected={isSelected}
                                                 onClick={() => handleComposerEnterBehaviorChange(opt.value)}
+                                                className={`flex items-center justify-between w-full px-3 py-2 text-base text-left transition-colors ${
+                                                    isSelected
+                                                        ? 'text-[var(--app-link)] bg-[var(--app-subtle-bg)]'
+                                                        : 'text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)]'
+                                                }`}
+                                            >
+                                                <span>{t(opt.labelKey)}</span>
+                                                {isSelected && (
+                                                    <span className="ml-2 text-[var(--app-link)]">
+                                                        <CheckIcon />
+                                                    </span>
+                                                )}
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                        <div ref={terminalToolDisplayContainerRef} className="relative">
+                            <button
+                                type="button"
+                                onClick={() => setIsTerminalToolDisplayOpen(!isTerminalToolDisplayOpen)}
+                                className="flex w-full items-center justify-between px-3 py-3 text-left transition-colors hover:bg-[var(--app-subtle-bg)]"
+                                aria-expanded={isTerminalToolDisplayOpen}
+                                aria-haspopup="listbox"
+                            >
+                                <span className="text-[var(--app-fg)]">{t('settings.chat.terminalToolDisplay')}</span>
+                                <span className="flex items-center gap-1 text-[var(--app-hint)]">
+                                    <span>{t(currentTerminalToolDisplayModeLabel)}</span>
+                                    <ChevronDownIcon className={`transition-transform ${isTerminalToolDisplayOpen ? 'rotate-180' : ''}`} />
+                                </span>
+                            </button>
+
+                            {isTerminalToolDisplayOpen && (
+                                <div
+                                    className="absolute right-3 top-full mt-1 min-w-[230px] rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] shadow-lg overflow-hidden z-50"
+                                    role="listbox"
+                                    aria-label={t('settings.chat.terminalToolDisplay')}
+                                >
+                                    {terminalToolDisplayModeOptions.map((opt) => {
+                                        const isSelected = terminalToolDisplayMode === opt.value
+                                        return (
+                                            <button
+                                                key={opt.value}
+                                                type="button"
+                                                role="option"
+                                                aria-selected={isSelected}
+                                                onClick={() => handleTerminalToolDisplayModeChange(opt.value)}
                                                 className={`flex items-center justify-between w-full px-3 py-2 text-base text-left transition-colors ${
                                                     isSelected
                                                         ? 'text-[var(--app-link)] bg-[var(--app-subtle-bg)]'

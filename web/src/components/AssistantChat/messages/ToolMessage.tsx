@@ -180,6 +180,7 @@ function HappyNestedBlockList(props: {
                                 api={ctx.api}
                                 sessionId={ctx.sessionId}
                                 metadata={ctx.metadata}
+                                terminalToolDisplayMode={ctx.terminalToolDisplayMode}
                                 disabled={ctx.disabled}
                                 onDone={ctx.onRefresh}
                                 block={block}
@@ -275,6 +276,7 @@ export function HappyToolMessage(props: ToolCallMessagePartProps) {
                 api={ctx.api}
                 sessionId={ctx.sessionId}
                 metadata={ctx.metadata}
+                terminalToolDisplayMode={ctx.terminalToolDisplayMode}
                 disabled={ctx.disabled}
                 onDone={ctx.onRefresh}
                 block={block}

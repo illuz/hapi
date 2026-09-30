@@ -5,6 +5,7 @@ import { isSubagentToolName } from '@/chat/subagentTool'
 import { isAskUserQuestionToolName } from '@/components/ToolCard/askUserQuestion'
 import { isRequestUserInputToolName } from '@/components/ToolCard/requestUserInput'
 import { getInputStringAny } from '@/lib/toolInputUtils'
+import type { WorkGroupBlock } from '@/chat/workGroups'
 
 export type ToolGroupActionKind = 'read' | 'search' | 'command' | 'mutation' | 'web' | 'other'
 
@@ -37,7 +38,8 @@ export type ToolGroupBlock = {
     summary: ToolGroupSummary
 }
 
-export type VisibleChatBlock = ChatBlock | ToolGroupBlock
+// 使用 type-only import 避免运行时循环依赖；展示流水线在工具组之后追加 WorkGroup。
+export type VisibleChatBlock = ChatBlock | ToolGroupBlock | WorkGroupBlock
 
 export type VisibleChatBlockRole = 'user' | 'assistant' | 'system'
 

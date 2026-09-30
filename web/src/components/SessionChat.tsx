@@ -12,6 +12,7 @@ import type {
 } from '@/types/api'
 import type { ChatBlock, NormalizedMessage } from '@/chat/types'
 import { buildVisibleChatBlocks, isToolGroupBlock, type ToolGroupBlock, type VisibleChatBlock } from '@/chat/toolGroups'
+import { buildVisibleWorkGroups, isWorkGroupBlock, type WorkGroupBlock, type WorkVisibleChatBlock } from '@/chat/workGroups'
 import type { ConversationOutlineItem } from '@/chat/outline'
 import type { Suggestion } from '@/hooks/useActiveSuggestions'
 import { normalizeDecryptedMessage } from '@/chat/normalize'
@@ -93,7 +94,8 @@ export function SessionChat(props: {
     const terminalSupported = isRemoteTerminalSupported(props.session.metadata)
     const normalizedCacheRef = useRef<Map<string, { source: DecryptedMessage; normalized: NormalizedMessage | null }>>(new Map())
     const blocksByIdRef = useRef<Map<string, ChatBlock>>(new Map())
-    const visibleGroupsRef = useRef<ToolGroupBlock[]>([])
+    const visibleToolGroupsRef = useRef<ToolGroupBlock[]>([])
+    const visibleWorkGroupsRef = useRef<WorkGroupBlock[]>([])
     const { codexExplorationCollapsed } = useCodexExplorationCollapse()
     const [forceScrollToken, setForceScrollToken] = useState(0)
     const [autoContinueEnabled, setAutoContinueEnabled] = useState(false)
@@ -282,7 +284,8 @@ export function SessionChat(props: {
     useEffect(() => {
         normalizedCacheRef.current.clear()
         blocksByIdRef.current.clear()
-        visibleGroupsRef.current = []
+        visibleToolGroupsRef.current = []
+        visibleWorkGroupsRef.current = []
         setOutlineOpen(false)
         setOutlineForkingItemIndex(null)
     }, [props.session.id])
@@ -366,13 +369,21 @@ export function SessionChat(props: {
         () => reconcileChatBlocks(reduced.blocks, blocksByIdRef.current),
         [reduced.blocks]
     )
-    const visibleChatBlocks: VisibleChatBlock[] = useMemo(
+    const visibleToolBlocks: VisibleChatBlock[] = useMemo(
         () => buildVisibleChatBlocks(reconciled.blocks, {
             hasMoreMessages: props.hasMoreMessages,
-            previousGroups: visibleGroupsRef.current,
+            previousGroups: visibleToolGroupsRef.current,
             codexExplorationCollapsed
         }),
         [reconciled.blocks, props.hasMoreMessages, codexExplorationCollapsed]
+    )
+    const visibleChatBlocks: WorkVisibleChatBlock[] = useMemo(
+        () => buildVisibleWorkGroups(visibleToolBlocks, {
+            hasMoreMessages: props.hasMoreMessages,
+            previousGroups: visibleWorkGroupsRef.current,
+            isRunning: props.session.thinking
+        }),
+        [visibleToolBlocks, props.hasMoreMessages, props.session.thinking]
     )
 
     useEffect(() => {
@@ -380,8 +391,9 @@ export function SessionChat(props: {
     }, [reconciled.byId])
 
     useEffect(() => {
-        visibleGroupsRef.current = visibleChatBlocks.filter(isToolGroupBlock)
-    }, [visibleChatBlocks])
+        visibleToolGroupsRef.current = visibleToolBlocks.filter(isToolGroupBlock)
+        visibleWorkGroupsRef.current = visibleChatBlocks.filter(isWorkGroupBlock)
+    }, [visibleChatBlocks, visibleToolBlocks])
 
     const loadedOutlineItems = useMemo(
         () => buildConversationOutline(reconciled.blocks),

@@ -5,11 +5,15 @@ import { safeStringify } from '@hapi/protocol'
 import { renderEventLabel } from '@/chat/presentation'
 import type { CliOutputBlock, CodexReview, UsageData } from '@/chat/types'
 import type { AgentEvent, ToolCallBlock } from '@/chat/types'
-import { createToolGroupArtifact, type VisibleChatBlock } from '@/chat/toolGroups'
+import {
+    createToolGroupArtifact,
+    type VisibleChatBlock
+} from '@/chat/toolGroups'
+import { createWorkGroupArtifact } from '@/chat/workGroups'
 import type { AttachmentMetadata, MessageStatus as HappyMessageStatus, Session } from '@/types/api'
 
 export type HappyChatMessageMetadata = {
-    kind: 'user' | 'assistant' | 'tool' | 'event' | 'cli-output' | 'codex-review'
+    kind: 'user' | 'assistant' | 'tool' | 'event' | 'cli-output' | 'codex-review' | 'work-group'
     status?: HappyMessageStatus
     localId?: string | null
     originalText?: string
@@ -25,7 +29,39 @@ export type HappyChatMessageMetadata = {
     review?: CodexReview
 }
 
-function toThreadMessageLike(block: VisibleChatBlock): ThreadMessageLike {
+type HappyThreadMessageLike = ThreadMessageLike & {
+    readonly convertConfig?: {
+        readonly joinStrategy?: 'concat-content' | 'none'
+    }
+}
+
+function toThreadMessageLike(block: VisibleChatBlock): HappyThreadMessageLike {
+    if (block.kind === 'work-group') {
+        const artifact = createWorkGroupArtifact(block)
+        return {
+            role: 'assistant',
+            id: block.id,
+            createdAt: new Date(block.createdAt),
+            content: [{
+                type: 'tool-call',
+                toolCallId: artifact.id,
+                toolName: 'WorkGroup',
+                argsText: '',
+                result: undefined,
+                isError: block.summary.errorCount > 0,
+                artifact
+            }],
+            // 让最终 assistant 答案保持在折叠工作行之外。
+            convertConfig: { joinStrategy: 'none' },
+            metadata: {
+                custom: {
+                    kind: 'work-group',
+                    toolCallId: artifact.id
+                } satisfies HappyChatMessageMetadata
+            }
+        }
+    }
+
     if (block.kind === 'tool-group') {
         const artifact = createToolGroupArtifact(block)
         return {

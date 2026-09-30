@@ -1,0 +1,140 @@
+import { describe, expect, it } from 'vitest'
+import type { AgentReasoningBlock, ToolCallBlock } from '@/chat/types'
+import { buildVisibleChatBlocks } from './toolGroups'
+import {
+    buildVisibleWorkGroups,
+    createWorkGroupArtifact,
+    getWorkGroupFromArtifact,
+    getWorkGroupTiming
+} from './workGroups'
+
+function reasoning(id: string, text = 'inspect the repository'): AgentReasoningBlock {
+    return {
+        kind: 'agent-reasoning',
+        id,
+        localId: null,
+        createdAt: Number(id.replace(/\D/g, '')) || 1,
+        text
+    }
+}
+
+function tool(id: string, name: string): ToolCallBlock {
+    return {
+        kind: 'tool-call',
+        id,
+        localId: null,
+        createdAt: Number(id.replace(/\D/g, '')) || 1,
+        tool: {
+            id,
+            name,
+            state: 'completed',
+            input: {},
+            description: null,
+            createdAt: 1,
+            startedAt: 10,
+            completedAt: 30
+        },
+        children: []
+    }
+}
+
+describe('work groups', () => {
+    it('folds reasoning and tool activity while keeping the final answer outside', () => {
+        const toolGroups = buildVisibleChatBlocks([tool('read-1', 'Read'), tool('grep-1', 'Grep')])
+        const result = buildVisibleWorkGroups([
+            reasoning('reasoning-1'),
+            ...toolGroups,
+            {
+                kind: 'agent-text',
+                id: 'answer-1',
+                localId: null,
+                createdAt: 40,
+                text: 'Done.'
+            }
+        ])
+
+        expect(result).toHaveLength(2)
+        expect(result[0]?.kind).toBe('work-group')
+        if (result[0]?.kind === 'work-group') {
+            expect(result[0].summary.reasoningCount).toBe(1)
+            expect(result[0].summary.toolCount).toBe(2)
+            expect(result[0].defaultOpen).toBe(false)
+        }
+        expect(result[1]?.kind).toBe('agent-text')
+    })
+
+    it('does not add a second disclosure around a lone tool group', () => {
+        const toolGroups = buildVisibleChatBlocks([tool('read-1', 'Read')])
+        const result = buildVisibleWorkGroups(toolGroups)
+
+        expect(result).toHaveLength(1)
+        expect(result[0]?.kind).toBe('tool-group')
+    })
+
+    it('opens the latest group while the turn is running', () => {
+        const result = buildVisibleWorkGroups([reasoning('reasoning-1')], { isRunning: true })
+        expect(result[0]?.kind).toBe('work-group')
+        if (result[0]?.kind === 'work-group') {
+            expect(result[0].defaultOpen).toBe(true)
+            expect(result[0].active).toBe(true)
+            expect(createWorkGroupArtifact(result[0]).tool.state).toBe('running')
+        }
+    })
+
+    it('does not reopen an older group when a new user turn is running', () => {
+        const result = buildVisibleWorkGroups([
+            reasoning('reasoning-1'),
+            {
+                kind: 'agent-text',
+                id: 'answer-1',
+                localId: null,
+                createdAt: 20,
+                text: 'Done.'
+            },
+            {
+                kind: 'user-text',
+                id: 'user-2',
+                localId: null,
+                createdAt: 30,
+                text: 'Continue'
+            }
+        ], { isRunning: true })
+
+        expect(result[0]?.kind).toBe('work-group')
+        if (result[0]?.kind === 'work-group') expect(result[0].active).toBe(false)
+    })
+
+    it('keeps ids stable when an older page prepends work', () => {
+        const initial = buildVisibleWorkGroups([reasoning('reasoning-1'), reasoning('reasoning-2')])
+        const group = initial[0]
+        expect(group?.kind).toBe('work-group')
+        if (group?.kind !== 'work-group') return
+
+        const prepended = buildVisibleWorkGroups([reasoning('reasoning-0'), reasoning('reasoning-1'), reasoning('reasoning-2')], {
+            previousGroups: [group]
+        })
+        expect(prepended[0]?.kind).toBe('work-group')
+        if (prepended[0]?.kind === 'work-group') expect(prepended[0].id).toBe(group.id)
+    })
+
+    it('creates an assistant-ui artifact that round-trips', () => {
+        const result = buildVisibleWorkGroups([reasoning('reasoning-1')])
+        const group = result[0]
+        expect(group?.kind).toBe('work-group')
+        if (group?.kind !== 'work-group') return
+
+        const artifact = createWorkGroupArtifact(group)
+        expect(getWorkGroupFromArtifact(artifact)?.id).toBe(group.id)
+        expect(artifact.tool.result).toEqual({ workGroup: true, blocks: 1, tools: 0 })
+    })
+
+    it('uses active tool state for timing', () => {
+        const [toolGroup] = buildVisibleChatBlocks([tool('read-1', 'Read')])
+        if (toolGroup?.kind !== 'tool-group') return
+        const timing = getWorkGroupTiming([toolGroup], 100)
+        expect(timing.startedAt).toBe(10)
+        expect(timing.completedAt).toBe(30)
+        expect(timing.durationMs).toBe(20)
+        expect(timing.running).toBe(false)
+    })
+})

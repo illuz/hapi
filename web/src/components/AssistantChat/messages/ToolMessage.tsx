@@ -10,10 +10,12 @@ import { MarkdownRenderer } from '@/components/MarkdownRenderer'
 import { MessageStatusIndicator } from '@/components/AssistantChat/messages/MessageStatusIndicator'
 import { ToolCard } from '@/components/ToolCard/ToolCard'
 import { ToolGroupCard } from '@/components/ToolCard/ToolGroupCard'
+import { WorkGroupCard } from '@/components/ToolCard/WorkGroupCard'
 import { useHappyChatContext } from '@/components/AssistantChat/context'
 import { CliOutputBlock } from '@/components/CliOutputBlock'
 import { UserBubbleContent, getUserBubbleClassName, shouldShowMessageStatus } from '@/components/AssistantChat/messages/user-bubble'
 import { buildVisibleChatBlocks, getToolGroupFromArtifact } from '@/chat/toolGroups'
+import { getWorkGroupFromArtifact } from '@/chat/workGroups'
 
 function isToolCallBlock(value: unknown): value is ToolCallBlock {
     if (!isObject(value)) return false
@@ -166,6 +168,11 @@ function HappyNestedBlockList(props: {
 export function HappyToolMessage(props: ToolCallMessagePartProps) {
     const ctx = useHappyChatContext()
     const artifact = props.artifact
+    const workGroup = getWorkGroupFromArtifact(artifact)
+    if (workGroup) {
+        return <WorkGroupCard block={workGroup} metadata={ctx.metadata} />
+    }
+
     const toolGroup = getToolGroupFromArtifact(artifact)
 
     if (toolGroup) {

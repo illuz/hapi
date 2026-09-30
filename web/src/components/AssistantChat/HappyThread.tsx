@@ -768,19 +768,21 @@ export function HappyThread(props: {
         scrollToBottom()
     }, [props.forceScrollToken, scrollToBottom])
 
-    const loadOlderMessages = useCallback(async () => {
+    const loadOlderMessagesOutcome = useCallback(async (): Promise<'loaded' | 'transient-stop' | 'terminal-stop' | 'failed'> => {
         if (
             isInitialScrollSettling()
             || isLoadingMessagesRef.current
-            || !hasMoreMessagesRef.current
             || isLoadingMoreRef.current
             || loadLockRef.current
         ) {
-            return false
+            return 'transient-stop'
+        }
+        if (!hasMoreMessagesRef.current) {
+            return 'terminal-stop'
         }
         const viewport = viewportRef.current
         if (!viewport) {
-            return false
+            return 'transient-stop'
         }
         pendingScrollRef.current = {
             anchor: captureScrollAnchor(viewport),
@@ -797,20 +799,32 @@ export function HappyThread(props: {
             pendingScrollRef.current = null
             loadLockRef.current = false
             console.error('Failed to load older messages:', error)
-            return false
+            return 'failed'
         }
-        return loadPromise.then(() => true).catch((error) => {
+        try {
+            const result = await loadPromise
+            if (result === false) {
+                pendingScrollRef.current = null
+                loadLockRef.current = false
+                return 'terminal-stop'
+            }
+            return 'loaded'
+        } catch (error) {
             pendingScrollRef.current = null
             loadLockRef.current = false
             console.error('Failed to load older messages:', error)
-            return false
-        }).finally(() => {
+            return 'failed'
+        } finally {
             if (!loadStartedRef.current && !isLoadingMoreRef.current && pendingScrollRef.current) {
                 pendingScrollRef.current = null
                 loadLockRef.current = false
             }
-        })
+        }
     }, [isInitialScrollSettling])
+
+    const loadOlderMessages = useCallback(async () => (
+        (await loadOlderMessagesOutcome()) === 'loaded'
+    ), [loadOlderMessagesOutcome])
 
     const handleLoadMore = useCallback(() => {
         void loadOlderMessages()
@@ -1018,7 +1032,11 @@ export function HappyThread(props: {
             disabled: props.disabled,
             onRefresh: props.onRefresh,
             onRetryMessage: props.onRetryMessage,
-            onForkMessage: props.onForkMessage
+            onForkMessage: props.onForkMessage,
+            hasMoreMessages: props.hasMoreMessages,
+            isSyncingTail: props.isLoadingMessages,
+            isLoadingMoreMessages: props.isLoadingMoreMessages,
+            loadOlderMessagesPreservingScroll: loadOlderMessagesOutcome
         }}>
             <MarkdownLinkBehaviorProvider
                 behavior="copy-non-file"

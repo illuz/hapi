@@ -13,6 +13,10 @@ export type HappyChatContextValue = {
     onRefresh: () => void
     onRetryMessage?: (localId: string) => void
     onForkMessage?: (messageId: string) => void | Promise<void>
+    hasMoreMessages?: boolean
+    isSyncingTail?: boolean
+    isLoadingMoreMessages?: boolean
+    loadOlderMessagesPreservingScroll?: () => Promise<'loaded' | 'transient-stop' | 'terminal-stop' | 'failed'>
 }
 
 const HappyChatContext = createContext<HappyChatContextValue | null>(null)

@@ -11,7 +11,7 @@ import type {
     SlashCommand
 } from '@/types/api'
 import type { ChatBlock, NormalizedMessage } from '@/chat/types'
-import { buildVisibleChatBlocks, type VisibleChatBlock } from '@/chat/toolGroups'
+import { buildVisibleChatBlocks, isToolGroupBlock, type ToolGroupBlock, type VisibleChatBlock } from '@/chat/toolGroups'
 import type { ConversationOutlineItem } from '@/chat/outline'
 import type { Suggestion } from '@/hooks/useActiveSuggestions'
 import { normalizeDecryptedMessage } from '@/chat/normalize'
@@ -45,6 +45,7 @@ import { isRemoteTerminalSupported } from '@/utils/terminalSupport'
 import { allocateContinueRoundWithSource } from '@/lib/continueRounds'
 import { findUnsupportedCodexBuiltinSlashCommand } from '@/lib/codexSlashCommands'
 import { mergeCodexModelOptions } from '@/lib/codexModelOptions'
+import { useCodexExplorationCollapse } from '@/hooks/useCodexExplorationCollapse'
 import {
     AUTO_CONTINUE_DEFAULT_REMAINING,
     AUTO_CONTINUE_DEFAULT_KEYWORDS,
@@ -92,6 +93,8 @@ export function SessionChat(props: {
     const terminalSupported = isRemoteTerminalSupported(props.session.metadata)
     const normalizedCacheRef = useRef<Map<string, { source: DecryptedMessage; normalized: NormalizedMessage | null }>>(new Map())
     const blocksByIdRef = useRef<Map<string, ChatBlock>>(new Map())
+    const visibleGroupsRef = useRef<ToolGroupBlock[]>([])
+    const { codexExplorationCollapsed } = useCodexExplorationCollapse()
     const [forceScrollToken, setForceScrollToken] = useState(0)
     const [autoContinueEnabled, setAutoContinueEnabled] = useState(false)
     const [autoContinueRemaining, setAutoContinueRemaining] = useState(AUTO_CONTINUE_DEFAULT_REMAINING)
@@ -279,6 +282,7 @@ export function SessionChat(props: {
     useEffect(() => {
         normalizedCacheRef.current.clear()
         blocksByIdRef.current.clear()
+        visibleGroupsRef.current = []
         setOutlineOpen(false)
         setOutlineForkingItemIndex(null)
     }, [props.session.id])
@@ -363,13 +367,21 @@ export function SessionChat(props: {
         [reduced.blocks]
     )
     const visibleChatBlocks: VisibleChatBlock[] = useMemo(
-        () => buildVisibleChatBlocks(reconciled.blocks, { hasMoreMessages: props.hasMoreMessages }),
-        [reconciled.blocks, props.hasMoreMessages]
+        () => buildVisibleChatBlocks(reconciled.blocks, {
+            hasMoreMessages: props.hasMoreMessages,
+            previousGroups: visibleGroupsRef.current,
+            codexExplorationCollapsed
+        }),
+        [reconciled.blocks, props.hasMoreMessages, codexExplorationCollapsed]
     )
 
     useEffect(() => {
         blocksByIdRef.current = reconciled.byId
     }, [reconciled.byId])
+
+    useEffect(() => {
+        visibleGroupsRef.current = visibleChatBlocks.filter(isToolGroupBlock)
+    }, [visibleChatBlocks])
 
     const loadedOutlineItems = useMemo(
         () => buildConversationOutline(reconciled.blocks),

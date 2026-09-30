@@ -1515,7 +1515,7 @@ describe('session model', () => {
                 forkFromMessageId: firstAssistantMessage.id
             })
             expect(assistantForkResult.type).toBe('success')
-            expect(capturedFork).toEqual({
+            expect(capturedFork!).toEqual({
                 machineId: 'machine-1',
                 threadId: 'codex-thread-1',
                 rollbackTurns: 1

@@ -424,6 +424,7 @@ describe('MessageService conversation fork boundaries', () => {
 
         expect(service.getRollbackTurnsAfterMessage(session.id, firstUser.id)).toBe(1)
         expect(service.getRollbackTurnsAfterMessage(session.id, firstAssistant.id)).toBe(1)
+        expect(service.getRollbackTurnsAfterMessage(session.id, `assistant:${firstAssistant.id}:0`)).toBe(1)
         expect(service.getRollbackTurnsAfterMessage(session.id, secondUser.id)).toBe(0)
         expect(service.getRollbackTurnsAfterMessage(session.id, queuedUser.id)).toBeNull()
         expect(service.getRollbackTurnsAfterMessage(session.id, 'queued-turn')).toBeNull()

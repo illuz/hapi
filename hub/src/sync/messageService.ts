@@ -146,7 +146,17 @@ export class MessageService {
 
     getRollbackTurnsAfterMessage(sessionId: string, messageId: string): number | null {
         const turns = this.store.messages.getUserTurnMessages(sessionId)
-        const target = this.store.messages.getMessageByIdOrLocalId(sessionId, messageId)
+        const target = (() => {
+            const direct = this.store.messages.getMessageByIdOrLocalId(sessionId, messageId)
+            if (direct) return direct
+
+            // Accept assistant-ui's rendered ids as a defensive fallback for
+            // an older cached Web bundle: `assistant:<hub-id>:<part-index>`.
+            const prefixEnd = messageId.indexOf(':')
+            if (prefixEnd <= 0) return null
+            const hubMessageId = messageId.slice(prefixEnd + 1).split(':', 1)[0]
+            return this.store.messages.getMessageByIdOrLocalId(sessionId, hubMessageId)
+        })()
         if (!target) return null
 
         // A queued user message has not reached the native transcript yet, so

@@ -104,4 +104,16 @@ describe('tool groups', () => {
         expect(prepended[0]?.kind).toBe('tool-group')
         if (prepended[0]?.kind === 'tool-group') expect(prepended[0].id).toBe(group.id)
     })
+
+    it('keeps the group id when a page extends both ends', () => {
+        const first = tool('both-1', 'Read')
+        const second = tool('both-2', 'Read')
+        const group = buildVisibleChatBlocks([first, second])[0]
+        if (group?.kind !== 'tool-group') return
+        const extended = buildVisibleChatBlocks([
+            tool('both-0', 'Read'), first, second, tool('both-3', 'Read')
+        ], { previousGroups: [group] })[0]
+        expect(extended?.kind).toBe('tool-group')
+        if (extended?.kind === 'tool-group') expect(extended.id).toBe(group.id)
+    })
 })

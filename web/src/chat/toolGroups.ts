@@ -245,8 +245,13 @@ function createToolGroupId(
 ): string {
     const firstToolId = tools[0]?.id ?? 'unknown'
     const lastToolId = tools[tools.length - 1]?.id ?? firstToolId
+    const currentToolIds = new Set(tools.map((tool) => tool.id))
 
-    const previous = previousGroups.find((group) => group.firstToolId === firstToolId || group.lastToolId === lastToolId)
+    const previous = previousGroups.find((group) => (
+        group.firstToolId === firstToolId
+        || group.lastToolId === lastToolId
+        || group.tools.some((tool) => currentToolIds.has(tool.id))
+    ))
     if (previous) {
         return previous.id
     }

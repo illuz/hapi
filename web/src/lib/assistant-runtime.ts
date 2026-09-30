@@ -29,12 +29,12 @@ function toThreadMessageLike(block: VisibleChatBlock): ThreadMessageLike {
         const artifact = createToolGroupArtifact(block)
         return {
             role: 'assistant',
-            id: `tool-group:${block.id}`,
+            id: block.id,
             createdAt: new Date(block.createdAt),
             content: [{
                 type: 'tool-call',
                 toolCallId: artifact.id,
-                toolName: 'Tool group',
+                toolName: 'ToolGroup',
                 argsText: '',
                 result: undefined,
                 isError: block.summary.errorCount > 0,

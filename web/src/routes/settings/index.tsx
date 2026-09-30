@@ -6,6 +6,8 @@ import { getFontScaleOptions, useFontScale, type FontScale } from '@/hooks/useFo
 import { getTerminalFontSizeOptions, useTerminalFontSize, type TerminalFontSize } from '@/hooks/useTerminalFontSize'
 import { getComposerEnterBehaviorOptions, useComposerEnterBehavior, type ComposerEnterBehavior } from '@/hooks/useComposerEnterBehavior'
 import { getTerminalToolDisplayModeOptions, useTerminalToolDisplayMode, type TerminalToolDisplayMode } from '@/hooks/useTerminalToolDisplayMode'
+import { useCodexExplorationCollapse } from '@/hooks/useCodexExplorationCollapse'
+import { useReasoningCollapse } from '@/hooks/useReasoningCollapse'
 import { useAppearance, getAppearanceOptions, type AppearancePreference } from '@/hooks/useTheme'
 import { playNotificationSound } from '@/lib/readyChime'
 import {
@@ -148,6 +150,8 @@ export default function SettingsPage() {
     const { terminalFontSize, setTerminalFontSize } = useTerminalFontSize()
     const { composerEnterBehavior, setComposerEnterBehavior } = useComposerEnterBehavior()
     const { terminalToolDisplayMode, setTerminalToolDisplayMode } = useTerminalToolDisplayMode()
+    const { codexExplorationCollapsed, setCodexExplorationCollapsed } = useCodexExplorationCollapse()
+    const { reasoningCollapsed, setReasoningCollapsed } = useReasoningCollapse()
     const { appearance, setAppearance } = useAppearance()
 
     // Voice language state - read from localStorage
@@ -792,6 +796,36 @@ export default function SettingsPage() {
                                 </div>
                             )}
                         </div>
+                        <button
+                            type="button"
+                            role="switch"
+                            aria-checked={codexExplorationCollapsed}
+                            onClick={() => setCodexExplorationCollapsed(!codexExplorationCollapsed)}
+                            className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left transition-colors hover:bg-[var(--app-subtle-bg)]"
+                        >
+                            <span>
+                                <span className="block text-[var(--app-fg)]">{t('settings.chat.codexExplorationCollapsed')}</span>
+                                <span className="mt-0.5 block text-xs text-[var(--app-hint)]">{t('settings.chat.codexExplorationCollapsed.desc')}</span>
+                            </span>
+                            <span className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${codexExplorationCollapsed ? 'bg-[var(--app-link)]' : 'bg-[var(--app-border)]'}`}>
+                                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${codexExplorationCollapsed ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                            </span>
+                        </button>
+                        <button
+                            type="button"
+                            role="switch"
+                            aria-checked={reasoningCollapsed}
+                            onClick={() => setReasoningCollapsed(!reasoningCollapsed)}
+                            className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left transition-colors hover:bg-[var(--app-subtle-bg)]"
+                        >
+                            <span>
+                                <span className="block text-[var(--app-fg)]">{t('settings.chat.reasoningCollapsed')}</span>
+                                <span className="mt-0.5 block text-xs text-[var(--app-hint)]">{t('settings.chat.reasoningCollapsed.desc')}</span>
+                            </span>
+                            <span className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${reasoningCollapsed ? 'bg-[var(--app-link)]' : 'bg-[var(--app-border)]'}`}>
+                                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${reasoningCollapsed ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                            </span>
+                        </button>
                     </div>
 
                     {/* Voice Assistant section */}

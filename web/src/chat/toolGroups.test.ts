@@ -55,7 +55,53 @@ describe('tool groups', () => {
         if (group?.kind !== 'tool-group') return
         const artifact = createToolGroupArtifact(group)
         expect(getToolGroupFromArtifact(artifact)?.id).toBe(group.id)
+        expect(artifact.tool.result).toEqual({ grouped: true, count: 2 })
         expect(getToolGroupActionKind(group.tools[1]!)).toBe('command')
     })
-})
 
+    it('groups a single Codex exploration call and keeps the preference-driven default', () => {
+        const read = tool('codex-read', 'CodexBash', {
+            input: {
+                command: 'cat package.json',
+                command_source: 'agent',
+                command_actions: [{ type: 'read', command: 'cat package.json', name: 'package.json', path: '/repo/package.json' }]
+            }
+        })
+        const collapsed = buildVisibleChatBlocks([read])
+        expect(collapsed).toHaveLength(1)
+        expect(collapsed[0]?.kind).toBe('tool-group')
+        if (collapsed[0]?.kind === 'tool-group') {
+            expect(collapsed[0].presentationMode).toBe('codex-exploration')
+            expect(collapsed[0].defaultOpen).toBe(false)
+        }
+        const expanded = buildVisibleChatBlocks([read], { codexExplorationCollapsed: false })
+        expect(expanded[0]?.kind === 'tool-group' && expanded[0].defaultOpen).toBe(true)
+    })
+
+    it('does not group Codex user-shell exploration commands', () => {
+        const read = tool('codex-user-read', 'CodexBash', {
+            input: {
+                command_source: 'userShell',
+                command_actions: [{ type: 'read', command: 'cat package.json', name: 'package.json', path: '/repo/package.json' }]
+            }
+        })
+        expect(buildVisibleChatBlocks([read])[0]).toBe(read)
+    })
+
+    it('keeps the group id when older pages prepend tools', () => {
+        const first = tool('read-1', 'Read')
+        const second = tool('read-2', 'Read')
+        const initial = buildVisibleChatBlocks([first, second], { hasMoreMessages: true })
+        const group = initial[0]
+        expect(group?.kind).toBe('tool-group')
+        if (group?.kind !== 'tool-group') return
+
+        const older = tool('read-0', 'Read')
+        const prepended = buildVisibleChatBlocks([older, first, second], {
+            hasMoreMessages: false,
+            previousGroups: [group]
+        })
+        expect(prepended[0]?.kind).toBe('tool-group')
+        if (prepended[0]?.kind === 'tool-group') expect(prepended[0].id).toBe(group.id)
+    })
+})

@@ -2,6 +2,7 @@ import { useState, useEffect, type FC, type PropsWithChildren } from 'react'
 import { useMessage } from '@assistant-ui/react'
 import { MarkdownTextPrimitive } from '@assistant-ui/react-markdown'
 import { cn } from '@/lib/utils'
+import { useReasoningCollapse } from '@/hooks/useReasoningCollapse'
 import {
     MARKDOWN_CLASSNAME,
     MARKDOWN_COMPONENTS_BY_LANGUAGE,
@@ -58,12 +59,11 @@ export const ReasoningGroup: FC<PropsWithChildren> = ({ children }) => {
     const isStreaming = message.status?.type === 'running'
         && message.content.length > 0
         && message.content[message.content.length - 1]?.type === 'reasoning'
+    const { reasoningCollapsed } = useReasoningCollapse()
 
     useEffect(() => {
-        if (isStreaming) {
-            setIsOpen(true)
-        }
-    }, [isStreaming])
+        if (isStreaming) setIsOpen(!reasoningCollapsed)
+    }, [isStreaming, reasoningCollapsed])
 
     return (
         <div className="aui-reasoning-group my-3 overflow-hidden rounded-2xl bg-[var(--app-reasoning-bg)]">
@@ -91,7 +91,7 @@ export const ReasoningGroup: FC<PropsWithChildren> = ({ children }) => {
                     isOpen ? 'max-h-[5000px] opacity-100' : 'max-h-0 opacity-0'
                 )}
             >
-                <div className="border-t border-[var(--app-divider)] px-3.5 py-3">
+                <div className="max-h-[60vh] overflow-y-auto border-t border-[var(--app-divider)] px-3.5 py-3">
                     {children}
                 </div>
             </div>

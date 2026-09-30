@@ -100,6 +100,40 @@ describe('AppServerEventConverter', () => {
         }]);
     });
 
+    it('preserves native Codex exploration metadata and duration', () => {
+        const converter = new AppServerEventConverter();
+        const actions = [{ type: 'read', command: 'cat package.json', name: 'package.json', path: '/repo/package.json' }];
+        const started = converter.handleNotification('item/started', {
+            item: {
+                id: 'cmd-native',
+                type: 'commandExecution',
+                command: 'cat package.json',
+                command_actions: actions,
+                source: 'agent'
+            }
+        });
+        expect(started[0]).toMatchObject({
+            type: 'exec_command_begin',
+            command_actions: actions,
+            command_source: 'agent'
+        });
+
+        const completed = converter.handleNotification('item/completed', {
+            item: {
+                id: 'cmd-native',
+                type: 'commandExecution',
+                aggregated_output: 'package json',
+                duration_ms: 42,
+                exitCode: 0
+            }
+        });
+        expect(completed[0]).toMatchObject({
+            type: 'exec_command_end',
+            output: 'package json',
+            duration_ms: 42
+        });
+    });
+
     it('maps MCP tool call items', () => {
         const converter = new AppServerEventConverter();
 

@@ -5,7 +5,6 @@ import { isSubagentToolName } from '@/chat/subagentTool'
 import { isAskUserQuestionToolName } from '@/components/ToolCard/askUserQuestion'
 import { isRequestUserInputToolName } from '@/components/ToolCard/requestUserInput'
 import { getInputStringAny } from '@/lib/toolInputUtils'
-import type { WorkGroupBlock } from '@/chat/workGroups'
 
 export type ToolGroupActionKind = 'read' | 'search' | 'command' | 'mutation' | 'web' | 'other'
 
@@ -38,8 +37,9 @@ export type ToolGroupBlock = {
     summary: ToolGroupSummary
 }
 
-// 使用 type-only import 避免运行时循环依赖；展示流水线在工具组之后追加 WorkGroup。
-export type VisibleChatBlock = ChatBlock | ToolGroupBlock | WorkGroupBlock
+// WorkGroup 会在工具组之后追加；这里保持输入流水线只包含原始块和工具组，
+// 避免把已经聚合的 WorkGroup 再次作为下一轮聚合输入。
+export type VisibleChatBlock = ChatBlock | ToolGroupBlock
 
 export type VisibleChatBlockRole = 'user' | 'assistant' | 'system'
 

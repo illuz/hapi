@@ -5,11 +5,8 @@ import { safeStringify } from '@hapi/protocol'
 import { renderEventLabel } from '@/chat/presentation'
 import type { CliOutputBlock, CodexReview, UsageData } from '@/chat/types'
 import type { AgentEvent, ToolCallBlock } from '@/chat/types'
-import {
-    createToolGroupArtifact,
-    type VisibleChatBlock
-} from '@/chat/toolGroups'
-import { createWorkGroupArtifact } from '@/chat/workGroups'
+import { createToolGroupArtifact } from '@/chat/toolGroups'
+import { createWorkGroupArtifact, type WorkVisibleChatBlock } from '@/chat/workGroups'
 import type { AttachmentMetadata, MessageStatus as HappyMessageStatus, Session } from '@/types/api'
 
 export type HappyChatMessageMetadata = {
@@ -35,7 +32,7 @@ type HappyThreadMessageLike = ThreadMessageLike & {
     }
 }
 
-function toThreadMessageLike(block: VisibleChatBlock): HappyThreadMessageLike {
+function toThreadMessageLike(block: WorkVisibleChatBlock): HappyThreadMessageLike {
     if (block.kind === 'work-group') {
         const artifact = createWorkGroupArtifact(block)
         return {
@@ -291,7 +288,7 @@ function extractMessageContent(message: AppendMessage): { text: string; attachme
 
 export function useHappyRuntime(props: {
     session: Session
-    blocks: readonly VisibleChatBlock[]
+    blocks: readonly WorkVisibleChatBlock[]
     isSending: boolean
     onSendMessage: (text: string, attachments?: AttachmentMetadata[]) => void
     onAbort: () => Promise<void>
@@ -300,9 +297,9 @@ export function useHappyRuntime(props: {
 }) {
     // Use cached message converter for performance optimization
     // This prevents re-converting all messages on every render
-    const convertedMessages = useExternalMessageConverter<VisibleChatBlock>({
+    const convertedMessages = useExternalMessageConverter<WorkVisibleChatBlock>({
         callback: toThreadMessageLike,
-        messages: props.blocks as VisibleChatBlock[],
+        messages: props.blocks as WorkVisibleChatBlock[],
         isRunning: props.session.thinking,
     })
 

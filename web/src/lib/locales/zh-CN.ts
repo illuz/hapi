@@ -479,6 +479,7 @@ export default {
   'workGroup.working': '工作中',
   'workGroup.workedFor': '工作了 {duration}',
   'workGroup.reasoning': '{n} 段思考',
+  'workGroup.answers': '{n} 段回答',
   'workGroup.tools': '{n} 个工具调用',
   'workGroup.pending': '等待中 {n}',
   'workGroup.errors': '{n} 次失败',

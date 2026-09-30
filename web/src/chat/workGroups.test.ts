@@ -39,7 +39,7 @@ function tool(id: string, name: string): ToolCallBlock {
 }
 
 describe('work groups', () => {
-    it('folds reasoning and tool activity while keeping the final answer outside', () => {
+    it('folds the complete assistant turn, including the final answer', () => {
         const toolGroups = buildVisibleChatBlocks([tool('read-1', 'Read'), tool('grep-1', 'Grep')])
         const result = buildVisibleWorkGroups([
             reasoning('reasoning-1'),
@@ -53,22 +53,55 @@ describe('work groups', () => {
             }
         ])
 
-        expect(result).toHaveLength(2)
+        expect(result).toHaveLength(1)
         expect(result[0]?.kind).toBe('work-group')
         if (result[0]?.kind === 'work-group') {
             expect(result[0].summary.reasoningCount).toBe(1)
+            expect(result[0].summary.answerCount).toBe(1)
             expect(result[0].summary.toolCount).toBe(2)
             expect(result[0].defaultOpen).toBe(false)
         }
-        expect(result[1]?.kind).toBe('agent-text')
     })
 
-    it('does not add a second disclosure around a lone tool group', () => {
+    it('folds a lone tool group into the assistant turn', () => {
         const toolGroups = buildVisibleChatBlocks([tool('read-1', 'Read')])
         const result = buildVisibleWorkGroups(toolGroups)
 
         expect(result).toHaveLength(1)
-        expect(result[0]?.kind).toBe('tool-group')
+        expect(result[0]?.kind).toBe('work-group')
+        if (result[0]?.kind === 'work-group') {
+            expect(result[0].summary.toolCount).toBe(1)
+        }
+    })
+
+    it('starts a new folded turn at each user message', () => {
+        const result = buildVisibleWorkGroups([
+            {
+                kind: 'user-text',
+                id: 'user-1',
+                localId: null,
+                createdAt: 1,
+                text: 'First'
+            },
+            reasoning('reasoning-1'),
+            {
+                kind: 'agent-text',
+                id: 'answer-1',
+                localId: null,
+                createdAt: 20,
+                text: 'Done.'
+            },
+            {
+                kind: 'user-text',
+                id: 'user-2',
+                localId: null,
+                createdAt: 30,
+                text: 'Second'
+            },
+            reasoning('reasoning-2')
+        ])
+
+        expect(result.map((block) => block.kind)).toEqual(['user-text', 'work-group', 'user-text', 'work-group'])
     })
 
     it('opens the latest group while the turn is running', () => {

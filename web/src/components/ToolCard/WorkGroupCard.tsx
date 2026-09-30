@@ -1,8 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SessionMetadataSummary } from '@/types/api'
 import type { WorkGroupBlock, WorkGroupChildBlock } from '@/chat/workGroups'
+import { getEventPresentation } from '@/chat/presentation'
+import { getConversationMessageAnchorId } from '@/chat/outline'
 import { MarkdownRenderer } from '@/components/MarkdownRenderer'
+import { CliOutputBlock } from '@/components/CliOutputBlock'
+import { CodexReviewCard } from '@/components/AssistantChat/messages/CodexReviewCard'
+import { EventPresentationView } from '@/components/AssistantChat/messages/EventPresentationView'
+import { MessageActions } from '@/components/AssistantChat/messages/MessageActions'
 import { ToolGroupCard } from '@/components/ToolCard/ToolGroupCard'
+import { ToolCard } from '@/components/ToolCard/ToolCard'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useHappyChatContext } from '@/components/AssistantChat/context'
 import { ToolStatusIcon } from '@/components/ToolCard/ToolCard'
@@ -18,8 +25,60 @@ function WorkGroupChild(props: {
     block: WorkGroupChildBlock
     metadata: SessionMetadataSummary | null
 }) {
+    const ctx = useHappyChatContext()
+
     if (props.block.kind === 'tool-group') {
         return <ToolGroupCard block={props.block} metadata={props.metadata} />
+    }
+
+    if (props.block.kind === 'tool-call') {
+        return (
+            <ToolCard
+                api={ctx.api}
+                sessionId={ctx.sessionId}
+                metadata={props.metadata}
+                terminalToolDisplayMode={ctx.terminalToolDisplayMode}
+                disabled={ctx.disabled}
+                onDone={ctx.onRefresh}
+                block={props.block}
+            />
+        )
+    }
+
+    if (props.block.kind === 'agent-text') {
+        const messageId = `assistant:${props.block.id}`
+        const forkMessageId = props.block.sourceMessageId ?? props.block.id
+        return (
+            <div
+                id={getConversationMessageAnchorId(messageId)}
+                className="rounded-2xl border border-[var(--app-divider)] bg-[var(--app-bg)] px-3.5 py-3 text-[13.5px] text-[var(--app-fg)]"
+            >
+                <MarkdownRenderer content={props.block.text} className="aui-assistant-content" />
+                <MessageActions
+                    align="start"
+                    copyText={props.block.text}
+                    messageElementId={getConversationMessageAnchorId(messageId)}
+                    showFork={Boolean(ctx.onForkMessage)}
+                    onFork={ctx.onForkMessage ? () => ctx.onForkMessage!(forkMessageId) : undefined}
+                />
+            </div>
+        )
+    }
+
+    if (props.block.kind === 'cli-output') {
+        return <CliOutputBlock text={props.block.text} />
+    }
+
+    if (props.block.kind === 'codex-review') {
+        return <CodexReviewCard review={props.block.review} />
+    }
+
+    if (props.block.kind === 'agent-event') {
+        return (
+            <div className="mx-auto w-fit max-w-[92%] px-2 text-center text-xs text-[var(--app-hint)] opacity-80">
+                <EventPresentationView presentation={getEventPresentation(props.block.event)} />
+            </div>
+        )
     }
 
     return (
@@ -114,12 +173,15 @@ export function WorkGroupCard(props: {
     if (props.block.summary.reasoningCount > 0) {
         subtitleParts.push(t('workGroup.reasoning', { n: props.block.summary.reasoningCount }))
     }
+    if (props.block.summary.answerCount > 0) {
+        subtitleParts.push(t('workGroup.answers', { n: props.block.summary.answerCount }))
+    }
     if (props.block.summary.toolCount > 0) {
         subtitleParts.push(t('workGroup.tools', { n: props.block.summary.toolCount }))
     }
 
     return (
-        <Card className="overflow-hidden rounded-[20px] bg-[var(--app-reasoning-bg)] shadow-none" data-work-group="true">
+        <Card className="overflow-hidden rounded-[20px] bg-[var(--app-reasoning-bg)] shadow-none" data-work-group="true" data-assistant-turn="true">
             <CardHeader className="space-y-0 p-3">
                 <button
                     type="button"

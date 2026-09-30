@@ -1,11 +1,29 @@
-import type { AgentReasoningBlock, ChatBlock, ToolCallBlock } from '@/chat/types'
+import type {
+    AgentEventBlock,
+    AgentReasoningBlock,
+    AgentTextBlock,
+    ChatBlock,
+    CliOutputBlock,
+    CodexReviewBlock,
+    ToolCallBlock,
+} from '@/chat/types'
 import type { ToolGroupBlock, VisibleChatBlock } from '@/chat/toolGroups'
 
-/** 可安全收进 Codex 风格「Worked for」行的块。 */
-export type WorkGroupChildBlock = AgentReasoningBlock | ToolGroupBlock
+/** 可收进单个 assistant turn 的块。 */
+export type WorkGroupChildBlock =
+    | AgentTextBlock
+    | AgentReasoningBlock
+    | CodexReviewBlock
+    | CliOutputBlock
+    | AgentEventBlock
+    | ToolCallBlock
+    | ToolGroupBlock
 
 export type WorkGroupSummary = {
     reasoningCount: number
+    answerCount: number
+    reviewCount: number
+    eventCount: number
     toolGroupCount: number
     toolCount: number
     errorCount: number
@@ -40,12 +58,15 @@ export function isWorkGroupBlock(block: WorkVisibleChatBlock | ChatBlock): block
     return block.kind === 'work-group'
 }
 
-function isReasoningBlock(block: VisibleChatBlock): block is AgentReasoningBlock {
-    return block.kind === 'agent-reasoning' && block.text.trim().length > 0
+function isWorkGroupChild(block: VisibleChatBlock): block is WorkGroupChildBlock {
+    if (block.kind === 'user-text') return false
+    if (block.kind === 'cli-output' && block.source === 'user') return false
+    return true
 }
 
-function isWorkGroupChild(block: VisibleChatBlock): block is WorkGroupChildBlock {
-    return isReasoningBlock(block) || block.kind === 'tool-group'
+function isTurnBoundary(block: VisibleChatBlock): boolean {
+    return block.kind === 'user-text'
+        || (block.kind === 'cli-output' && block.source === 'user')
 }
 
 function getChildId(block: WorkGroupChildBlock): string {
@@ -79,24 +100,28 @@ function getToolTiming(tool: ToolCallBlock): { startedAt: number | null; complet
     }
 }
 
-export function getWorkGroupTiming(blocks: WorkGroupChildBlock[], now: number) {
-    const started: number[] = []
-    const completed: number[] = []
-    const explicitDurations: number[] = []
-    let runningCount = 0
-    let pendingCount = 0
-    let errorCount = 0
+function getBlockDuration(block: WorkGroupChildBlock): number | null {
+    if (
+        block.kind === 'agent-text'
+        || block.kind === 'agent-reasoning'
+        || block.kind === 'codex-review'
+        || block.kind === 'cli-output'
+    ) {
+        return typeof block.durationMs === 'number' && Number.isFinite(block.durationMs) && block.durationMs >= 0
+            ? block.durationMs
+            : null
+    }
+    return null
+}
 
-    for (const block of blocks) {
-        if (block.kind === 'agent-reasoning') {
-            started.push(block.createdAt)
-            if (typeof block.durationMs === 'number' && Number.isFinite(block.durationMs) && block.durationMs >= 0) {
-                explicitDurations.push(block.durationMs)
-                completed.push(block.createdAt + block.durationMs)
-            }
-            continue
-        }
-
+function addBlockTiming(
+    block: WorkGroupChildBlock,
+    started: number[],
+    completed: number[],
+    explicitDurations: number[],
+    counts: { runningCount: number; pendingCount: number; errorCount: number }
+): void {
+    if (block.kind === 'tool-group') {
         for (const tool of block.tools) {
             const timing = getToolTiming(tool)
             if (timing.startedAt !== null && Number.isFinite(timing.startedAt)) started.push(timing.startedAt)
@@ -104,14 +129,50 @@ export function getWorkGroupTiming(blocks: WorkGroupChildBlock[], now: number) {
             if (tool.durationMs !== undefined && Number.isFinite(tool.durationMs) && tool.durationMs >= 0) {
                 explicitDurations.push(tool.durationMs)
             }
-            if (tool.tool.state === 'running') runningCount += 1
-            if (tool.tool.state === 'pending') pendingCount += 1
-            if (tool.tool.state === 'error') errorCount += 1
+            if (tool.tool.state === 'running') counts.runningCount += 1
+            if (tool.tool.state === 'pending') counts.pendingCount += 1
+            if (tool.tool.state === 'error') counts.errorCount += 1
         }
+        return
+    }
+
+    if (block.kind === 'tool-call') {
+        const timing = getToolTiming(block)
+        if (timing.startedAt !== null && Number.isFinite(timing.startedAt)) started.push(timing.startedAt)
+        if (timing.completedAt !== null && Number.isFinite(timing.completedAt)) completed.push(timing.completedAt)
+        if (block.durationMs !== undefined && Number.isFinite(block.durationMs) && block.durationMs >= 0) {
+            explicitDurations.push(block.durationMs)
+        }
+        if (block.tool.state === 'running') counts.runningCount += 1
+        if (block.tool.state === 'pending') counts.pendingCount += 1
+        if (block.tool.state === 'error') counts.errorCount += 1
+        return
+    }
+
+    started.push(block.createdAt)
+    const duration = getBlockDuration(block)
+    if (duration !== null) {
+        explicitDurations.push(duration)
+        completed.push(block.createdAt + duration)
+    }
+}
+
+export function getWorkGroupTiming(blocks: WorkGroupChildBlock[], now: number) {
+    const started: number[] = []
+    const completed: number[] = []
+    const explicitDurations: number[] = []
+    const counts = {
+        runningCount: 0,
+        pendingCount: 0,
+        errorCount: 0
+    }
+
+    for (const block of blocks) {
+        addBlockTiming(block, started, completed, explicitDurations, counts)
     }
 
     const startedAt = started.length > 0 ? Math.min(...started) : null
-    const active = runningCount > 0 || pendingCount > 0
+    const active = counts.runningCount > 0 || counts.pendingCount > 0
     const completedAt = !active && completed.length > 0 ? Math.max(...completed) : null
     const end = active ? now : completedAt
     const rangeDuration = startedAt !== null && end !== null && end >= startedAt
@@ -123,16 +184,19 @@ export function getWorkGroupTiming(blocks: WorkGroupChildBlock[], now: number) {
         startedAt,
         completedAt,
         durationMs: explicitDuration ?? rangeDuration,
-        running: runningCount > 0,
-        pending: pendingCount > 0,
-        runningCount,
-        pendingCount,
-        errorCount
+        running: counts.runningCount > 0,
+        pending: counts.pendingCount > 0,
+        runningCount: counts.runningCount,
+        pendingCount: counts.pendingCount,
+        errorCount: counts.errorCount
     }
 }
 
 function summarizeWorkGroup(blocks: WorkGroupChildBlock[]): WorkGroupSummary {
     let reasoningCount = 0
+    let answerCount = 0
+    let reviewCount = 0
+    let eventCount = 0
     let toolGroupCount = 0
     let toolCount = 0
     let errorCount = 0
@@ -145,15 +209,48 @@ function summarizeWorkGroup(blocks: WorkGroupChildBlock[]): WorkGroupSummary {
             continue
         }
 
-        toolGroupCount += 1
-        toolCount += block.summary.totalTools
-        errorCount += block.summary.errorCount
-        runningCount += block.summary.runningCount
-        pendingCount += block.summary.pendingCount
+        if (block.kind === 'agent-text') {
+            answerCount += 1
+            continue
+        }
+
+        if (block.kind === 'cli-output') {
+            if (block.source === 'assistant') answerCount += 1
+            continue
+        }
+
+        if (block.kind === 'codex-review') {
+            reviewCount += 1
+            continue
+        }
+
+        if (block.kind === 'agent-event') {
+            eventCount += 1
+            continue
+        }
+
+        if (block.kind === 'tool-group') {
+            toolGroupCount += 1
+            toolCount += block.summary.totalTools
+            errorCount += block.summary.errorCount
+            runningCount += block.summary.runningCount
+            pendingCount += block.summary.pendingCount
+            continue
+        }
+
+        if (block.kind !== 'tool-call') continue
+
+        toolCount += 1
+        if (block.tool.state === 'error') errorCount += 1
+        if (block.tool.state === 'running') runningCount += 1
+        if (block.tool.state === 'pending') pendingCount += 1
     }
 
     return {
         reasoningCount,
+        answerCount,
+        reviewCount,
+        eventCount,
         toolGroupCount,
         toolCount,
         errorCount,
@@ -163,10 +260,10 @@ function summarizeWorkGroup(blocks: WorkGroupChildBlock[]): WorkGroupSummary {
 }
 
 /**
- * 将连续的 reasoning / tool 活动合并为一个顶层工作项。
+ * 将一次 assistant turn 的所有内容合并为一个顶层工作项。
  *
- * Agent 文本、用户消息、review 卡片、权限提示和 milestone 保持在组外，
- * 确保最终答案和操作仍可见，同时压缩冗长的思考 / 工具流水。
+ * 用户消息保持在组外；assistant 文本、思考、工具、review 和事件均收进组内，
+ * 让整轮回复可以像 Codex 一样只占一个折叠行。
  */
 export function buildVisibleWorkGroups(
     blocks: VisibleChatBlock[],
@@ -178,6 +275,11 @@ export function buildVisibleWorkGroups(
 
     for (let index = 0; index < blocks.length; index += 1) {
         const block = blocks[index]!
+        if (isTurnBoundary(block)) {
+            visibleBlocks.push(block)
+            continue
+        }
+
         if (!isWorkGroupChild(block)) {
             visibleBlocks.push(block)
             continue
@@ -192,25 +294,13 @@ export function buildVisibleWorkGroups(
             cursor += 1
         }
 
-        // 单个工具组已经有紧凑折叠；单个 reasoning 仍使用顶层折叠，
-        // 这样可以将完整思考流一次性隐藏。
-        const shouldCreateGroup = children.length > 1 || children.some((child) => child.kind === 'agent-reasoning')
-        if (!shouldCreateGroup) {
-            visibleBlocks.push(...children)
-            index = cursor - 1
-            continue
-        }
-
         const summary = summarizeWorkGroup(children)
         const timing = getWorkGroupTiming(children, Date.now())
         const needsOlderHistory = Boolean(options.hasMoreMessages && visibleBlocks.length === 0)
         const id = createWorkGroupId(children, previousGroups, usedGroupIds)
         usedGroupIds.add(id)
-        const hasUserAfter = blocks.slice(cursor).some((candidate) => (
-            candidate.kind === 'user-text'
-            || (candidate.kind === 'cli-output' && candidate.source === 'user')
-        ))
-        const isLatestWorkGroup = !hasUserAfter && !blocks.slice(cursor).some(isWorkGroupChild)
+        const hasUserAfter = blocks.slice(cursor).some(isTurnBoundary)
+        const isLatestWorkGroup = !hasUserAfter
         const active = timing.running || timing.pending || Boolean(options.isRunning && isLatestWorkGroup)
         const defaultOpen = active
 

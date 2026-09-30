@@ -1009,7 +1009,9 @@ export function HappyThread(props: {
         }
     }, [props.messagesVersion, props.historyVersion, scrollToBottomInstant])
 
-    useEffect(() => {
+    // 在浏览器绘制前同步加载保护。前插渲染期间顶部哨兵可能再次相交；
+    // 被动 effect 会留下一个帧窗口，触发重复请求并干扰滚动锚点恢复。
+    useLayoutEffect(() => {
         isLoadingMoreRef.current = props.isLoadingMoreMessages
         if (props.isLoadingMoreMessages) {
             loadStartedRef.current = true

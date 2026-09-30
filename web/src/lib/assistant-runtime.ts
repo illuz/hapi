@@ -21,6 +21,7 @@ export type HappyChatMessageMetadata = {
     durationMs?: number
     usage?: UsageData
     model?: string | null
+    sourceMessageId?: string
     review?: CodexReview
 }
 
@@ -82,7 +83,8 @@ function toThreadMessageLike(block: VisibleChatBlock): ThreadMessageLike {
                     invokedAt: block.invokedAt,
                     durationMs: block.durationMs,
                     usage: block.usage,
-                    model: block.model
+                    model: block.model,
+                    sourceMessageId: block.sourceMessageId
                 } satisfies HappyChatMessageMetadata
             }
         }
@@ -101,7 +103,8 @@ function toThreadMessageLike(block: VisibleChatBlock): ThreadMessageLike {
                     invokedAt: block.invokedAt,
                     durationMs: block.durationMs,
                     usage: block.usage,
-                    model: block.model
+                    model: block.model,
+                    sourceMessageId: block.sourceMessageId
                 } satisfies HappyChatMessageMetadata
             }
         }

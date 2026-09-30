@@ -266,6 +266,102 @@ describe('reduceTimeline', () => {
         expect(agentTextBlock.model).toBeUndefined()
     })
 
+    it('collapses cumulative reasoning snapshots and keeps the stream identity stable', () => {
+        const makeSnapshot = (rowId: string, text: string): TracedMessage => ({
+            id: rowId,
+            localId: null,
+            createdAt: 1_700_000_000_000,
+            role: 'agent',
+            content: [{
+                type: 'reasoning',
+                text,
+                uuid: rowId,
+                streamId: 'reasoning-stream-1',
+                parentUUID: null
+            }],
+            isSidechain: false
+        } as TracedMessage)
+
+        const first = reduceTimeline([makeSnapshot('row-1', 'partial')], makeContext())
+        const second = reduceTimeline([makeSnapshot('row-2', 'partial extended')], makeContext())
+        const firstBlock = first.blocks.find((block) => block.kind === 'agent-reasoning')
+        const secondBlock = second.blocks.find((block) => block.kind === 'agent-reasoning')
+
+        expect(firstBlock).toMatchObject({ id: 'reasoning-stream-1', text: 'partial' })
+        expect(secondBlock).toMatchObject({ id: 'reasoning-stream-1', text: 'partial extended' })
+    })
+
+    it('does not collapse blank stream ids onto one reasoning block', () => {
+        const makeSnapshot = (rowId: string, streamId: string): TracedMessage => ({
+            id: rowId,
+            localId: null,
+            createdAt: 1_700_000_000_000,
+            role: 'agent',
+            content: [{
+                type: 'reasoning',
+                text: rowId,
+                uuid: rowId,
+                streamId,
+                parentUUID: null
+            }],
+            isSidechain: false
+        } as TracedMessage)
+
+        const separator = makeAgentMessage('answer', {
+            id: 'separator',
+            content: [{ type: 'text', text: 'answer', uuid: 't-1', parentUUID: null }]
+        })
+        const { blocks } = reduceTimeline([
+            makeSnapshot('blank-1', ''),
+            separator,
+            makeSnapshot('blank-2', '   ')
+        ], makeContext())
+        const reasoning = blocks.filter((block) => block.kind === 'agent-reasoning')
+
+        expect(reasoning).toHaveLength(2)
+        expect(reasoning.map((block) => block.id)).toEqual(['blank-1:0', 'blank-2:0'])
+    })
+
+    it('preserves adjacent legacy reasoning rows for presentation-only folding', () => {
+        const first = makeAgentMessage('first thought', {
+            id: 'reasoning-1',
+            content: [{ type: 'reasoning', text: 'first thought', uuid: 'r-1', parentUUID: null }]
+        })
+        const second = makeAgentMessage('second thought', {
+            id: 'reasoning-2',
+            content: [{ type: 'reasoning', text: 'second thought', uuid: 'r-2', parentUUID: null }]
+        })
+
+        const { blocks } = reduceTimeline([first, second], makeContext())
+        const reasoning = blocks.filter((block) => block.kind === 'agent-reasoning')
+
+        expect(reasoning).toHaveLength(2)
+        expect(reasoning[0]).toMatchObject({ id: 'reasoning-1:0', text: 'first thought' })
+        expect(reasoning[1]).toMatchObject({ id: 'reasoning-2:0', text: 'second thought' })
+    })
+
+    it('keeps text snapshots in one block while allowing legacy text rows', () => {
+        const first = makeAgentMessage('partial', {
+            id: 'text-1',
+            content: [{ type: 'text', text: 'partial', uuid: 't-1', streamId: 'text-stream-1', parentUUID: null }]
+        })
+        const second = makeAgentMessage('complete', {
+            id: 'text-2',
+            content: [{ type: 'text', text: 'complete', uuid: 't-2', streamId: 'text-stream-1', parentUUID: null }]
+        })
+        const legacy = makeAgentMessage('legacy', {
+            id: 'text-3',
+            content: [{ type: 'text', text: 'legacy', uuid: 't-3', parentUUID: null }]
+        })
+
+        const { blocks } = reduceTimeline([first, second, legacy], makeContext())
+        const text = blocks.filter((block) => block.kind === 'agent-text')
+
+        expect(text).toHaveLength(2)
+        expect(text[0]).toMatchObject({ id: 'text-stream-1', text: 'complete' })
+        expect(text[1]).toMatchObject({ id: 'text-3:0', text: 'legacy' })
+    })
+
     it('falls back to the last duration-bearing block when targetMessageId resolves to a non-duration block', () => {
         // Regression: the matcher used to take the first id-prefix match and
         // then silently drop the duration when that block was not duration-

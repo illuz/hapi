@@ -485,6 +485,7 @@ export function normalizeAgentRecord(
         if (!data || typeof data.type !== 'string') return null
 
         if (data.type === 'message' && typeof data.message === 'string') {
+            const streamId = asString(data.id)
             const review = parseCodexReviewMessage(data.message)
             if (review) {
                 return {
@@ -503,19 +504,32 @@ export function normalizeAgentRecord(
                 createdAt,
                 role: 'agent',
                 isSidechain: false,
-                content: [{ type: 'text', text: data.message, uuid: messageId, parentUUID: null }],
+                content: [{
+                    type: 'text',
+                    text: data.message,
+                    uuid: messageId,
+                    ...(streamId !== null ? { streamId } : {}),
+                    parentUUID: null
+                }],
                 meta
             }
         }
 
         if (data.type === 'reasoning' && typeof data.message === 'string') {
+            const streamId = asString(data.id)
             return {
                 id: messageId,
                 localId,
                 createdAt,
                 role: 'agent',
                 isSidechain: false,
-                content: [{ type: 'reasoning', text: data.message, uuid: messageId, parentUUID: null }],
+                content: [{
+                    type: 'reasoning',
+                    text: data.message,
+                    uuid: messageId,
+                    ...(streamId !== null ? { streamId } : {}),
+                    parentUUID: null
+                }],
                 meta
             }
         }

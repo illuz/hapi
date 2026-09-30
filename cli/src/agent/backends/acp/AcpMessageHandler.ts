@@ -1,4 +1,5 @@
 import type { AgentMessage, PlanItem } from '@/agent/types';
+import { randomUUID } from 'node:crypto';
 import { asString, isObject } from '@hapi/protocol';
 import { deriveToolNameWithSource, isPlaceholderToolName } from '@/agent/utils';
 import { parseRateLimitText } from '@/agent/rateLimitParser';
@@ -13,6 +14,8 @@ function normalizeStatus(status: unknown): 'pending' | 'in_progress' | 'complete
 }
 
 type DerivedToolName = ReturnType<typeof deriveToolNameWithSource>;
+
+const REASONING_SNAPSHOT_INTERVAL_MS = 250;
 
 /**
  * Extracts _meta.kind from the first diff block in a content array.
@@ -273,6 +276,12 @@ function getSuffixPrefixOverlap(base: string, next: string): number {
 export class AcpMessageHandler {
     private readonly toolCalls = new Map<string, { name: string; input: unknown }>();
     private bufferedText = '';
+    // 使用数组缓冲，避免逐 token 思考流产生 O(N²) 字符串复制。
+    private bufferedReasoning: string[] = [];
+    private reasoningStreamId: string | null = null;
+    private lastReasoningSnapshotAt: number | null = null;
+    private lastReasoningSnapshotText = '';
+    private reasoningSnapshotEmitted = false;
 
     constructor(private readonly onMessage: (message: AgentMessage) => void) {}
 
@@ -289,6 +298,25 @@ export class AcpMessageHandler {
         const text = this.bufferedText;
         this.bufferedText = '';
         this.onMessage({ type: 'text', text });
+    }
+
+    /**
+     * 在可见边界发送一次累积思考快照。
+     * 快照复用同一个 id，让 Web 面板原地更新。
+     */
+    flushReasoning(): void {
+        if (this.bufferedReasoning.length === 0) return;
+        const text = this.bufferedReasoning.join('');
+        const id = this.reasoningSnapshotEmitted ? this.reasoningStreamId ?? undefined : undefined;
+        this.resetReasoningState();
+        if (text.trim().length === 0) return;
+        this.onMessage(id ? { type: 'reasoning', text, id } : { type: 'reasoning', text });
+    }
+
+    /** 在回合或会话边界先刷新思考，再刷新文本。 */
+    drainBuffers(): void {
+        this.flushReasoning();
+        this.flushText();
     }
 
     private appendTextChunk(text: string): void {
@@ -326,10 +354,56 @@ export class AcpMessageHandler {
         this.bufferedText += text;
     }
 
+    private appendReasoningChunk(text: string): void {
+        if (!text) return;
+        this.bufferedReasoning.push(text);
+        if (!this.reasoningStreamId) this.reasoningStreamId = randomUUID();
+        this.emitReasoningSnapshotIfDue();
+    }
+
+    private emitReasoningSnapshotIfDue(): void {
+        if (!this.reasoningStreamId) return;
+
+        const now = Date.now();
+        if (this.lastReasoningSnapshotAt === null) {
+            this.lastReasoningSnapshotAt = now;
+            return;
+        }
+        if (now - this.lastReasoningSnapshotAt < REASONING_SNAPSHOT_INTERVAL_MS) return;
+
+        const text = this.bufferedReasoning.join('');
+        if (text.trim().length === 0 || text === this.lastReasoningSnapshotText) {
+            this.lastReasoningSnapshotAt = now;
+            return;
+        }
+
+        this.lastReasoningSnapshotAt = now;
+        this.lastReasoningSnapshotText = text;
+        this.reasoningSnapshotEmitted = true;
+        this.onMessage({ type: 'reasoning', text, id: this.reasoningStreamId, live: true });
+    }
+
+    private resetReasoningState(): void {
+        this.bufferedReasoning = [];
+        this.reasoningStreamId = null;
+        this.lastReasoningSnapshotAt = null;
+        this.lastReasoningSnapshotText = '';
+        this.reasoningSnapshotEmitted = false;
+    }
+
     handleUpdate(update: unknown): void {
         if (!isObject(update)) return;
         const updateType = asString(update.sessionUpdate);
         if (!updateType) return;
+
+        if (updateType === ACP_SESSION_UPDATE_TYPES.agentThoughtChunk) {
+            // 思考分片合并为节流的累积快照，避免每个 token 都产生一条网络或 UI 记录。
+            const content = update.content;
+            if (isObject(content) && content.type === 'text' && typeof content.text === 'string' && content.text.length > 0) {
+                this.appendReasoningChunk(content.text);
+            }
+            return;
+        }
 
         if (updateType === ACP_SESSION_UPDATE_TYPES.agentMessageChunk) {
             const content = update.content;
@@ -349,6 +423,7 @@ export class AcpMessageHandler {
                     if (rateLimit.suppress) {
                         return;
                     }
+                    this.flushReasoning();
                     this.flushText();
                     this.onMessage(rateLimit.message);
                     return;
@@ -361,34 +436,14 @@ export class AcpMessageHandler {
                     }
                     return;
                 }
+                this.flushReasoning();
                 this.appendTextChunk(text);
             }
             return;
         }
 
-        if (updateType === ACP_SESSION_UPDATE_TYPES.agentThoughtChunk) {
-            // Thought chunks do not participate in intra-turn ordering and
-            // must not flush the text buffer (that would split a live text
-            // segment). Forward as a reasoning message so the web UI can
-            // render the model's thinking in a collapsible block.
-            //
-            // Reasoning messages are emitted inline (never buffered), so they
-            // arrive before any still-pending text segment is flushed. Tests
-            // in this file rely on that contract.
-            //
-            // We deliberately do not reuse `extractTextContent` here: that
-            // helper applies an assistant-audience filter which only makes
-            // sense for regular message chunks. Thought content has no
-            // meaningful audience — a non-assistant audience annotation
-            // should not cause the reasoning to be silently dropped.
-            const content = update.content;
-            if (isObject(content) && content.type === 'text' && typeof content.text === 'string' && content.text.length > 0) {
-                this.onMessage({ type: 'reasoning', text: content.text });
-            }
-            return;
-        }
-
         if (updateType === ACP_SESSION_UPDATE_TYPES.toolCall) {
+            this.flushReasoning();
             // A new tool invocation closes the preceding text segment.
             // Flushing here preserves the arrival order between text and
             // tool lifecycle events without disturbing cumulative dedup
@@ -399,6 +454,7 @@ export class AcpMessageHandler {
         }
 
         if (updateType === ACP_SESSION_UPDATE_TYPES.toolCallUpdate) {
+            this.flushReasoning();
             // Do not flush here: a toolCallUpdate is a lifecycle event on
             // an already-open tool call, not a boundary between text
             // segments. If the agent streams a new text segment while the
@@ -409,6 +465,7 @@ export class AcpMessageHandler {
         }
 
         if (updateType === ACP_SESSION_UPDATE_TYPES.plan) {
+            this.flushReasoning();
             this.flushText();
             const items = normalizePlanEntries(update.entries);
             if (items.length > 0) {

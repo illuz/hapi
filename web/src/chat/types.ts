@@ -79,12 +79,16 @@ export type NormalizedAgentContent =
         type: 'text'
         text: string
         uuid: string
+        /** 累积流式快照的稳定标识。 */
+        streamId?: string
         parentUUID: string | null
     }
     | {
         type: 'reasoning'
         text: string
         uuid: string
+        /** 累积流式快照的稳定标识。 */
+        streamId?: string
         parentUUID: string | null
     }
     | ToolUse
@@ -162,6 +166,7 @@ export type UserTextBlock = {
 export type AgentTextBlock = {
     kind: 'agent-text'
     id: string
+    sourceMessageId?: string
     localId: string | null
     messageUuid?: string
     createdAt: number
@@ -176,6 +181,7 @@ export type AgentTextBlock = {
 export type AgentReasoningBlock = {
     kind: 'agent-reasoning'
     id: string
+    sourceMessageId?: string
     localId: string | null
     messageUuid?: string
     createdAt: number

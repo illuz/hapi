@@ -4,6 +4,13 @@ import { createCliOutputBlock, isCliOutputText, mergeCliOutputBlocks } from '@/c
 import { parseMessageAsEvent } from '@/chat/reducerEvents'
 import { ensureToolBlock, extractTitleFromChangeTitleInput, isChangeTitleToolName, type PermissionEntry } from '@/chat/reducerTools'
 import { isSubagentToolName } from '@/chat/subagentTool'
+import { asString } from '@hapi/protocol'
+
+// 空白标识不代表流，避免多个旧格式或无效消息碰撞。
+function nonBlank(value: unknown): string | null {
+    const raw = asString(value)
+    return raw !== null && raw.trim().length > 0 ? raw : null
+}
 
 export function reduceTimeline(
     messages: TracedMessage[],
@@ -17,6 +24,8 @@ export function reduceTimeline(
 ): { blocks: ChatBlock[]; toolBlocksById: Map<string, ToolCallBlock>; hasReadyEvent: boolean } {
     const blocks: ChatBlock[] = []
     const toolBlocksById = new Map<string, ToolCallBlock>()
+    const textBlocksByStreamId = new Map<string, AgentTextBlock>()
+    const reasoningBlocksByStreamId = new Map<string, AgentReasoningBlock>()
     let hasReadyEvent = false
 
     // Pre-scan: collect UUIDs of system-injected user turns (sidechain
@@ -51,7 +60,11 @@ export function reduceTimeline(
                 let foundIndex = -1
 
                 if (targetId) {
-                    foundIndex = blocks.findLastIndex(b => isDurationTarget(b) && (b.id === targetId || b.id.startsWith(`${targetId}:`)))
+                    foundIndex = blocks.findLastIndex(b => isDurationTarget(b) && (
+                        b.id === targetId
+                        || b.id.startsWith(`${targetId}:`)
+                        || ((b.kind === 'agent-text' || b.kind === 'agent-reasoning') && b.sourceMessageId === targetId)
+                    ))
                     if (foundIndex === -1) {
                         foundIndex = blocks.findLastIndex(b => b.kind === 'tool-call' && b.tool.id === targetId)
                     }
@@ -181,9 +194,26 @@ export function reduceTimeline(
                         }))
                         continue
                     }
-                    blocks.push({
+                    const streamId = nonBlank(c.streamId)
+                    if (streamId) {
+                        const existing = textBlocksByStreamId.get(streamId)
+                        if (existing) {
+                            existing.text = c.text
+                            existing.sourceMessageId = msg.id
+                            existing.messageUuid = c.uuid
+                            existing.usage = msg.usage
+                            existing.model = msg.model
+                            existing.meta = msg.meta
+                            existing.invokedAt = msg.invokedAt
+                            continue
+                        }
+                    }
+
+                    const block: AgentTextBlock = {
                         kind: 'agent-text',
-                        id: `${msg.id}:${idx}`,
+                        // 快照替换消息行时保持渲染标识，避免组件反复挂载。
+                        id: streamId ?? `${msg.id}:${idx}`,
+                        sourceMessageId: msg.id,
                         localId: msg.localId,
                         messageUuid: c.uuid,
                         createdAt: msg.createdAt,
@@ -192,14 +222,33 @@ export function reduceTimeline(
                         model: msg.model,
                         text: c.text,
                         meta: msg.meta
-                    })
+                    }
+                    blocks.push(block)
+                    if (streamId) textBlocksByStreamId.set(streamId, block)
                     continue
                 }
 
                 if (c.type === 'reasoning') {
-                    blocks.push({
+                    const streamId = nonBlank(c.streamId)
+                    if (streamId) {
+                        const existing = reasoningBlocksByStreamId.get(streamId)
+                        if (existing) {
+                            existing.text = c.text
+                            existing.sourceMessageId = msg.id
+                            existing.messageUuid = c.uuid
+                            existing.usage = msg.usage
+                            existing.model = msg.model
+                            existing.meta = msg.meta
+                            existing.invokedAt = msg.invokedAt
+                            continue
+                        }
+                    }
+
+                    const block: AgentReasoningBlock = {
                         kind: 'agent-reasoning',
-                        id: `${msg.id}:${idx}`,
+                        // 流标识负责渲染稳定性，原消息标识保留给 Fork 操作。
+                        id: streamId ?? `${msg.id}:${idx}`,
+                        sourceMessageId: msg.id,
                         localId: msg.localId,
                         messageUuid: c.uuid,
                         createdAt: msg.createdAt,
@@ -208,7 +257,9 @@ export function reduceTimeline(
                         model: msg.model,
                         text: c.text,
                         meta: msg.meta
-                    })
+                    }
+                    blocks.push(block)
+                    if (streamId) reasoningBlocksByStreamId.set(streamId, block)
                     continue
                 }
 

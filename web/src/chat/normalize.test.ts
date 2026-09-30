@@ -105,6 +105,27 @@ describe('normalizeDecryptedMessage', () => {
         expect(firstBlock.text).toContain('"foo": "bar"')
     })
 
+    it('preserves Codex message and reasoning stream ids', () => {
+        const text = normalizeDecryptedMessage(makeMessage({
+            role: 'agent',
+            content: {
+                type: 'codex',
+                data: { type: 'message', id: 'text-stream-1', message: 'partial answer' }
+            }
+        }))
+        const reasoning = normalizeDecryptedMessage(makeMessage({
+            id: 'reasoning-row-1',
+            role: 'agent',
+            content: {
+                type: 'codex',
+                data: { type: 'reasoning', id: 'reasoning-stream-1', message: 'thinking' }
+            }
+        }))
+
+        expect(text).toMatchObject({ content: [{ type: 'text', streamId: 'text-stream-1' }] })
+        expect(reasoning).toMatchObject({ content: [{ type: 'reasoning', streamId: 'reasoning-stream-1' }] })
+    })
+
     it('normalizes <task-notification> user output as sidechain (event extracted by reducer)', () => {
         const message = makeMessage({
             role: 'agent',

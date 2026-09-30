@@ -658,7 +658,7 @@ describe('AcpMessageHandler', () => {
         expect((messages[0] as { text: string }).text).toMatch(/^Claude AI usage limit warning\|/);
     });
 
-    it('forwards agent_thought_chunk as a reasoning message', () => {
+    it('forwards agent_thought_chunk as a reasoning message after flush', () => {
         const messages: AgentMessage[] = [];
         const handler = new AcpMessageHandler((message) => messages.push(message));
 
@@ -667,6 +667,9 @@ describe('AcpMessageHandler', () => {
             content: { type: 'text', text: 'thinking about the problem' }
         });
 
+        // 分片先缓冲，不在收到时立即发送。
+        expect(messages).toHaveLength(0);
+        handler.flushReasoning();
         expect(messages).toHaveLength(1);
         expect(messages[0]).toEqual({ type: 'reasoning', text: 'thinking about the problem' });
     });
@@ -699,14 +702,13 @@ describe('AcpMessageHandler', () => {
 
         handler.flushText();
 
-        // Both messages are delivered intact with no loss. Reasoning is
-        // emitted inline (see AcpMessageHandler) so it precedes the
-        // flushed text segment — this is an intentional contract to let
-        // thoughts and text interleave without splitting a live segment.
+        // 思考分片不能刷新正在生成的文本缓冲，否则一段文本会被拆成两条消息。
+        handler.flushReasoning();
+        handler.flushText();
+
         expect(messages).toHaveLength(2);
         expect(messages).toContainEqual({ type: 'reasoning', text: 'mid-stream thought' });
         expect(messages).toContainEqual({ type: 'text', text: 'partial answer' });
-        expect(messages[0]).toEqual({ type: 'reasoning', text: 'mid-stream thought' });
     });
 
     it('does not drop thought chunks annotated with a non-assistant audience', () => {
@@ -721,32 +723,32 @@ describe('AcpMessageHandler', () => {
                 annotations: { audience: ['user'] }
             }
         });
+        handler.flushReasoning();
 
         expect(messages).toHaveLength(1);
         expect(messages[0]).toEqual({ type: 'reasoning', text: 'private reasoning' });
     });
 
-    it('forwards sequential thought chunks in arrival order as separate reasoning messages', () => {
+    it('coalesces sequential thought chunks into a single reasoning message', () => {
         const messages: AgentMessage[] = [];
         const handler = new AcpMessageHandler((message) => messages.push(message));
 
         handler.handleUpdate({
             sessionUpdate: ACP_SESSION_UPDATE_TYPES.agentThoughtChunk,
-            content: { type: 'text', text: 'first thought' }
+            content: { type: 'text', text: 'first thought ' }
         });
         handler.handleUpdate({
             sessionUpdate: ACP_SESSION_UPDATE_TYPES.agentThoughtChunk,
-            content: { type: 'text', text: 'second thought' }
+            content: { type: 'text', text: 'second thought ' }
         });
         handler.handleUpdate({
             sessionUpdate: ACP_SESSION_UPDATE_TYPES.agentThoughtChunk,
             content: { type: 'text', text: 'third thought' }
         });
+        handler.flushReasoning();
 
         expect(messages).toEqual([
-            { type: 'reasoning', text: 'first thought' },
-            { type: 'reasoning', text: 'second thought' },
-            { type: 'reasoning', text: 'third thought' }
+            { type: 'reasoning', text: 'first thought second thought third thought' }
         ]);
     });
 

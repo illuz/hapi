@@ -58,7 +58,10 @@ export function HappyAssistantMessage() {
         setShowMetadata((open) => !open)
     }, [])
     const messageId = useAssistantState(({ message }) => message.id)
-    const forkMessageId = messageId.replace(/^[^:]+:/, '').split(':', 1)[0] ?? messageId
+    const forkMessageId = useAssistantState(({ message }) => {
+        const custom = message.metadata.custom as Partial<HappyChatMessageMetadata> | undefined
+        return custom?.sourceMessageId ?? message.id.replace(/^[^:]+:/, '').split(':', 1)[0] ?? message.id
+    })
     const isCliOutput = useAssistantState(({ message }) => {
         const custom = message.metadata.custom as Partial<HappyChatMessageMetadata> | undefined
         return custom?.kind === 'cli-output'

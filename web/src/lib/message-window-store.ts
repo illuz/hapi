@@ -23,8 +23,8 @@ export type MessageWindowState = {
 
 export const VISIBLE_WINDOW_SIZE = 400
 export const HISTORY_WINDOW_SIZE = 600
-/** Keep first paint cheap; older rows remain available through pagination. */
-export const INITIAL_PAGE_SIZE = 20
+/** 首屏加载足够内容，同时避免承担完整历史页的成本。 */
+export const INITIAL_PAGE_SIZE = 100
 const AGENT_RUN_WINDOW_SIZE = 800
 const OLDER_LOAD_WINDOW_SIZE = 800
 const PAGE_SIZE = 200

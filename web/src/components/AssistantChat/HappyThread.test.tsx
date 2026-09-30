@@ -7,6 +7,7 @@ import {
     captureScrollAnchor,
     findAdjacentConversationItem,
     getScrollIntent,
+    isViewportCoverageNeeded,
     restoreScrollAnchor,
     shouldCancelInitialScrollSettling,
 } from '@/components/AssistantChat/HappyThread'
@@ -167,6 +168,24 @@ describe('scroll anchor helpers', () => {
             isScrollingUp: false
         })
         expect(shouldCancelInitialScrollSettling(intent)).toBe(false)
+    })
+
+    it('requests more history when the top sentinel remains near the viewport', () => {
+        expect(isViewportCoverageNeeded({
+            viewportTop: 100,
+            viewportBottom: 600,
+            sentinelTop: 90,
+            sentinelBottom: 91
+        })).toBe(true)
+    })
+
+    it('does not request more history when the viewport has enough content', () => {
+        expect(isViewportCoverageNeeded({
+            viewportTop: 100,
+            viewportBottom: 600,
+            sentinelTop: -500,
+            sentinelBottom: -499
+        })).toBe(false)
     })
 
     it('restores the captured message to the same viewport offset', () => {

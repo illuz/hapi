@@ -33,6 +33,7 @@ const AUTO_SCROLL_RESUME_THRESHOLD_PX = 120
 const MANUAL_SCROLL_EPSILON_PX = 1
 const INITIAL_SCROLL_SETTLE_MS = 1800
 const INITIAL_SCROLL_SETTLE_DELAYS_MS = [0, 16, 50, 120, 250, 500, 900, 1400, 1800] as const
+const HISTORY_PRELOAD_MARGIN_PX = 200
 const CONVERSATION_NAVIGATION_EDGE_TOLERANCE_PX = 20
 const CONVERSATION_NAVIGATION_LOAD_ATTEMPTS = 20
 const CONVERSATION_NAVIGATION_SETTLE_DELAY_MS = 50
@@ -61,6 +62,18 @@ export function getScrollIntent(params: {
 
 export function shouldCancelInitialScrollSettling(intent: ScrollIntent): boolean {
     return intent.isScrollingUp && intent.distanceFromBottom > MANUAL_SCROLL_EPSILON_PX
+}
+
+export function isViewportCoverageNeeded(params: {
+    viewportTop: number
+    viewportBottom: number
+    sentinelTop: number
+    sentinelBottom: number
+    marginPx?: number
+}): boolean {
+    const marginPx = params.marginPx ?? HISTORY_PRELOAD_MARGIN_PX
+    return params.sentinelBottom > params.viewportTop - marginPx
+        && params.sentinelTop < params.viewportBottom + marginPx
 }
 
 export function captureScrollAnchor(viewport: HTMLElement): ScrollAnchor | null {
@@ -513,12 +526,48 @@ export function HappyThread(props: {
         return initialScrollSessionRef.current === sessionIdRef.current && Date.now() < initialScrollDeadlineRef.current
     }, [])
 
+    const needsViewportCoverage = useCallback(() => {
+        const viewport = viewportRef.current
+        const sentinel = topSentinelRef.current
+        if (!viewport || !sentinel) {
+            return false
+        }
+        const viewportRect = viewport.getBoundingClientRect()
+        const sentinelRect = sentinel.getBoundingClientRect()
+        return isViewportCoverageNeeded({
+            viewportTop: viewportRect.top,
+            viewportBottom: viewportRect.bottom,
+            sentinelTop: sentinelRect.top,
+            sentinelBottom: sentinelRect.bottom
+        })
+    }, [])
+
     const clearInitialScrollTimers = useCallback(() => {
         for (const timer of initialScrollTimersRef.current) {
             window.clearTimeout(timer)
         }
         initialScrollTimersRef.current = []
     }, [])
+
+    const scheduleInitialHistoryFill = useCallback(() => {
+        const delay = Math.max(0, initialScrollDeadlineRef.current - Date.now()) + 16
+        const timer = window.setTimeout(() => {
+            if (
+                initialScrollSessionRef.current !== sessionIdRef.current
+                || !autoScrollEnabledRef.current
+                || pendingScrollRef.current
+                || !hasMoreMessagesRef.current
+                || isLoadingMessagesRef.current
+                || isLoadingMoreRef.current
+            ) {
+                return
+            }
+            if (needsViewportCoverage()) {
+                handleLoadMoreRef.current()
+            }
+        }, delay)
+        initialScrollTimersRef.current.push(timer)
+    }, [needsViewportCoverage])
 
     const requestLatestWhileAtBottom = useCallback((force = false) => {
         const now = Date.now()
@@ -744,6 +793,7 @@ export function HappyThread(props: {
             }
             scrollToBottomInstant()
         }, delay))
+        scheduleInitialHistoryFill()
     }, [
         props.sessionId,
         props.isLoadingMessages,
@@ -751,7 +801,8 @@ export function HappyThread(props: {
         props.messagesVersion,
         scrollToBottomInstant,
         requestLatestWhileAtBottom,
-        clearInitialScrollTimers
+        clearInitialScrollTimers,
+        scheduleInitialHistoryFill
     ])
 
     useEffect(() => {
@@ -964,7 +1015,7 @@ export function HappyThread(props: {
             },
             {
                 root: viewport,
-                rootMargin: '200px 0px 0px 0px'
+                rootMargin: `${HISTORY_PRELOAD_MARGIN_PX}px 0px 0px 0px`
             }
         )
 

@@ -287,7 +287,7 @@ describe('incremental tail synchronization', () => {
         const api = { getMessages } as unknown as ApiClient
 
         await syncTailMessages(api, SESSION_ID)
-        expect(getMessages).toHaveBeenCalledWith(SESSION_ID, { limit: 20 })
+        expect(getMessages).toHaveBeenCalledWith(SESSION_ID, { limit: 100 })
         expect(getMessageWindowState(SESSION_ID).messages.map((message) => message.id)).toEqual(['tail-1', 'tail-2'])
 
         await syncTailMessages(api, SESSION_ID)

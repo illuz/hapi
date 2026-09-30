@@ -100,7 +100,7 @@ open={props.group.defaultOpen || isLive}
 
 ## 7. P0–P2 实施结果（2026-09-30）
 
-- **P0**：终端工具卡默认 `compact`，完整输出仅在详情弹窗中展示；移除工具组运行中强制展开；Reasoning 与 Codex exploration 折叠偏好写入 `localStorage`，并支持跨标签页同步。
+- **P0**：终端工具卡默认 `compact`，完整输出仅在详情弹窗中展示；移除工具组运行中强制展开，并将单个非交互工具也纳入默认收起的工具组；计划提案正文改为点击详情查看；Reasoning 与 Codex exploration 默认折叠，偏好写入 `localStorage` 并支持跨标签页同步。
 - **P1**：新增 `codexCommandPresentation`，CLI app-server converter 保留 `command_actions`、`command_source`、`aggregated_output`、`duration_ms`；工具组拆为摘要卡、紧凑行和详情弹窗，Codex 读取/搜索可按单次调用折叠。
 - **P2**：工具组通过 `HappyThread` 现有滚动锚点加载器补齐最老历史，增加 `loaded` / `transient-stop` / `terminal-stop` / `failed` 结果，避免 Tail Sync 重入；工具组 ID 通过首尾工具重叠保持稳定，已完成聚合工具使用完成哨兵避免被 assistant-ui 误判为 pending。
 - **Hub**：无需新增接口或数据库字段。Hub 当前按 `unknown` 内容透明保存和广播 CLI 工具事件，新增 Codex 字段沿现有 `message` 通道直通 Web。

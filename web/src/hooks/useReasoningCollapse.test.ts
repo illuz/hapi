@@ -7,12 +7,12 @@ const KEY = 'hapi-reasoning-collapsed'
 describe('useReasoningCollapse', () => {
     beforeEach(() => window.localStorage.clear())
 
-    it('defaults to expanded and persists a collapsed preference', () => {
+    it('defaults to collapsed and persists the preference', () => {
         expect(getInitialReasoningCollapsed()).toBe(DEFAULT_REASONING_COLLAPSED)
         const { result } = renderHook(() => useReasoningCollapse())
-        act(() => result.current.setReasoningCollapsed(true))
-        expect(result.current.reasoningCollapsed).toBe(true)
-        expect(window.localStorage.getItem(KEY)).toBe('true')
+        act(() => result.current.setReasoningCollapsed(false))
+        expect(result.current.reasoningCollapsed).toBe(false)
+        expect(window.localStorage.getItem(KEY)).toBe('false')
     })
 
     it('shares storage updates across hook instances', () => {

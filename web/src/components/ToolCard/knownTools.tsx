@@ -350,12 +350,12 @@ export const knownTools: Record<string, {
     ExitPlanMode: {
         icon: () => <ClipboardIcon className={DEFAULT_ICON_CLASS} />,
         title: () => 'Plan proposal',
-        minimal: false
+        minimal: true
     },
     exit_plan_mode: {
         icon: () => <ClipboardIcon className={DEFAULT_ICON_CLASS} />,
         title: () => 'Plan proposal',
-        minimal: false
+        minimal: true
     },
     AskUserQuestion: {
         icon: () => <QuestionIcon className={DEFAULT_ICON_CLASS} />,

@@ -96,6 +96,7 @@ export function ToolGroupCard(props: { block: ToolGroupBlock; metadata: SessionM
     const [historyExhausted, setHistoryExhausted] = useState(false)
     const hydrationRunRef = useRef(0)
     const timing = getToolGroupTiming(props.block.tools, now)
+    const isSingleTool = props.block.tools.length === 1
 
     useEffect(() => {
         setOpen(props.block.defaultOpen)
@@ -149,7 +150,9 @@ export function ToolGroupCard(props: { block: ToolGroupBlock; metadata: SessionM
 
     const selectedTool = props.block.tools.find((tool) => tool.id === selectedToolId) ?? null
     const title = formatGroupedHeaderTitle(props.block, t)
-    const subtitle = props.block.presentationMode === 'codex-exploration' ? null : formatGroupedHeaderSubtitle(props.block, t)
+    const subtitle = isSingleTool || props.block.presentationMode === 'codex-exploration'
+        ? null
+        : formatGroupedHeaderSubtitle(props.block, t)
 
     return (
         <Card className="overflow-hidden rounded-[20px] bg-[var(--app-tool-group-bg)] shadow-none" data-tool-group="true">
@@ -158,7 +161,7 @@ export function ToolGroupCard(props: { block: ToolGroupBlock; metadata: SessionM
                     <div className="flex items-center gap-2">
                         <span className={cn('text-[var(--app-hint)] transition-transform', open ? 'rotate-90' : null)}>›</span>
                         <CardTitle className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--app-fg)]">{title}</CardTitle>
-                        <span className="shrink-0 text-xs text-[var(--app-hint)]">{props.block.summary.totalTools}</span>
+                        {!isSingleTool ? <span className="shrink-0 text-xs text-[var(--app-hint)]">{props.block.summary.totalTools}</span> : null}
                         {timing.running ? <span className="shrink-0 text-[var(--app-link)]"><ToolStatusIcon state="running" /></span> : null}
                         {props.block.summary.pendingCount > 0 ? <span className="shrink-0 text-xs text-amber-700">{t('toolGroup.badge.pending', { n: props.block.summary.pendingCount })}</span> : null}
                         {props.block.summary.errorCount > 0 ? <span className="shrink-0 text-xs text-red-600">{t('toolGroup.errors', { n: props.block.summary.errorCount })}</span> : null}

@@ -296,11 +296,6 @@ export function buildVisibleChatBlocks(
             cursor += 1
         }
 
-        if (tools.length < 2 && groupingFamily !== 'codex-exploration') {
-            visibleBlocks.push(block)
-            continue
-        }
-
         const startsAtOldestVisibleBoundary = visibleBlocks.length === 0
         const needsOlderHistory = Boolean(options.hasMoreMessages && startsAtOldestVisibleBoundary)
         const previousBlock = visibleBlocks.at(-1)

@@ -72,3 +72,18 @@ describe('getToolPresentation — unknown tool semantic title + subtitle dedup',
         expect(presentation.subtitle).toBeNull()
     })
 })
+
+describe('compact tool presentation', () => {
+    it('keeps plan proposals behind the detail dialog', () => {
+        const presentation = getToolPresentation({
+            toolName: 'ExitPlanMode',
+            input: { plan: '# Plan\n\n1. Reduce timeline noise' },
+            result: null,
+            childrenCount: 0,
+            description: null,
+            metadata: null
+        })
+
+        expect(presentation.minimal).toBe(true)
+    })
+})

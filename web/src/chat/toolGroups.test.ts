@@ -78,6 +78,21 @@ describe('tool groups', () => {
         expect(expanded[0]?.kind === 'tool-group' && expanded[0].defaultOpen).toBe(true)
     })
 
+    it('collapses a single non-interactive tool into a compact group', () => {
+        const toolCall = tool('single-edit', 'CodexDiff', {
+            input: { unified_diff: 'diff --git a/a.ts b/a.ts\n+const value = 1\n' }
+        })
+
+        const result = buildVisibleChatBlocks([toolCall])
+
+        expect(result).toHaveLength(1)
+        expect(result[0]?.kind).toBe('tool-group')
+        if (result[0]?.kind === 'tool-group') {
+            expect(result[0].tools).toEqual([toolCall])
+            expect(result[0].defaultOpen).toBe(false)
+        }
+    })
+
     it('does not group Codex user-shell exploration commands', () => {
         const read = tool('codex-user-read', 'CodexBash', {
             input: {

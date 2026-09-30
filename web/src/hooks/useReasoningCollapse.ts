@@ -1,6 +1,6 @@
 import { useCallback, useSyncExternalStore } from 'react'
 
-export const DEFAULT_REASONING_COLLAPSED = false
+export const DEFAULT_REASONING_COLLAPSED = true
 const STORAGE_KEY = 'hapi-reasoning-collapsed'
 
 function isBrowser(): boolean {

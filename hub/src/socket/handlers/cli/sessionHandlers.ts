@@ -1,4 +1,5 @@
 import type { ClientToServerEvents } from '@hapi/protocol'
+import { getReasoningStreamId } from '@hapi/protocol/messages'
 import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
 import type { CodexCollaborationMode, PermissionMode } from '@hapi/protocol/types'
@@ -97,6 +98,10 @@ export function registerSessionHandlers(socket: CliSocketWithData, deps: Session
         const session = sessionAccess.value
 
         const msg = store.messages.addMessage(sid, content, localId)
+        const reasoningStreamId = getReasoningStreamId(content)
+        if (reasoningStreamId) {
+            store.messages.deleteLiveReasoningSnapshots(sid, reasoningStreamId, msg.id)
+        }
         if (shouldRecordSessionActivity(content)) {
             onSessionActivity?.(sid, msg.createdAt)
         }

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test'
+import { getReasoningStreamId } from '@hapi/protocol/messages'
 import { Store } from './index'
 
 function makeStore(): Store {
@@ -313,5 +314,67 @@ describe('incremental display-position storage', () => {
         expect(store.messages.getMessageEpoch(session.id)).toBe(0)
         expect(store.messages.deleteQueuedMessageById(session.id, message.id)).toBe(true)
         expect(store.messages.getMessageEpoch(session.id)).toBe(1)
+    })
+})
+
+describe('reasoning snapshot cleanup', () => {
+    function makeReasoningMessage(streamId: string, text: string, live = true) {
+        return {
+            role: 'agent',
+            content: {
+                type: 'codex',
+                data: {
+                    type: 'reasoning',
+                    message: text,
+                    id: streamId,
+                    ...(live ? { live: true } : {})
+                }
+            }
+        }
+    }
+
+    it('keeps only the newest live snapshot for a stream', () => {
+        const store = makeStore()
+        const session = makeSession(store, 'reasoning-cleanup-live')
+
+        const first = store.messages.addMessage(session.id, makeReasoningMessage('stream-1', 'first'))
+        expect(store.messages.deleteLiveReasoningSnapshots(session.id, 'stream-1', first.id)).toBe(0)
+
+        const second = store.messages.addMessage(session.id, makeReasoningMessage('stream-1', 'second'))
+        expect(store.messages.deleteLiveReasoningSnapshots(session.id, 'stream-1', second.id)).toBe(1)
+
+        const third = store.messages.addMessage(session.id, makeReasoningMessage('stream-1', 'third'))
+        expect(store.messages.deleteLiveReasoningSnapshots(session.id, 'stream-1', third.id)).toBe(1)
+
+        const messages = store.messages.getMessages(session.id)
+        expect(messages).toHaveLength(1)
+        expect(messages[0]?.id).toBe(third.id)
+        expect(getReasoningStreamId(messages[0]?.content)).toBe('stream-1')
+    })
+
+    it('removes live snapshots when the settled reasoning message arrives', () => {
+        const store = makeStore()
+        const session = makeSession(store, 'reasoning-cleanup-settled')
+
+        store.messages.addMessage(session.id, makeReasoningMessage('stream-1', 'live-1'))
+        store.messages.addMessage(session.id, makeReasoningMessage('stream-1', 'live-2'))
+        const settled = store.messages.addMessage(session.id, makeReasoningMessage('stream-1', 'done', false))
+
+        expect(store.messages.deleteLiveReasoningSnapshots(session.id, 'stream-1', settled.id)).toBe(2)
+        expect(store.messages.getMessages(session.id).map((message) => message.id)).toEqual([settled.id])
+    })
+
+    it('does not remove another stream or another session', () => {
+        const store = makeStore()
+        const session = makeSession(store, 'reasoning-cleanup-isolation')
+        const otherSession = makeSession(store, 'reasoning-cleanup-other-session')
+
+        const otherStream = store.messages.addMessage(session.id, makeReasoningMessage('stream-2', 'other'))
+        const otherSessionMessage = store.messages.addMessage(otherSession.id, makeReasoningMessage('stream-1', 'other-session'))
+        const current = store.messages.addMessage(session.id, makeReasoningMessage('stream-1', 'current'))
+
+        expect(store.messages.deleteLiveReasoningSnapshots(session.id, 'stream-1', current.id)).toBe(0)
+        expect(store.messages.getMessages(session.id).map((message) => message.id)).toEqual([otherStream.id, current.id])
+        expect(store.messages.getMessages(otherSession.id).map((message) => message.id)).toEqual([otherSessionMessage.id])
     })
 })

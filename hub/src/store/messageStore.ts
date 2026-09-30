@@ -1,7 +1,7 @@
 import type { Database } from 'bun:sqlite'
 
 import type { StoredMessage } from './types'
-import { addMessage, cancelQueuedMessage, copySessionMessages, deleteQueuedMessageById, lookupQueuedMessage, getMaxSeq, getMessages, getMessagesAfter, getMessagesSince, getMessagesByPosition, getMessagesAfterPosition, getNewestMessagePosition, getMessageEpoch, bumpMessageEpoch, getMessageByIdOrLocalId, getLocalMessageStates, getUninvokedLocalMessages, getUserTurnMessages, markMessagesInvoked, mergeSessionMessages, truncateMessagesFromLocalId, type CancelQueuedMessageResult, type LocalMessageState, type LookupQueuedMessageResult, type MessagePosition } from './messages'
+import { addMessage, cancelQueuedMessage, copySessionMessages, deleteLiveReasoningSnapshots, deleteQueuedMessageById, lookupQueuedMessage, getMaxSeq, getMessages, getMessagesAfter, getMessagesSince, getMessagesByPosition, getMessagesAfterPosition, getNewestMessagePosition, getMessageEpoch, bumpMessageEpoch, getMessageByIdOrLocalId, getLocalMessageStates, getUninvokedLocalMessages, getUserTurnMessages, markMessagesInvoked, mergeSessionMessages, truncateMessagesFromLocalId, type CancelQueuedMessageResult, type LocalMessageState, type LookupQueuedMessageResult, type MessagePosition } from './messages'
 
 export class MessageStore {
     private readonly db: Database
@@ -12,6 +12,10 @@ export class MessageStore {
 
     addMessage(sessionId: string, content: unknown, localId?: string): StoredMessage {
         return addMessage(this.db, sessionId, content, localId)
+    }
+
+    deleteLiveReasoningSnapshots(sessionId: string, streamId: string, keepMessageId?: string): number {
+        return deleteLiveReasoningSnapshots(this.db, sessionId, streamId, keepMessageId)
     }
 
     getMessages(sessionId: string, limit: number = 200, beforeSeq?: number): StoredMessage[] {

@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
-import { unwrapRoleWrappedRecordEnvelope } from '@hapi/protocol/messages'
+import { getLiveReasoningStreamId, unwrapRoleWrappedRecordEnvelope } from '@hapi/protocol/messages'
 
 import type { StoredMessage } from './types'
 import { safeJsonParse } from './json'
@@ -210,6 +210,35 @@ export function getMessagesAfterPosition(
         limit: safeLimit
     }) as DbMessageRow[]
     return rows.map(toStoredMessage)
+}
+
+const REASONING_SNAPSHOT_LOOKBACK = 50
+
+/** 删除同一思考流的可替换快照，保留刚写入的记录。 */
+export function deleteLiveReasoningSnapshots(
+    db: Database,
+    sessionId: string,
+    streamId: string,
+    keepMessageId?: string
+): number {
+    const rows = db.prepare(`
+        SELECT id, content FROM messages
+        WHERE session_id = ?
+        ORDER BY seq DESC
+        LIMIT ?
+    `).all(sessionId, REASONING_SNAPSHOT_LOOKBACK) as Array<Pick<DbMessageRow, 'id' | 'content'>>
+
+    const staleIds = rows
+        .filter((row) => row.id !== keepMessageId
+            && getLiveReasoningStreamId(safeJsonParse(row.content)) === streamId)
+        .map((row) => row.id)
+    if (staleIds.length === 0) return 0
+
+    const placeholders = staleIds.map(() => '?').join(', ')
+    const result = db.prepare(
+        `DELETE FROM messages WHERE session_id = ? AND id IN (${placeholders})`
+    ).run(sessionId, ...staleIds)
+    return Number(result.changes)
 }
 
 export function getNewestMessagePosition(db: Database, sessionId: string): MessagePosition | null {

@@ -1,3 +1,4 @@
+import { getReasoningStreamId } from '@hapi/protocol/messages'
 import type { ApiClient } from '@/api/client'
 import { normalizeDecryptedMessage } from '@/chat/normalize'
 import type { DecryptedMessage, MessageStatus, MessagesResponse } from '@/types/api'
@@ -23,8 +24,8 @@ export type MessageWindowState = {
 
 export const VISIBLE_WINDOW_SIZE = 400
 export const HISTORY_WINDOW_SIZE = 600
-/** 首屏加载足够内容，同时避免承担完整历史页的成本。 */
-export const INITIAL_PAGE_SIZE = 100
+/** 首屏与历史分页统一为 200 条，避免折叠后首屏内容不足。 */
+export const INITIAL_PAGE_SIZE = 200
 const AGENT_RUN_WINDOW_SIZE = 800
 const OLDER_LOAD_WINDOW_SIZE = 800
 const PAGE_SIZE = 200
@@ -440,11 +441,40 @@ function isCodexAgentRunMessage(message: DecryptedMessage): boolean {
     return type === 'agent-run-start' || type === 'agent-run-update' || type === 'agent-run-trace'
 }
 
+/** 将已有历史中的同一思考流压缩为最新快照，避免重复记录挤占窗口。 */
+function dropSupersededReasoningSnapshots(messages: DecryptedMessage[]): DecryptedMessage[] {
+    const newestByStream = new Map<string, DecryptedMessage>()
+    for (const message of messages) {
+        const streamId = getReasoningStreamId(message.content)
+        if (streamId === null) continue
+        const incumbent = newestByStream.get(streamId)
+        if (!incumbent) {
+            newestByStream.set(streamId, message)
+            continue
+        }
+
+        const challengerPosition = messagePosition(message)
+        const incumbentPosition = messagePosition(incumbent)
+        const challengerIsNewer = challengerPosition && incumbentPosition
+            ? comparePosition(challengerPosition, incumbentPosition) >= 0
+            : true
+        if (challengerIsNewer) newestByStream.set(streamId, message)
+    }
+    if (newestByStream.size === 0) return messages
+
+    const survivors = new Set([...newestByStream.values()].map((message) => message.id))
+    return messages.filter((message) => {
+        const streamId = getReasoningStreamId(message.content)
+        return streamId === null || survivors.has(message.id)
+    })
+}
+
 function trimPreservingQueued(
-    messages: DecryptedMessage[],
+    incoming: DecryptedMessage[],
     regularLimit: number,
     mode: 'append' | 'prepend'
 ): { kept: DecryptedMessage[]; dropped: DecryptedMessage[] } {
+    const messages = dropSupersededReasoningSnapshots(incoming)
     const queued = messages.filter(isQueuedForInvocation)
     const queuedIds = new Set(queued.map((message) => message.id))
     const nonQueued = messages.filter((message) => !queuedIds.has(message.id))

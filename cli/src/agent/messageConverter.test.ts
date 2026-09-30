@@ -49,4 +49,30 @@ describe('convertAgentMessage', () => {
             id: 'reasoning-stream-1'
         });
     });
+
+    it('marks live reasoning snapshots on the wire', () => {
+        const converted = convertAgentMessage({
+            type: 'reasoning',
+            text: 'thinking',
+            id: 'reasoning-stream-1',
+            live: true
+        });
+
+        expect(converted).toEqual({
+            type: 'reasoning',
+            message: 'thinking',
+            id: 'reasoning-stream-1',
+            live: true
+        });
+    });
+
+    it('omits the live marker from settled reasoning payloads', () => {
+        const converted = convertAgentMessage({
+            type: 'reasoning',
+            text: 'thinking',
+            id: 'reasoning-stream-1'
+        });
+
+        expect(converted !== null && 'live' in converted).toBe(false);
+    });
 });

@@ -287,7 +287,7 @@ describe('incremental tail synchronization', () => {
         const api = { getMessages } as unknown as ApiClient
 
         await syncTailMessages(api, SESSION_ID)
-        expect(getMessages).toHaveBeenCalledWith(SESSION_ID, { limit: 100 })
+        expect(getMessages).toHaveBeenCalledWith(SESSION_ID, { limit: 200 })
         expect(getMessageWindowState(SESSION_ID).messages.map((message) => message.id)).toEqual(['tail-1', 'tail-2'])
 
         await syncTailMessages(api, SESSION_ID)
@@ -336,5 +336,66 @@ describe('incremental tail synchronization', () => {
         const state = getMessageWindowState(SESSION_ID)
         expect(state.messages.map((message) => message.id)).toEqual(['tail-new'])
         expect(state.warning).toBeNull()
+    })
+})
+
+describe('reasoning snapshot window compaction', () => {
+    const SESSION_ID = 'session-reasoning-compaction-test'
+
+    afterEach(() => {
+        clearMessageWindow(SESSION_ID)
+    })
+
+    function makeReasoningMessage(id: string, streamId: string, seq: number, live = true): DecryptedMessage {
+        return {
+            id,
+            seq,
+            localId: null,
+            createdAt: seq,
+            invokedAt: seq,
+            content: {
+                role: 'agent',
+                content: {
+                    type: 'codex',
+                    data: {
+                        type: 'reasoning',
+                        message: id,
+                        id: streamId,
+                        ...(live ? { live: true } : {})
+                    }
+                }
+            }
+        }
+    }
+
+    it('compacts reasoning snapshots before they consume the visible window budget', () => {
+        const conversation = Array.from({ length: 50 }, (_, index) => makeUserMessage({
+            id: `conversation-${index}`,
+            seq: index + 1,
+            createdAt: index + 1
+        }))
+        const snapshots = Array.from({ length: 400 }, (_, index) => makeReasoningMessage(
+            `snapshot-${index}`,
+            'stream-1',
+            index + 51
+        ))
+
+        ingestIncomingMessages(SESSION_ID, [...conversation, ...snapshots])
+
+        const messages = getMessageWindowState(SESSION_ID).messages
+        expect(messages).toHaveLength(51)
+        expect(messages.filter((message) => message.id.startsWith('conversation-'))).toHaveLength(50)
+        expect(messages.filter((message) => message.id.startsWith('snapshot-')).map((message) => message.id)).toEqual(['snapshot-399'])
+    })
+
+    it('replaces a live snapshot with the settled message and keeps other streams', () => {
+        const live = makeReasoningMessage('live', 'stream-1', 1)
+        const other = makeReasoningMessage('other', 'stream-2', 2)
+        const settled = makeReasoningMessage('settled', 'stream-1', 3, false)
+
+        ingestIncomingMessages(SESSION_ID, [live, other])
+        ingestIncomingMessages(SESSION_ID, [settled])
+
+        expect(getMessageWindowState(SESSION_ID).messages.map((message) => message.id)).toEqual(['other', 'settled'])
     })
 })

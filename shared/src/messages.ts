@@ -1,3 +1,4 @@
+import { AGENT_MESSAGE_PAYLOAD_TYPE } from './modes'
 import { isObject } from './utils'
 
 type RoleWrappedRecord = {
@@ -48,6 +49,32 @@ export function isClaudeChatVisibleMessage(message: { type: unknown; subtype?: u
     }
 
     return isClaudeChatVisibleSystemSubtype(message.subtype)
+}
+
+/** 读取 ACP 思考流标识；liveOnly=true 时只匹配可被后续快照替换的记录。 */
+function readReasoningStreamId(value: unknown, liveOnly: boolean): string | null {
+    const record = unwrapRoleWrappedRecordEnvelope(value)
+    if (record?.role !== 'agent') return null
+
+    const content = record.content
+    if (!isObject(content) || content.type !== AGENT_MESSAGE_PAYLOAD_TYPE) return null
+
+    const data = isObject(content.data) ? content.data : null
+    if (!data || data.type !== 'reasoning') return null
+    if (liveOnly && data.live !== true) return null
+
+    const id = data.id
+    return typeof id === 'string' && id.trim().length > 0 ? id : null
+}
+
+/** 返回思考流标识，包括已结束的最终记录。 */
+export function getReasoningStreamId(value: unknown): string | null {
+    return readReasoningStreamId(value, false)
+}
+
+/** 仅返回仍可被新快照替换的思考流标识。 */
+export function getLiveReasoningStreamId(value: unknown): string | null {
+    return readReasoningStreamId(value, true)
 }
 
 export type { RoleWrappedRecord }

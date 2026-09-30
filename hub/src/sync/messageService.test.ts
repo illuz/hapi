@@ -398,3 +398,34 @@ describe('MessageService.incremental tail pages', () => {
         expect(reset.messages.map((item) => item.id)).toContain(message.id)
     })
 })
+
+describe('MessageService conversation fork boundaries', () => {
+    it('resolves an assistant message to the preceding user turn', () => {
+        const store = makeStore()
+        const session = makeSession(store, 'fork-assistant-boundary')
+        const firstUser = store.messages.addMessage(session.id, {
+            role: 'user',
+            content: { type: 'text', text: 'first turn' }
+        })
+        const firstAssistant = store.messages.addMessage(session.id, {
+            role: 'agent',
+            content: { type: 'text', text: 'first reply' }
+        })
+        const secondUser = store.messages.addMessage(session.id, {
+            role: 'user',
+            content: { type: 'text', text: 'second turn' }
+        })
+        const queuedUser = store.messages.addMessage(session.id, {
+            role: 'user',
+            content: { type: 'text', text: 'queued turn' }
+        }, 'queued-turn')
+
+        const service = new MessageService(store, makeIo(() => {}), makePublisher() as any)
+
+        expect(service.getRollbackTurnsAfterMessage(session.id, firstUser.id)).toBe(1)
+        expect(service.getRollbackTurnsAfterMessage(session.id, firstAssistant.id)).toBe(1)
+        expect(service.getRollbackTurnsAfterMessage(session.id, secondUser.id)).toBe(0)
+        expect(service.getRollbackTurnsAfterMessage(session.id, queuedUser.id)).toBeNull()
+        expect(service.getRollbackTurnsAfterMessage(session.id, 'queued-turn')).toBeNull()
+    })
+})

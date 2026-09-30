@@ -77,6 +77,11 @@ export function HappyAssistantMessage() {
         const parts = message.content
         return parts.length > 0 && parts.every((part) => part.type === 'tool-call')
     })
+    // Tool-call cards use tool-use ids rather than persisted Hub message ids;
+    // they are not valid standalone Codex fork boundaries.  Keep Fork on
+    // assistant text/reasoning/review cards, whose ids can be resolved to the
+    // containing transcript message by the Hub.
+    const canForkMessage = Boolean(ctx.onForkMessage) && !toolOnly
     const copyText = useAssistantState(({ message }) => {
         if (message.role !== 'assistant') return ''
         return getAssistantCopyText(message.content)
@@ -114,8 +119,8 @@ export function HappyAssistantMessage() {
                 <MessageActions
                     align="start"
                     messageElementId={getConversationMessageAnchorId(messageId)}
-                    showFork={Boolean(ctx.onForkMessage)}
-                    onFork={ctx.onForkMessage ? () => ctx.onForkMessage!(forkMessageId) : undefined}
+                    showFork={canForkMessage}
+                    onFork={canForkMessage ? () => ctx.onForkMessage!(forkMessageId) : undefined}
                 />
             </MessagePrimitive.Root>
         )
@@ -151,8 +156,8 @@ export function HappyAssistantMessage() {
                     align="start"
                     copyText={cliText || undefined}
                     messageElementId={getConversationMessageAnchorId(messageId)}
-                    showFork={Boolean(ctx.onForkMessage)}
-                    onFork={ctx.onForkMessage ? () => ctx.onForkMessage!(forkMessageId) : undefined}
+                    showFork={canForkMessage}
+                    onFork={canForkMessage ? () => ctx.onForkMessage!(forkMessageId) : undefined}
                 />
             </MessagePrimitive.Root>
         )
@@ -188,8 +193,8 @@ export function HappyAssistantMessage() {
                 align="start"
                 copyText={copyText || undefined}
                 messageElementId={getConversationMessageAnchorId(messageId)}
-                showFork={Boolean(ctx.onForkMessage)}
-                onFork={ctx.onForkMessage ? () => ctx.onForkMessage!(forkMessageId) : undefined}
+                showFork={canForkMessage}
+                onFork={canForkMessage ? () => ctx.onForkMessage!(forkMessageId) : undefined}
             />
         </MessagePrimitive.Root>
     )

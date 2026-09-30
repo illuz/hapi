@@ -146,7 +146,25 @@ export class MessageService {
 
     getRollbackTurnsAfterMessage(sessionId: string, messageId: string): number | null {
         const turns = this.store.messages.getUserTurnMessages(sessionId)
-        const index = turns.findIndex((message) => message.id === messageId)
+        const target = this.store.messages.getMessageByIdOrLocalId(sessionId, messageId)
+        if (!target) return null
+
+        // A queued user message has not reached the native transcript yet, so
+        // it cannot be a valid fork boundary.  Do not silently fall back to
+        // the previous invoked turn in that case.
+        if (target.invokedAt === null && target.localId !== null) return null
+
+        // The Web action is rendered on both user and assistant cards.  The
+        // native Codex fork API rolls back complete user turns, therefore an
+        // assistant/tool message resolves to the latest invoked user turn at
+        // or before that message's transcript position.
+        let index = -1
+        for (let turnIndex = turns.length - 1; turnIndex >= 0; turnIndex -= 1) {
+            if (turns[turnIndex].seq <= target.seq) {
+                index = turnIndex
+                break
+            }
+        }
         return index < 0 ? null : turns.length - index - 1
     }
 

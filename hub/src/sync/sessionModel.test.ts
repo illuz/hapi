@@ -1424,7 +1424,7 @@ describe('session model', () => {
                     text: 'turn 1'
                 }
             })
-            store.messages.addMessage(session.id, {
+            const firstAssistantMessage = store.messages.addMessage(session.id, {
                 role: 'agent',
                 content: {
                     type: 'text',
@@ -1509,6 +1509,17 @@ describe('session model', () => {
                 const content = message.content as { role?: string; content?: { text?: string } }
                 return content.content?.text ?? null
             })).toEqual(['turn 1', 'reply 1'])
+
+            capturedFork = null
+            const assistantForkResult = await engine.forkSession(session.id, 'default', {
+                forkFromMessageId: firstAssistantMessage.id
+            })
+            expect(assistantForkResult.type).toBe('success')
+            expect(capturedFork).toEqual({
+                machineId: 'machine-1',
+                threadId: 'codex-thread-1',
+                rollbackTurns: 1
+            })
 
             capturedFork = null
             const invalidResult = await engine.forkSession(session.id, 'default', {

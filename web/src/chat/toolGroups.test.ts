@@ -116,4 +116,15 @@ describe('tool groups', () => {
         expect(extended?.kind).toBe('tool-group')
         if (extended?.kind === 'tool-group') expect(extended.id).toBe(group.id)
     })
+
+    it('does not duplicate a previous id when a group splits at a boundary', () => {
+        const old = buildVisibleChatBlocks([tool('split-1', 'Read'), tool('split-2', 'Read'), tool('split-3', 'Read')])[0]
+        if (old?.kind !== 'tool-group') return
+        const boundary = tool('split-boundary', 'CodexPermission')
+        const next = buildVisibleChatBlocks([
+            tool('split-1', 'Read'), tool('split-2', 'Read'), boundary, tool('split-3', 'Read'), tool('split-4', 'Read')
+        ], { previousGroups: [old] })
+        const groups = next.filter((block): block is Extract<typeof block, { kind: 'tool-group' }> => block.kind === 'tool-group')
+        expect(new Set(groups.map((group) => group.id)).size).toBe(groups.length)
+    })
 })

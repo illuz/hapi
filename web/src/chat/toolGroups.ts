@@ -241,13 +241,14 @@ function getGroupingFamily(block: ToolCallBlock): 'default' | 'codex-exploration
 
 function createToolGroupId(
     tools: ToolCallBlock[],
-    previousGroups: ToolGroupBlock[]
+    previousGroups: ToolGroupBlock[],
+    usedIds: Set<string>
 ): string {
     const firstToolId = tools[0]?.id ?? 'unknown'
     const lastToolId = tools[tools.length - 1]?.id ?? firstToolId
     const currentToolIds = new Set(tools.map((tool) => tool.id))
 
-    const previous = previousGroups.find((group) => (
+    const previous = previousGroups.find((group) => !usedIds.has(group.id) && (
         group.firstToolId === firstToolId
         || group.lastToolId === lastToolId
         || group.tools.some((tool) => currentToolIds.has(tool.id))
@@ -256,7 +257,8 @@ function createToolGroupId(
         return previous.id
     }
 
-    return `tool-group:${firstToolId}`
+    const fallback = `tool-group:${firstToolId}`
+    return usedIds.has(fallback) ? `tool-group:${lastToolId}` : fallback
 }
 
 export function isToolGroupBlock(block: VisibleChatBlock | ChatBlock): block is ToolGroupBlock {
@@ -269,6 +271,7 @@ export function buildVisibleChatBlocks(
 ): VisibleChatBlock[] {
     const visibleBlocks: VisibleChatBlock[] = []
     const previousGroups = options.previousGroups ?? []
+    const usedGroupIds = new Set<string>()
 
     for (let index = 0; index < blocks.length; index += 1) {
         const block = blocks[index]
@@ -305,9 +308,11 @@ export function buildVisibleChatBlocks(
             && previousBlock.tool.name === 'CodexReasoning'
             ? getInputStringAny(previousBlock.tool.input, ['title'])
             : null
+        const groupId = createToolGroupId(tools, previousGroups, usedGroupIds)
+        usedGroupIds.add(groupId)
         visibleBlocks.push({
             kind: 'tool-group',
-            id: createToolGroupId(tools, previousGroups),
+            id: groupId,
             createdAt: tools[0].createdAt,
             invokedAt: tools[0].invokedAt,
             firstToolId: tools[0].id,

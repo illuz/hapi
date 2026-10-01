@@ -256,7 +256,14 @@ function scanTimelineValue(
         (type === 'tool_use' && hasNonBlankField(value, 'id'))
         || (type === 'tool-call' && hasNonBlankField(value, 'callId'))
     ) {
-        const id = asString(value.id) ?? asString(value.callId)
+        // Codex tool-call records have two identifiers: `id` identifies the
+        // envelope event, while `callId` is the invocation identifier shared
+        // with the subsequent tool-call-result.  Match the latter first;
+        // otherwise every completed call looks permanently running because
+        // the envelope ids never appear on result records.
+        const id = type === 'tool-call'
+            ? asString(value.callId)
+            : asString(value.id)
         if (id) toolCallIds.add(id)
         summary.toolCount += 1
         if (summary.toolGroupCount === 0) summary.toolGroupCount = 1
@@ -271,7 +278,6 @@ function scanTimelineValue(
     ) {
         const id = asString(value.tool_use_id) ?? asString(value.toolUseId) ?? asString(value.callId)
         if (id) toolResultIds.add(id)
-        if (summary.toolGroupCount === 0) summary.toolGroupCount = 1
         if (value.is_error === true || value.isError === true) summary.errorCount += 1
         return { hasWork: true, hasEvent: false }
     }
@@ -388,6 +394,10 @@ function summarizeTimelineMessages(
             const invocationCount = new Set([...workToolCallIds, ...workToolResultIds]).size
             const nonInvocationTools = Math.max(0, work.work.toolCount - workToolCallIds.size)
             work.work.toolCount = Math.max(work.work.toolCount, invocationCount + nonInvocationTools)
+            // A timeline item is already one folded work group. Do not add
+            // one group for every tool result; that inflates this counter to
+            // call + result count and makes the compact summary misleading.
+            work.work.toolGroupCount = work.work.toolCount > 0 ? 1 : 0
             if (runningCount > 0) {
                 work.completedAt = null
                 work.durationMs = null

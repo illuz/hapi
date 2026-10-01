@@ -20,8 +20,8 @@ describe('MessageService timeline', () => {
             createMessage(1, { role: 'user', content: 'inspect the repository' }),
             createMessage(2, { role: 'agent', content: { type: 'codex', data: { type: 'message', message: 'I will inspect it.' } } }),
             createMessage(3, { role: 'agent', content: { type: 'codex', data: { type: 'reasoning', message: 'checking files' } } }),
-            createMessage(4, { role: 'agent', content: { type: 'codex', data: { type: 'tool-call', callId: 'call-1', name: 'rg', input: {} } } }),
-            createMessage(5, { role: 'agent', content: { type: 'codex', data: { type: 'tool-call-result', callId: 'call-1', output: 'README.md' } } }),
+            createMessage(4, { role: 'agent', content: { type: 'codex', data: { type: 'tool-call', id: 'event-call-1', callId: 'call-1', name: 'rg', input: {} } } }),
+            createMessage(5, { role: 'agent', content: { type: 'codex', data: { type: 'tool-call-result', id: 'event-result-1', callId: 'call-1', output: 'README.md' } } }),
             createMessage(6, { role: 'agent', content: { type: 'codex', data: { type: 'message', message: 'The repository contains a README.' } } })
         ]
         const fakeStore = {
@@ -52,7 +52,10 @@ describe('MessageService timeline', () => {
         expect(summary.items[0]?.text).toBe('inspect the repository')
         expect(summary.items[1]?.text).toBe('I will inspect it.')
         expect(summary.items[2]?.id).toBe('work-group:3-5')
+        expect(summary.items[2]?.work?.toolGroupCount).toBe(1)
         expect(summary.items[2]?.work?.toolCount).toBe(1)
+        expect(summary.items[2]?.work?.runningCount).toBe(0)
+        expect(summary.items[2]?.completedAt).toBe(5000)
         expect(summary.items[3]?.text).toBe('The repository contains a README.')
 
         const details = service.getTimelineDetails('session-1', 'work-group:3-5')

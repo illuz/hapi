@@ -476,9 +476,22 @@ export function SessionChat(props: {
 
     const visibleChatBlocks = useMemo<WorkVisibleChatBlock[]>(() => {
         if (props.timelineItems === undefined) return fullChatBlocks
+        // A historical timeline can contain an invocation without a persisted
+        // result (for example, if the CLI disconnected while a plugin call
+        // was being handled).  Only the latest group of a currently thinking
+        // session is live; otherwise an old group would keep showing a
+        // forever-growing "Working" timer after the session has stopped.
+        const latestWorkGroupId = [...props.timelineItems]
+            .reverse()
+            .find((item) => item.kind === 'work-group')?.id ?? null
         return props.timelineItems.map((item): WorkVisibleChatBlock => {
             if (item.kind === 'work-group') {
                 const details = timelineDetails[item.id]
+                const sourceSummary = item.work ?? EMPTY_TIMELINE_SUMMARY
+                const isLive = props.session.thinking && item.id === latestWorkGroupId
+                const summary = isLive
+                    ? sourceSummary
+                    : { ...sourceSummary, runningCount: 0, pendingCount: 0 }
                 return {
                     kind: 'work-group',
                     id: item.id,
@@ -494,7 +507,7 @@ export function SessionChat(props: {
                     defaultOpen: false,
                     historyState: 'complete',
                     needsOlderHistory: false,
-                    summary: item.work ?? EMPTY_TIMELINE_SUMMARY,
+                    summary,
                     detailsState: details ? 'loaded' : timelineDetailErrors.has(item.id) ? 'error' : 'summary'
                 }
             }
@@ -524,7 +537,7 @@ export function SessionChat(props: {
                 event: { type: 'message', message: item.text ?? '' }
             }
         })
-    }, [props.timelineItems, fullChatBlocks, timelineDetails, timelineDetailErrors])
+    }, [fullChatBlocks, props.session.thinking, props.timelineItems, timelineDetails, timelineDetailErrors])
 
     useEffect(() => {
         blocksByIdRef.current = reconciled.byId

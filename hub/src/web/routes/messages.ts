@@ -16,7 +16,9 @@ const querySchema = z.object({
     untilAt: z.coerce.number().int().min(0).optional(),
     epoch: z.coerce.number().int().min(0).optional(),
 })
-    .refine((data) => (data.beforeAt === undefined) === (data.beforeSeq === undefined), {
+    // 大纲跳转仍使用旧版的 seq-only 游标；复合游标必须同时提供位置和序号，
+    // 但仅提供 beforeSeq 仍应保留给兼容路径使用。
+    .refine((data) => data.beforeAt === undefined || data.beforeSeq !== undefined, {
         message: 'beforeAt and beforeSeq must be provided together',
         path: ['beforeAt']
     })

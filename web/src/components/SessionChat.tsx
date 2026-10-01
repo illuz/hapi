@@ -101,6 +101,22 @@ const EMPTY_TIMELINE_SUMMARY = {
     pendingCount: 0
 }
 
+type TimelineDetailEntry = {
+    groupId: string
+    version: number
+    children: WorkGroupChildBlock[]
+}
+
+/** 工作组实时追加尾部消息时，仍将懒加载明细挂在同一个逻辑工作组上。 */
+function getTimelineDetailKey(groupId: string): string {
+    const match = /^work-group:(\d+)-\d+$/.exec(groupId)
+    return match ? `timeline:${match[1]}` : groupId
+}
+
+function getTimelineDetailErrorKey(groupId: string): string {
+    return `${getTimelineDetailKey(groupId)}:${groupId}`
+}
+
 export function SessionChat(props: {
     api: ApiClient
     session: Session
@@ -137,10 +153,9 @@ export function SessionChat(props: {
     const blocksByIdRef = useRef<Map<string, ChatBlock>>(new Map())
     const visibleToolGroupsRef = useRef<ToolGroupBlock[]>([])
     const visibleWorkGroupsRef = useRef<WorkGroupBlock[]>([])
-    const [timelineDetails, setTimelineDetails] = useState<Record<string, WorkGroupChildBlock[]>>({})
+    const [timelineDetails, setTimelineDetails] = useState<Record<string, TimelineDetailEntry>>({})
     const [timelineDetailErrors, setTimelineDetailErrors] = useState<Set<string>>(new Set())
     const timelineDetailsSessionRef = useRef(props.session.id)
-    const timelineDetailsVersionRef = useRef<number | null>(null)
     const { codexExplorationCollapsed } = useCodexExplorationCollapse()
     const [forceScrollToken, setForceScrollToken] = useState(0)
     const [autoContinueEnabled, setAutoContinueEnabled] = useState(false)
@@ -332,30 +347,11 @@ export function SessionChat(props: {
         visibleToolGroupsRef.current = []
         visibleWorkGroupsRef.current = []
         timelineDetailsSessionRef.current = props.session.id
-        timelineDetailsVersionRef.current = null
         setTimelineDetails({})
         setTimelineDetailErrors(new Set())
         setOutlineOpen(false)
         setOutlineForkingItemIndex(null)
     }, [props.session.id])
-
-    // A timeline refresh invalidates the detail cache as well. Keep the open
-    // state in WorkGroupCard, but force an already-open group to re-request its
-    // exact range so live tool results cannot leave stale children on screen.
-    useEffect(() => {
-        if (props.timelineItems === undefined) {
-            timelineDetailsVersionRef.current = null
-            return
-        }
-        if (
-            timelineDetailsVersionRef.current !== null
-            && timelineDetailsVersionRef.current !== props.messagesVersion
-        ) {
-            setTimelineDetails({})
-            setTimelineDetailErrors(new Set())
-        }
-        timelineDetailsVersionRef.current = props.messagesVersion
-    }, [props.messagesVersion, props.timelineItems])
 
     useEffect(() => {
         const state = loadAutoContinueState(props.session.id)
@@ -456,23 +452,28 @@ export function SessionChat(props: {
     const loadWorkGroupDetails = useCallback(async (groupId: string): Promise<'loaded' | 'failed'> => {
         if (!props.onLoadTimelineDetails) return 'failed'
         const requestedSessionId = props.session.id
+        const detailKey = getTimelineDetailKey(groupId)
+        const requestedVersion = props.messagesVersion
         try {
             const messages = await props.onLoadTimelineDetails(groupId)
             if (timelineDetailsSessionRef.current !== requestedSessionId) return 'failed'
             const children = buildTimelineDetailChildren(messages, props.session.agentState, codexExplorationCollapsed)
-            setTimelineDetails((current) => ({ ...current, [groupId]: children }))
+            setTimelineDetails((current) => ({
+                ...current,
+                [detailKey]: { groupId, version: requestedVersion, children }
+            }))
             setTimelineDetailErrors((current) => {
                 const next = new Set(current)
-                next.delete(groupId)
+                next.delete(getTimelineDetailErrorKey(groupId))
                 return next
             })
             return 'loaded'
         } catch {
             if (timelineDetailsSessionRef.current !== requestedSessionId) return 'failed'
-            setTimelineDetailErrors((current) => new Set(current).add(groupId))
+            setTimelineDetailErrors((current) => new Set(current).add(getTimelineDetailErrorKey(groupId)))
             return 'failed'
         }
-    }, [props.onLoadTimelineDetails, props.session.id, codexExplorationCollapsed])
+    }, [props.messagesVersion, props.onLoadTimelineDetails, props.session.agentState, props.session.id, codexExplorationCollapsed])
 
     const visibleChatBlocks = useMemo<WorkVisibleChatBlock[]>(() => {
         if (props.timelineItems === undefined) return fullChatBlocks
@@ -486,7 +487,13 @@ export function SessionChat(props: {
             .find((item) => item.kind === 'work-group')?.id ?? null
         return props.timelineItems.map((item): WorkVisibleChatBlock => {
             if (item.kind === 'work-group') {
-                const details = timelineDetails[item.id]
+                const detailKey = getTimelineDetailKey(item.id)
+                const detailEntry = timelineDetails[detailKey]
+                // 刷新实时工作组时保留旧明细。范围 id 或时间轴版本变化后，卡片会重新
+                // 请求明细，但不会先闪成空内容，也不会丢失内部滚动位置。
+                const details = detailEntry?.children ?? []
+                const detailsLoaded = detailEntry?.groupId === item.id
+                    && detailEntry.version === props.messagesVersion
                 const sourceSummary = item.work ?? EMPTY_TIMELINE_SUMMARY
                 const isLive = props.session.thinking && item.id === latestWorkGroupId
                 const summary = isLive
@@ -511,13 +518,15 @@ export function SessionChat(props: {
                     durationMs: isLive
                         ? item.durationMs ?? null
                         : item.durationMs ?? observedDuration,
-                    blocks: details ?? [],
+                    blocks: details,
                     active: false,
                     defaultOpen: false,
                     historyState: 'complete',
                     needsOlderHistory: false,
                     summary,
-                    detailsState: details ? 'loaded' : timelineDetailErrors.has(item.id) ? 'error' : 'summary'
+                    detailsState: detailsLoaded
+                        ? 'loaded'
+                        : timelineDetailErrors.has(getTimelineDetailErrorKey(item.id)) ? 'error' : 'summary'
                 }
             }
             if (item.kind === 'user') {

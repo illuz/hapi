@@ -7,6 +7,7 @@ import { createMessagesRoutes } from './messages'
 function createApp(opts?: {
     steerQueuedMessage?: (sessionId: string, messageId: string) => Promise<unknown>
     getQueuedState?: (sessionId: string, localIds: string[]) => unknown
+    getMessagesPage?: (sessionId: string, options: { limit: number; beforeSeq?: number | null }) => unknown
     getTimelineSummary?: (sessionId: string, options: { limit?: number; beforeSeq?: number }) => unknown
     getTimelineDetails?: (sessionId: string, groupId: string) => unknown
 }) {
@@ -45,6 +46,10 @@ function createApp(opts?: {
             },
             messages: [],
             page: { limit: 10000, nextBeforeSeq: null, hasMore: false }
+        })),
+        getMessagesPage: opts?.getMessagesPage ?? (() => ({
+            messages: [],
+            page: { limit: 200, beforeSeq: null, nextBeforeSeq: null, hasMore: false }
         })),
         getIncrementalMessagesPage: (_sessionId: string, options: { limit?: number }) => ({
             messages: [],
@@ -160,6 +165,29 @@ describe('messages routes', () => {
     it('rejects incomplete composite cursors', async () => {
         const response = await createApp().request('/api/sessions/session-1/messages?afterSeq=4')
         expect(response.status).toBe(400)
+    })
+
+    it('accepts the legacy seq-only cursor used by outline navigation', async () => {
+        let captured: { sessionId: string; options: { limit: number; beforeSeq?: number | null } } | null = null
+        const app = createApp({
+            getMessagesPage: (sessionId, options) => {
+                captured = { sessionId, options }
+                return {
+                    messages: [{ id: 'message-451', seq: 451 }],
+                    page: { limit: options.limit, beforeSeq: options.beforeSeq, nextBeforeSeq: 1, hasMore: true }
+                }
+            }
+        })
+
+        const response = await app.request('/api/sessions/session-1/messages?beforeSeq=452&limit=20')
+
+        expect(response.status).toBe(200)
+        expect(captured!).toEqual({
+            sessionId: 'session-1',
+            options: { limit: 20, beforeSeq: 452 }
+        })
+        const body = await response.json() as { messages: Array<{ seq: number }> }
+        expect(body.messages[0]?.seq).toBe(451)
     })
 
     it('forwards queued-message steer to the sync engine', async () => {

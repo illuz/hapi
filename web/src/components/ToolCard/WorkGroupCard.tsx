@@ -14,12 +14,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useHappyChatContext } from '@/components/AssistantChat/context'
 import { ToolStatusIcon } from '@/components/ToolCard/ToolCard'
 import { useTranslation } from '@/lib/use-translation'
+import { formatDuration } from '@/lib/formatDuration'
 import { cn } from '@/lib/utils'
-
-function formatDuration(ms: number): string {
-    if (ms < 1000) return `${Math.max(0, Math.round(ms))}ms`
-    return `${(ms / 1000).toFixed(1)}s`
-}
 
 // ThreadPrimitive.Messages 使用数组下标作为 React key。前插更早页面时，即使工作组
 // id 不变，卡片也会重新挂载；把用户的显式选择放到组件外，避免分页刷新时重新折叠。

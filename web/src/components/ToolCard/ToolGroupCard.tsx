@@ -10,12 +10,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { formatGroupedHeaderSubtitle, formatGroupedHeaderTitle, safeGroupedLabelValue } from '@/components/ToolCard/groupedPresentation'
 import { useTranslation } from '@/lib/use-translation'
+import { formatDuration } from '@/lib/formatDuration'
 import { cn } from '@/lib/utils'
-
-function formatDuration(ms: number): string {
-    if (ms < 1000) return `${Math.max(0, Math.round(ms))}ms`
-    return `${(ms / 1000).toFixed(1)}s`
-}
 
 export function getToolGroupTiming(tools: ToolCallBlock[], now: number) {
     const started = tools

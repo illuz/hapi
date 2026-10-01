@@ -21,6 +21,31 @@ function formatDuration(ms: number): string {
     return `${(ms / 1000).toFixed(1)}s`
 }
 
+// ThreadPrimitive.Messages 使用数组下标作为 React key。前插更早页面时，即使工作组
+// id 不变，卡片也会重新挂载；把用户的显式选择放到组件外，避免分页刷新时重新折叠。
+// 工作组在补齐历史后可能会换掉首个块和自身 id，因此同时保存首尾块别名。
+const workGroupOpenState = new Map<string, boolean>()
+
+function getWorkGroupOpenStateKeys(sessionId: string, block: WorkGroupBlock): string[] {
+    const keys = block.stateKey
+        ? [`${sessionId}:state:${block.stateKey}`]
+        : []
+    keys.push(`${sessionId}:group:${block.id}`)
+    const firstId = block.blocks[0]?.id
+    const lastId = block.blocks.at(-1)?.id
+    if (firstId) keys.push(`${sessionId}:first:${firstId}`)
+    if (lastId) keys.push(`${sessionId}:last:${lastId}`)
+    return keys
+}
+
+function readWorkGroupOpenState(keys: string[]): boolean | undefined {
+    for (const key of keys) {
+        const stored = workGroupOpenState.get(key)
+        if (stored !== undefined) return stored
+    }
+    return undefined
+}
+
 function WorkGroupChild(props: {
     block: WorkGroupChildBlock
     metadata: SessionMetadataSummary | null
@@ -94,7 +119,16 @@ export function WorkGroupCard(props: {
 }) {
     const { t } = useTranslation()
     const ctx = useHappyChatContext()
-    const [open, setOpen] = useState(props.block.defaultOpen)
+    const openStateKeys = getWorkGroupOpenStateKeys(ctx.sessionId, props.block)
+    // 优先使用相邻消息生成的稳定锚点；历史前插时首尾块和工作组 id 会变化，不能
+    // 让这些变化重新触发折叠状态同步或打断正在进行的历史补齐。
+    const openStateSignature = openStateKeys[0] ?? `${ctx.sessionId}:group:${props.block.id}`
+    const initialStoredOpen = readWorkGroupOpenState(openStateKeys)
+    const manualOpenStateRef = useRef(initialStoredOpen !== undefined)
+    const [open, setOpen] = useState(() => {
+        if (initialStoredOpen !== undefined) return initialStoredOpen
+        return props.block.defaultOpen
+    })
     const [now, setNow] = useState(() => Date.now())
     const [isHydratingHistory, setIsHydratingHistory] = useState(false)
     const [historyExhausted, setHistoryExhausted] = useState(false)
@@ -115,12 +149,20 @@ export function WorkGroupCard(props: {
         return { durationMs }
     })()
 
+    // 保留用户的展开选择。加载更早消息会替换工作组对象；`defaultOpen` 只有在用户
+    // 尚未手动操作该工作组时才作为兜底值，避免刷新时覆盖显式选择。
     useEffect(() => {
-        setOpen(props.block.defaultOpen)
+        const stored = readWorkGroupOpenState(openStateKeys)
+        if (stored !== undefined) {
+            manualOpenStateRef.current = true
+            setOpen(stored)
+        } else if (!manualOpenStateRef.current) {
+            setOpen(props.block.defaultOpen)
+        }
         setIsHydratingHistory(false)
         setHistoryExhausted(false)
         hydrationRunRef.current += 1
-    }, [props.block.defaultOpen, props.block.id])
+    }, [openStateSignature, props.block.defaultOpen])
 
     useEffect(() => {
         if (!open || !props.block.needsOlderHistory) {
@@ -173,9 +215,6 @@ export function WorkGroupCard(props: {
     if (props.block.summary.reasoningCount > 0) {
         subtitleParts.push(t('workGroup.reasoning', { n: props.block.summary.reasoningCount }))
     }
-    if (props.block.summary.answerCount > 0) {
-        subtitleParts.push(t('workGroup.answers', { n: props.block.summary.answerCount }))
-    }
     if (props.block.summary.toolCount > 0) {
         subtitleParts.push(t('workGroup.tools', { n: props.block.summary.toolCount }))
     }
@@ -185,7 +224,12 @@ export function WorkGroupCard(props: {
             <CardHeader className="space-y-0 p-3">
                 <button
                     type="button"
-                    onClick={() => setOpen((value) => !value)}
+                    onClick={() => setOpen((value) => {
+                        const next = !value
+                        manualOpenStateRef.current = true
+                        for (const key of openStateKeys) workGroupOpenState.set(key, next)
+                        return next
+                    })}
                     aria-expanded={open}
                     className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]"
                 >

@@ -477,7 +477,6 @@ export default {
   'workGroup.working': 'Working',
   'workGroup.workedFor': 'Worked for {duration}',
   'workGroup.reasoning': '{n} reasoning',
-  'workGroup.answers': '{n} answers',
   'workGroup.tools': '{n} tools',
   'workGroup.pending': '{n} pending',
   'workGroup.errors': '{n} failed',

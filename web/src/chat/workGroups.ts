@@ -21,7 +21,6 @@ export type WorkGroupChildBlock =
 
 export type WorkGroupSummary = {
     reasoningCount: number
-    answerCount: number
     reviewCount: number
     eventCount: number
     toolGroupCount: number
@@ -34,6 +33,8 @@ export type WorkGroupSummary = {
 export type WorkGroupBlock = {
     kind: 'work-group'
     id: string
+    /** 由组外相邻消息生成的稳定折叠状态锚点。 */
+    stateKey?: string
     createdAt: number
     startedAt: number | null
     completedAt: number | null
@@ -59,9 +60,10 @@ export function isWorkGroupBlock(block: WorkVisibleChatBlock | ChatBlock): block
 }
 
 function isWorkGroupChild(block: VisibleChatBlock): block is WorkGroupChildBlock {
-    if (block.kind === 'user-text') return false
-    if (block.kind === 'cli-output' && block.source === 'user') return false
-    return true
+    if (block.kind === 'agent-reasoning') return block.text.trim().length > 0
+    if (block.kind === 'tool-group' || block.kind === 'tool-call') return true
+    if (block.kind === 'cli-output') return block.source === 'assistant'
+    return block.kind === 'agent-event'
 }
 
 function isTurnBoundary(block: VisibleChatBlock): boolean {
@@ -194,7 +196,6 @@ export function getWorkGroupTiming(blocks: WorkGroupChildBlock[], now: number) {
 
 function summarizeWorkGroup(blocks: WorkGroupChildBlock[]): WorkGroupSummary {
     let reasoningCount = 0
-    let answerCount = 0
     let reviewCount = 0
     let eventCount = 0
     let toolGroupCount = 0
@@ -209,13 +210,7 @@ function summarizeWorkGroup(blocks: WorkGroupChildBlock[]): WorkGroupSummary {
             continue
         }
 
-        if (block.kind === 'agent-text') {
-            answerCount += 1
-            continue
-        }
-
         if (block.kind === 'cli-output') {
-            if (block.source === 'assistant') answerCount += 1
             continue
         }
 
@@ -248,7 +243,6 @@ function summarizeWorkGroup(blocks: WorkGroupChildBlock[]): WorkGroupSummary {
 
     return {
         reasoningCount,
-        answerCount,
         reviewCount,
         eventCount,
         toolGroupCount,
@@ -260,10 +254,10 @@ function summarizeWorkGroup(blocks: WorkGroupChildBlock[]): WorkGroupSummary {
 }
 
 /**
- * 将一次 assistant turn 的所有内容合并为一个顶层工作项。
+ * 将连续的 assistant 执行过程合并为一个顶层工作项。
  *
- * 用户消息保持在组外；assistant 文本、思考、工具、review 和事件均收进组内，
- * 让整轮回复可以像 Codex 一样只占一个折叠行。
+ * assistant 文本和 review 保持在组外，确保最终回答始终可见；思考、工具调用、
+ * CLI 输出和事件收进组内，让执行过程可以像 Codex 一样只占一个折叠行。
  */
 export function buildVisibleWorkGroups(
     blocks: VisibleChatBlock[],
@@ -272,16 +266,26 @@ export function buildVisibleWorkGroups(
     const visibleBlocks: WorkVisibleChatBlock[] = []
     const previousGroups = options.previousGroups ?? []
     const usedGroupIds = new Set<string>()
+    let previousAnchorId: string | null = null
 
     for (let index = 0; index < blocks.length; index += 1) {
         const block = blocks[index]!
         if (isTurnBoundary(block)) {
             visibleBlocks.push(block)
+            previousAnchorId = block.id
+            continue
+        }
+
+        // 最终回答不是执行过程的一部分，必须保持在折叠卡片外。
+        if (block.kind === 'agent-text' || block.kind === 'codex-review') {
+            visibleBlocks.push(block)
+            previousAnchorId = block.id
             continue
         }
 
         if (!isWorkGroupChild(block)) {
             visibleBlocks.push(block)
+            previousAnchorId = block.id
             continue
         }
 
@@ -300,13 +304,21 @@ export function buildVisibleWorkGroups(
         const id = createWorkGroupId(children, previousGroups, usedGroupIds)
         usedGroupIds.add(id)
         const hasUserAfter = blocks.slice(cursor).some(isTurnBoundary)
-        const isLatestWorkGroup = !hasUserAfter
+        const hasExecutionAfter = blocks.slice(cursor).some(isWorkGroupChild)
+        const isLatestWorkGroup = !hasUserAfter && !hasExecutionAfter
         const active = timing.running || timing.pending || Boolean(options.isRunning && isLatestWorkGroup)
         const defaultOpen = active
+        const nextAnchor = blocks.slice(cursor).find((candidate) => !isWorkGroupChild(candidate))
+        const stateKey = nextAnchor
+            ? `after:${nextAnchor.id}`
+            : previousAnchorId
+                ? `after:${previousAnchorId}`
+                : `tail:${children.at(-1)!.id}`
 
         visibleBlocks.push({
             kind: 'work-group',
             id,
+            stateKey,
             createdAt: children[0].createdAt,
             startedAt: timing.startedAt,
             completedAt: timing.completedAt,

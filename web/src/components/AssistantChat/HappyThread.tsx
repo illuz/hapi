@@ -840,6 +840,16 @@ export function HappyThread(props: {
             scrollTop: viewport.scrollTop,
             scrollHeight: viewport.scrollHeight
         }
+        // Loading an older page changes the visible window from a tail view to
+        // a history view.  Mark that transition before the request starts so
+        // the bounded prepend window is not immediately followed by a tail
+        // reset.  The latter used to restore the latest page while a work
+        // group was hydrating, making its contents oscillate and eventually
+        // showing a false "older work unavailable" message.
+        if (atBottomRef.current) {
+            atBottomRef.current = false
+            onAtBottomChangeRef.current(false)
+        }
         autoScrollEnabledRef.current = false
         loadLockRef.current = true
         loadStartedRef.current = false

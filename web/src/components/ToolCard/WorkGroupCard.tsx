@@ -53,7 +53,7 @@ function WorkGroupChild(props: {
     const ctx = useHappyChatContext()
 
     if (props.block.kind === 'tool-group') {
-        return <ToolGroupCard block={props.block} metadata={props.metadata} />
+        return <ToolGroupCard block={props.block} metadata={props.metadata} suppressHistoryHydration defaultOpenOverride />
     }
 
     if (props.block.kind === 'tool-call') {
@@ -132,6 +132,7 @@ export function WorkGroupCard(props: {
     const [now, setNow] = useState(() => Date.now())
     const [isHydratingHistory, setIsHydratingHistory] = useState(false)
     const [historyExhausted, setHistoryExhausted] = useState(false)
+    const [historyLoadFailed, setHistoryLoadFailed] = useState(false)
     const hydrationRunRef = useRef(0)
 
     const running = props.block.active || props.block.summary.runningCount > 0
@@ -161,6 +162,7 @@ export function WorkGroupCard(props: {
         }
         setIsHydratingHistory(false)
         setHistoryExhausted(false)
+        setHistoryLoadFailed(false)
         hydrationRunRef.current += 1
     }, [openStateSignature, props.block.defaultOpen])
 
@@ -183,11 +185,19 @@ export function WorkGroupCard(props: {
         void ctx.loadOlderMessagesPreservingScroll().then((result) => {
             if (hydrationRunRef.current !== runId) return
             setIsHydratingHistory(false)
-            if (result === 'terminal-stop' || result === 'failed') setHistoryExhausted(true)
+            if (result === 'terminal-stop') {
+                // Reaching the beginning of the transcript is a normal end
+                // state, not an unavailable-history error.
+                setHistoryExhausted(true)
+            } else if (result === 'failed') {
+                setHistoryExhausted(true)
+                setHistoryLoadFailed(true)
+            }
         }).catch(() => {
             if (hydrationRunRef.current !== runId) return
             setIsHydratingHistory(false)
             setHistoryExhausted(true)
+            setHistoryLoadFailed(true)
         })
     }, [
         ctx.hasMoreMessages,
@@ -254,7 +264,7 @@ export function WorkGroupCard(props: {
                         <WorkGroupChild key={block.id} block={block} metadata={props.metadata} />
                     ))}
                     {isHydratingHistory ? <div className="text-xs text-[var(--app-hint)]">{t('workGroup.loadingOlderHistory')}</div> : null}
-                    {!isHydratingHistory && historyExhausted && props.block.needsOlderHistory ? <div className="text-xs text-[var(--app-hint)]">{t('workGroup.historyUnavailable')}</div> : null}
+                    {!isHydratingHistory && historyLoadFailed && props.block.needsOlderHistory ? <div className="text-xs text-[var(--app-hint)]">{t('workGroup.historyUnavailable')}</div> : null}
                 </CardContent>
             ) : null}
         </Card>

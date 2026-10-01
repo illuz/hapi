@@ -86,28 +86,38 @@ function Row(props: {
     )
 }
 
-export function ToolGroupCard(props: { block: ToolGroupBlock; metadata: SessionMetadataSummary | null }) {
+export function ToolGroupCard(props: {
+    block: ToolGroupBlock
+    metadata: SessionMetadataSummary | null
+    /** 由 WorkGroupCard 统一负责嵌套工具组的历史补齐。 */
+    suppressHistoryHydration?: boolean
+    /** An expanded work group exposes its child activity rows immediately. */
+    defaultOpenOverride?: boolean
+}) {
     const { t } = useTranslation()
     const ctx = useHappyChatContext()
-    const [open, setOpen] = useState(props.block.defaultOpen)
+    const initialOpen = props.defaultOpenOverride ?? props.block.defaultOpen
+    const [open, setOpen] = useState(initialOpen)
     const [selectedToolId, setSelectedToolId] = useState<string | null>(null)
     const [now, setNow] = useState(() => Date.now())
     const [isHydratingHistory, setIsHydratingHistory] = useState(false)
     const [historyExhausted, setHistoryExhausted] = useState(false)
+    const [historyLoadFailed, setHistoryLoadFailed] = useState(false)
     const hydrationRunRef = useRef(0)
     const timing = getToolGroupTiming(props.block.tools, now)
     const isSingleTool = props.block.tools.length === 1
 
     useEffect(() => {
-        setOpen(props.block.defaultOpen)
+        setOpen(props.defaultOpenOverride ?? props.block.defaultOpen)
         setSelectedToolId(null)
         setIsHydratingHistory(false)
         setHistoryExhausted(false)
+        setHistoryLoadFailed(false)
         hydrationRunRef.current += 1
-    }, [props.block.id, props.block.defaultOpen])
+    }, [props.block.id, props.block.defaultOpen, props.defaultOpenOverride])
 
     useEffect(() => {
-        if (!open || !props.block.needsOlderHistory) {
+        if (props.suppressHistoryHydration || !open || !props.block.needsOlderHistory) {
             hydrationRunRef.current += 1
             setIsHydratingHistory(false)
             if (!props.block.needsOlderHistory) setHistoryExhausted(false)
@@ -125,11 +135,17 @@ export function ToolGroupCard(props: { block: ToolGroupBlock; metadata: SessionM
         void ctx.loadOlderMessagesPreservingScroll().then((result) => {
             if (hydrationRunRef.current !== runId) return
             setIsHydratingHistory(false)
-            if (result === 'terminal-stop' || result === 'failed') setHistoryExhausted(true)
+            if (result === 'terminal-stop') {
+                setHistoryExhausted(true)
+            } else if (result === 'failed') {
+                setHistoryExhausted(true)
+                setHistoryLoadFailed(true)
+            }
         }).catch(() => {
             if (hydrationRunRef.current !== runId) return
             setIsHydratingHistory(false)
             setHistoryExhausted(true)
+            setHistoryLoadFailed(true)
         })
     }, [
         ctx.hasMoreMessages,
@@ -139,6 +155,7 @@ export function ToolGroupCard(props: { block: ToolGroupBlock; metadata: SessionM
         historyExhausted,
         isHydratingHistory,
         open,
+        props.suppressHistoryHydration,
         props.block.needsOlderHistory
     ])
 
@@ -175,13 +192,21 @@ export function ToolGroupCard(props: { block: ToolGroupBlock; metadata: SessionM
             {open ? (
                 <CardContent className="flex flex-col gap-2 px-3 pb-3 pt-0">
                     {props.block.presentationMode === 'codex-exploration'
-                        ? props.block.tools.flatMap((tool) => getCodexCommandActions(tool).map((action, index) => {
-                            const label = codexActionLabel(action, t)
-                            return <Row key={`${tool.id}:${index}`} block={tool} metadata={props.metadata} label={label.title} detail={label.detail} onClick={() => setSelectedToolId(tool.id)} now={now} />
-                        }))
+                        ? props.block.tools.flatMap((tool) => {
+                            const actions = getCodexCommandActions(tool)
+                            // 旧版 CLI 消息可能没有 command_actions；回退到原始工具行，
+                            // 不要把展开后的工具组渲染成空容器。
+                            if (actions.length === 0) {
+                                return [<Row key={tool.id} block={tool} metadata={props.metadata} onClick={() => setSelectedToolId(tool.id)} now={now} />]
+                            }
+                            return actions.map((action, index) => {
+                                const label = codexActionLabel(action, t)
+                                return <Row key={`${tool.id}:${index}`} block={tool} metadata={props.metadata} label={label.title} detail={label.detail} onClick={() => setSelectedToolId(tool.id)} now={now} />
+                            })
+                        })
                         : props.block.tools.map((tool) => <Row key={tool.id} block={tool} metadata={props.metadata} onClick={() => setSelectedToolId(tool.id)} now={now} />)}
                     {isHydratingHistory ? <div className="text-xs text-[var(--app-hint)]">{t('toolGroup.loadingOlderHistory')}</div> : null}
-                    {!isHydratingHistory && historyExhausted && props.block.needsOlderHistory ? <div className="text-xs text-[var(--app-hint)]">{t('toolGroup.historyUnavailable')}</div> : null}
+                    {!isHydratingHistory && historyLoadFailed && props.block.needsOlderHistory ? <div className="text-xs text-[var(--app-hint)]">{t('toolGroup.historyUnavailable')}</div> : null}
                 </CardContent>
             ) : null}
             <Dialog open={selectedTool !== null} onOpenChange={(value) => { if (!value) setSelectedToolId(null) }}>

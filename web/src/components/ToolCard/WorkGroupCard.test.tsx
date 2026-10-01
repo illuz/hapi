@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ApiClient } from '@/api/client'
 import type { AgentReasoningBlock } from '@/chat/types'
@@ -157,5 +157,24 @@ describe('WorkGroupCard', () => {
         view.unmount()
         renderCard({ ...hydratedGroup, defaultOpen: false })
         expect(screen.getByText('inspect repository')).toBeInTheDocument()
+    })
+
+    it('does not report unavailable history when the transcript simply ends', async () => {
+        const loadOlderMessagesPreservingScroll = vi.fn().mockResolvedValue('terminal-stop')
+        const group = { ...makeGroup(false), needsOlderHistory: true, historyState: 'needs-older-history' as const }
+
+        render(
+            <HappyChatProvider value={{
+                ...contextValue,
+                hasMoreMessages: true,
+                loadOlderMessagesPreservingScroll
+            }}>
+                <WorkGroupCard block={group} metadata={null} />
+            </HappyChatProvider>
+        )
+
+        fireEvent.click(screen.getByRole('button', { expanded: false }))
+        await waitFor(() => expect(loadOlderMessagesPreservingScroll).toHaveBeenCalled())
+        expect(screen.queryByText('Older work is unavailable')).not.toBeInTheDocument()
     })
 })

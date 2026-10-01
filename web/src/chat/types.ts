@@ -175,6 +175,7 @@ export type AgentTextBlock = {
     usage?: UsageData
     model?: string | null
     text: string
+    titleChange?: boolean
     meta?: unknown
 }
 

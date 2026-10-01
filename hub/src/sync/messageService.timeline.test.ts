@@ -145,6 +145,36 @@ describe('MessageService timeline', () => {
         expect(details.messages.map((message) => message.seq)).toEqual([1, 2])
     })
 
+    it('marks the assistant title summary so the title emoji is shown on both lines', () => {
+        const rows = [
+            createMessage(1, { role: 'agent', content: { type: 'codex', data: { type: 'tool-call', name: 'mcp__hapi__change_title', callId: 'title-1', input: { title: 'A visible title' } } } }),
+            createMessage(2, { role: 'agent', content: { type: 'codex', data: { type: 'tool-call-result', callId: 'title-1', output: { content: 'done' } } } }),
+            createMessage(3, { role: 'agent', content: { type: 'output', data: { type: 'summary', summary: 'A visible title' } } }),
+            createMessage(4, { role: 'agent', content: { type: 'output', data: { type: 'summary', summary: 'Finished.' } } })
+        ]
+        const fakeStore = {
+            messages: {
+                getMessagesBySeqRange: (_sessionId: string, options: { startSeq?: number; endSeq?: number; beforeSeq?: number; limit?: number }) => {
+                    const result = rows.filter((row) => (
+                        (options.startSeq === undefined || row.seq >= options.startSeq)
+                        && (options.endSeq === undefined || row.seq <= options.endSeq)
+                        && (options.beforeSeq === undefined || row.seq < options.beforeSeq)
+                    ))
+                    return options.startSeq === undefined && options.endSeq === undefined
+                        ? result.slice(-Math.min(options.limit ?? 5000, result.length))
+                        : result.slice(0, options.limit ?? 5000)
+                }
+            }
+        }
+        const service = new MessageService(fakeStore as never, {} as never, {} as never)
+
+        const summary = service.getTimelineSummary('session-1')
+        expect(summary.items.map((item) => item.kind)).toEqual(['event', 'assistant', 'assistant'])
+        expect(summary.items[1]).toMatchObject({ text: 'A visible title', titleChange: true })
+        expect(summary.items[2]).toMatchObject({ text: 'Finished.' })
+        expect(summary.items[2]?.titleChange).toBeUndefined()
+    })
+
     it('folds visible events with execution and ignores ready/token snapshots', () => {
         const rows = [
             createMessage(1, { role: 'agent', content: { type: 'codex', data: { type: 'reasoning', message: 'first' } } }),

@@ -21,6 +21,10 @@ const TOOL_COMPONENTS = {
 
 function AssistantMarkdownText() {
     const ctx = useHappyChatContext()
+    const titleChange = useAssistantState(({ message }) => {
+        const custom = message.metadata.custom as Partial<HappyChatMessageMetadata> | undefined
+        return custom?.kind === 'assistant' && custom.titleChange === true
+    })
     const shouldLinkFilePaths = useAssistantState(({ thread, message }) => {
         if (message.role !== 'assistant') return false
         if (message.status?.type === 'running') return false
@@ -40,7 +44,15 @@ function AssistantMarkdownText() {
         return (text: string) => linkAssistantFilePaths(text, ctx.sessionId)
     }, [ctx.sessionId, shouldLinkFilePaths])
 
-    return <MarkdownText preprocess={preprocess} />
+    const markdown = <MarkdownText preprocess={preprocess} />
+    if (!titleChange) return markdown
+
+    return (
+        <div className="flex min-w-0 items-start gap-1">
+            <span aria-hidden="true" className="shrink-0 pt-0.5">✏️</span>
+            <div className="min-w-0 flex-1">{markdown}</div>
+        </div>
+    )
 }
 
 const MESSAGE_PART_COMPONENTS = {

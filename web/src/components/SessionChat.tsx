@@ -536,7 +536,8 @@ export function SessionChat(props: {
                     sourceMessageId: item.id.replace(/^assistant:/, ''),
                     localId: null,
                     createdAt: item.createdAt,
-                    text: item.text ?? ''
+                    text: item.text ?? '',
+                    titleChange: item.titleChange
                 }
             }
             return {

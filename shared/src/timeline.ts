@@ -21,6 +21,8 @@ export type TimelineSummaryItem = {
     seqStart: number
     seqEnd: number
     text?: string
+    /** The assistant text is the title returned by Hapi's title tool. */
+    titleChange?: boolean
     startedAt?: number | null
     completedAt?: number | null
     durationMs?: number | null

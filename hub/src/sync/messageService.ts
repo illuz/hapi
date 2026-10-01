@@ -467,6 +467,18 @@ function summarizeTimelineMessages(
     let workToolCallIds = new Set<string>()
     let workToolResultIds = new Set<string>()
     const titleChangeCallIds = new Set<string>()
+    const pendingTitleChangeSummaries = new Set<string>()
+
+    const consumeTitleChangeSummary = (text: string): boolean => {
+        const normalized = text.trim()
+        if (!normalized) return false
+        for (const title of pendingTitleChangeSummaries) {
+            if (normalized !== title && normalized !== formatTitleChangeText(title)) continue
+            pendingTitleChangeSummaries.delete(title)
+            return true
+        }
+        return false
+    }
 
     const flushWork = () => {
         if (!work) return
@@ -517,6 +529,10 @@ function summarizeTimelineMessages(
                 seqEnd: message.seq,
                 text: signals.text
             })
+            pendingTitleChangeSummaries.clear()
+            if (signals.titleChange.title.trim()) {
+                pendingTitleChangeSummaries.add(signals.titleChange.title.trim())
+            }
             if (signals.titleChange.callId) titleChangeCallIds.add(signals.titleChange.callId)
             continue
         }
@@ -532,6 +548,7 @@ function summarizeTimelineMessages(
                 seqEnd: message.seq,
                 text: extractUserText(message.content)
             })
+            pendingTitleChangeSummaries.clear()
             continue
         }
 
@@ -540,6 +557,7 @@ function summarizeTimelineMessages(
             // tool call. Keep the commentary visible outside the folded group;
             // the detail endpoint still returns the whole raw message range.
             if (signals.hasText) {
+                const titleChange = consumeTitleChangeSummary(signals.text)
                 flushWork()
                 items.push({
                     id: 'assistant:' + message.id,
@@ -547,9 +565,12 @@ function summarizeTimelineMessages(
                     createdAt: message.createdAt,
                     seqStart: message.seq,
                     seqEnd: message.seq,
-                    text: signals.text
+                    text: signals.text,
+                    ...(titleChange ? { titleChange: true } : {})
                 })
+                if (!titleChange) pendingTitleChangeSummaries.clear()
             }
+            if (!signals.hasText) pendingTitleChangeSummaries.clear()
             if (!work) {
                 work = {
                     id: 'work-group:' + message.seq + '-' + message.seq,
@@ -596,15 +617,19 @@ function summarizeTimelineMessages(
                 seqEnd: message.seq,
                 text: signals.text
             })
+            pendingTitleChangeSummaries.clear()
         } else if (signals.hasText) {
+            const titleChange = consumeTitleChangeSummary(signals.text)
             items.push({
                 id: 'assistant:' + message.id,
                 kind: 'assistant',
                 createdAt: message.createdAt,
                 seqStart: message.seq,
                 seqEnd: message.seq,
-                text: signals.text
+                text: signals.text,
+                ...(titleChange ? { titleChange: true } : {})
             })
+            if (!titleChange) pendingTitleChangeSummaries.clear()
         }
     }
     flushWork()

@@ -23,6 +23,7 @@ export type HappyChatMessageMetadata = {
     usage?: UsageData
     model?: string | null
     sourceMessageId?: string
+    titleChange?: boolean
     review?: CodexReview
 }
 
@@ -117,7 +118,8 @@ function toThreadMessageLike(block: WorkVisibleChatBlock): HappyThreadMessageLik
                     durationMs: block.durationMs,
                     usage: block.usage,
                     model: block.model,
-                    sourceMessageId: block.sourceMessageId
+                    sourceMessageId: block.sourceMessageId,
+                    titleChange: block.titleChange
                 } satisfies HappyChatMessageMetadata
             }
         }

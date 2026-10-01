@@ -25,6 +25,10 @@ function formatDuration(ms: number): string {
 // id 不变，卡片也会重新挂载；把用户的显式选择放到组件外，避免分页刷新时重新折叠。
 // 工作组在补齐历史后可能会换掉首个块和自身 id，因此同时保存首尾块别名。
 const workGroupOpenState = new Map<string, boolean>()
+// 历史前插会让 assistant-ui 按数组下标重新挂载工作组卡片。对仍位于最早边界的
+// 工作组，不能因为重新挂载就再次自动补页；否则一次展开会连续发起多次请求。
+// 一次会话只允许一页自动补齐，继续历史由顶部哨兵或“加载更早的”按钮驱动。
+const workGroupHistoryHydratedSessions = new Set<string>()
 
 function getWorkGroupOpenStateKeys(sessionId: string, block: WorkGroupBlock): string[] {
     const keys = block.stateKey
@@ -173,7 +177,13 @@ export function WorkGroupCard(props: {
             if (!props.block.needsOlderHistory) setHistoryExhausted(false)
             return
         }
-        if (historyExhausted || isHydratingHistory || ctx.isSyncingTail || ctx.isLoadingMoreMessages) return
+        if (
+            historyExhausted
+            || workGroupHistoryHydratedSessions.has(ctx.sessionId)
+            || isHydratingHistory
+            || ctx.isSyncingTail
+            || ctx.isLoadingMoreMessages
+        ) return
         if (!ctx.hasMoreMessages || !ctx.loadOlderMessagesPreservingScroll) {
             setHistoryExhausted(true)
             return
@@ -188,14 +198,22 @@ export function WorkGroupCard(props: {
             if (result === 'terminal-stop') {
                 // Reaching the beginning of the transcript is a normal end
                 // state, not an unavailable-history error.
+                workGroupHistoryHydratedSessions.add(ctx.sessionId)
+                setHistoryExhausted(true)
+            } else if (result === 'loaded') {
+                // 一页已经足够展示工作组的更早部分；后续页面由顶部哨兵或按钮驱动。
+                // 只做一次自动补齐，避免哨兵保持可见时展开卡片连续发起请求。
+                workGroupHistoryHydratedSessions.add(ctx.sessionId)
                 setHistoryExhausted(true)
             } else if (result === 'failed') {
+                workGroupHistoryHydratedSessions.add(ctx.sessionId)
                 setHistoryExhausted(true)
                 setHistoryLoadFailed(true)
             }
         }).catch(() => {
             if (hydrationRunRef.current !== runId) return
             setIsHydratingHistory(false)
+            workGroupHistoryHydratedSessions.add(ctx.sessionId)
             setHistoryExhausted(true)
             setHistoryLoadFailed(true)
         })

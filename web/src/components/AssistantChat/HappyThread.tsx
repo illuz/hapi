@@ -34,6 +34,8 @@ const MANUAL_SCROLL_EPSILON_PX = 1
 const INITIAL_SCROLL_SETTLE_MS = 1800
 const INITIAL_SCROLL_SETTLE_DELAYS_MS = [0, 16, 50, 120, 250, 500, 900, 1400, 1800] as const
 const HISTORY_PRELOAD_MARGIN_PX = 200
+const HISTORY_REARM_DISTANCE_PX = 600
+const HISTORY_LOAD_COOLDOWN_MS = 300
 const CONVERSATION_NAVIGATION_EDGE_TOLERANCE_PX = 20
 const CONVERSATION_NAVIGATION_LOAD_ATTEMPTS = 20
 const CONVERSATION_NAVIGATION_SETTLE_DELAY_MS = 50
@@ -74,6 +76,11 @@ export function isViewportCoverageNeeded(params: {
     const marginPx = params.marginPx ?? HISTORY_PRELOAD_MARGIN_PX
     return params.sentinelBottom > params.viewportTop - marginPx
         && params.sentinelTop < params.viewportBottom + marginPx
+}
+
+/** Only start an automatic history request when the top sentinel enters view. */
+export function shouldTriggerTopHistoryLoad(isIntersecting: boolean, wasIntersecting: boolean): boolean {
+    return isIntersecting && !wasIntersecting
 }
 
 export function captureScrollAnchor(viewport: HTMLElement): ScrollAnchor | null {
@@ -465,7 +472,10 @@ export function HappyThread(props: {
     const viewportRef = useRef<HTMLDivElement | null>(null)
     const contentRef = useRef<HTMLDivElement | null>(null)
     const topSentinelRef = useRef<HTMLDivElement | null>(null)
+    const topSentinelIntersectingRef = useRef(false)
+    const topSentinelAutoLoadBlockedRef = useRef(false)
     const loadLockRef = useRef(false)
+    const historyLoadCooldownUntilRef = useRef(0)
     const pendingScrollRef = useRef<PendingScrollRestore | null>(null)
     const prevLoadingMoreRef = useRef(false)
     const loadStartedRef = useRef(false)
@@ -825,6 +835,7 @@ export function HappyThread(props: {
             || isLoadingMessagesRef.current
             || isLoadingMoreRef.current
             || loadLockRef.current
+            || Date.now() < historyLoadCooldownUntilRef.current
         ) {
             return 'transient-stop'
         }
@@ -867,12 +878,15 @@ export function HappyThread(props: {
             if (result === false) {
                 pendingScrollRef.current = null
                 loadLockRef.current = false
+                historyLoadCooldownUntilRef.current = Date.now() + HISTORY_LOAD_COOLDOWN_MS
                 return 'terminal-stop'
             }
+            historyLoadCooldownUntilRef.current = Date.now() + HISTORY_LOAD_COOLDOWN_MS
             return 'loaded'
         } catch (error) {
             pendingScrollRef.current = null
             loadLockRef.current = false
+            historyLoadCooldownUntilRef.current = Date.now() + HISTORY_LOAD_COOLDOWN_MS
             console.error('Failed to load older messages:', error)
             return 'failed'
         } finally {
@@ -1015,12 +1029,28 @@ export function HappyThread(props: {
         const observer = new IntersectionObserver(
             (entries) => {
                 for (const entry of entries) {
-                    if (entry.isIntersecting) {
-                        if (isInitialScrollSettling()) {
-                            continue
+                    if (!entry.isIntersecting) {
+                        // DOM 前插或滚动锚点恢复可能让哨兵短暂离开 rootMargin；只有
+                        // 真正离开顶部较远时才重新武装，避免同一次上拉被重复触发。
+                        const rootTop = entry.rootBounds?.top ?? 0
+                        if (entry.boundingClientRect.bottom < rootTop - HISTORY_REARM_DISTANCE_PX) {
+                            topSentinelIntersectingRef.current = false
+                            topSentinelAutoLoadBlockedRef.current = false
                         }
-                        handleLoadMoreRef.current()
+                        continue
                     }
+                    if (topSentinelAutoLoadBlockedRef.current) {
+                        continue
+                    }
+                    if (!shouldTriggerTopHistoryLoad(entry.isIntersecting, topSentinelIntersectingRef.current)) {
+                        continue
+                    }
+                    topSentinelIntersectingRef.current = true
+                    topSentinelAutoLoadBlockedRef.current = true
+                    if (isInitialScrollSettling()) {
+                        continue
+                    }
+                    handleLoadMoreRef.current()
                 }
             },
             {

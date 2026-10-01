@@ -181,6 +181,7 @@ describe('WorkGroupCard', () => {
         render(
             <HappyChatProvider value={{
                 ...contextValue,
+                sessionId: 'work-group-card-terminal-stop-session',
                 hasMoreMessages: true,
                 loadOlderMessagesPreservingScroll
             }}>
@@ -191,5 +192,44 @@ describe('WorkGroupCard', () => {
         fireEvent.click(screen.getByRole('button', { expanded: false }))
         await waitFor(() => expect(loadOlderMessagesPreservingScroll).toHaveBeenCalled())
         expect(screen.queryByText('Older work is unavailable')).not.toBeInTheDocument()
+    })
+
+    it('loads only one older page when an old work group is expanded', async () => {
+        const loadOlderMessagesPreservingScroll = vi.fn().mockResolvedValue('loaded')
+        const group = {
+            ...makeGroup(false),
+            stateKey: 'after:stable-answer',
+            needsOlderHistory: true,
+            historyState: 'needs-older-history' as const
+        }
+
+        const view = render(
+            <HappyChatProvider value={{
+                ...contextValue,
+                sessionId: 'work-group-card-loaded-session',
+                hasMoreMessages: true,
+                loadOlderMessagesPreservingScroll
+            }}>
+                <WorkGroupCard block={group} metadata={null} />
+            </HappyChatProvider>
+        )
+
+        fireEvent.click(screen.getByRole('button', { expanded: false }))
+        await waitFor(() => expect(loadOlderMessagesPreservingScroll).toHaveBeenCalledTimes(1))
+
+        // 前插历史会按数组下标重新挂载卡片；同一会话不能因此再次自动补页。
+        view.unmount()
+        render(
+            <HappyChatProvider value={{
+                ...contextValue,
+                sessionId: 'work-group-card-loaded-session',
+                hasMoreMessages: true,
+                loadOlderMessagesPreservingScroll
+            }}>
+                <WorkGroupCard block={group} metadata={null} />
+            </HappyChatProvider>
+        )
+        await new Promise((resolve) => setTimeout(resolve, 20))
+        expect(loadOlderMessagesPreservingScroll).toHaveBeenCalledTimes(1)
     })
 })

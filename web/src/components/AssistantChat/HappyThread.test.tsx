@@ -9,6 +9,7 @@ import {
     getScrollIntent,
     isViewportCoverageNeeded,
     restoreScrollAnchor,
+    shouldTriggerTopHistoryLoad,
     shouldCancelInitialScrollSettling,
 } from '@/components/AssistantChat/HappyThread'
 import type { ConversationOutlineItem } from '@/chat/outline'
@@ -186,6 +187,12 @@ describe('scroll anchor helpers', () => {
             sentinelTop: -500,
             sentinelBottom: -499
         })).toBe(false)
+    })
+
+    it('does not repeat an automatic load while the top sentinel stays visible', () => {
+        expect(shouldTriggerTopHistoryLoad(true, false)).toBe(true)
+        expect(shouldTriggerTopHistoryLoad(true, true)).toBe(false)
+        expect(shouldTriggerTopHistoryLoad(false, true)).toBe(false)
     })
 
     it('restores the captured message to the same viewport offset', () => {

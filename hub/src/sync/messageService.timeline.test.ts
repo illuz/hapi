@@ -156,6 +156,7 @@ describe('MessageService timeline', () => {
 
         const summary = service.getTimelineSummary('session-1')
         expect(summary.items[0]?.work?.runningCount).toBe(1)
+        expect(summary.items[0]?.lastActivityAt).toBe(1000)
         expect(summary.items[0]?.completedAt).toBeNull()
         expect(summary.items[0]?.durationMs).toBeNull()
     })

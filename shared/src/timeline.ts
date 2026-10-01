@@ -16,6 +16,8 @@ export type TimelineSummaryItem = {
     id: string
     kind: 'user' | 'assistant' | 'work-group' | 'event'
     createdAt: number
+    /** Last persisted message timestamp in the group, even when a tool result is missing. */
+    lastActivityAt?: number | null
     seqStart: number
     seqEnd: number
     text?: string

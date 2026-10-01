@@ -492,6 +492,11 @@ export function SessionChat(props: {
                 const summary = isLive
                     ? sourceSummary
                     : { ...sourceSummary, runningCount: 0, pendingCount: 0 }
+                const startedAt = item.startedAt ?? null
+                const observedEndAt = item.completedAt ?? item.lastActivityAt ?? item.createdAt
+                const observedDuration = startedAt !== null && observedEndAt >= startedAt
+                    ? observedEndAt - startedAt
+                    : null
                 return {
                     kind: 'work-group',
                     id: item.id,
@@ -499,9 +504,13 @@ export function SessionChat(props: {
                     // extends the same work group and its end sequence changes.
                     stateKey: `timeline:${item.seqStart}`,
                     createdAt: item.createdAt,
-                    startedAt: item.startedAt ?? null,
-                    completedAt: item.completedAt ?? null,
-                    durationMs: item.durationMs ?? null,
+                    startedAt,
+                    completedAt: isLive
+                        ? item.completedAt ?? null
+                        : item.completedAt ?? item.lastActivityAt ?? item.createdAt,
+                    durationMs: isLive
+                        ? item.durationMs ?? null
+                        : item.durationMs ?? observedDuration,
                     blocks: details ?? [],
                     active: false,
                     defaultOpen: false,

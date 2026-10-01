@@ -447,6 +447,7 @@ function summarizeTimelineMessages(
                     id: 'work-group:' + message.seq + '-' + message.seq,
                     kind: 'work-group',
                     createdAt: message.createdAt,
+                    lastActivityAt: message.createdAt,
                     seqStart: message.seq,
                     seqEnd: message.seq,
                     startedAt: message.createdAt,
@@ -459,6 +460,7 @@ function summarizeTimelineMessages(
             } else {
                 work.seqEnd = message.seq
                 work.id = 'work-group:' + work.seqStart + '-' + work.seqEnd
+                work.lastActivityAt = message.createdAt
                 work.completedAt = message.createdAt
                 work.durationMs = Math.max(0, message.createdAt - work.createdAt)
                 const current = work.work ?? emptyTimelineSummary()
@@ -581,6 +583,7 @@ export class MessageService {
             id: groupId,
             kind: 'work-group' as const,
             createdAt: messages[0]?.createdAt ?? Date.now(),
+            lastActivityAt: messages.at(-1)?.createdAt ?? null,
             seqStart: startSeq,
             seqEnd: endSeq,
             startedAt: messages[0]?.createdAt ?? null,

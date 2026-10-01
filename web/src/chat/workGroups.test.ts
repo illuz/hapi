@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { AgentReasoningBlock, ToolCallBlock } from '@/chat/types'
+import type { AgentEventBlock, AgentReasoningBlock, ToolCallBlock } from '@/chat/types'
 import { buildVisibleChatBlocks } from './toolGroups'
 import {
     buildVisibleWorkGroups,
@@ -35,6 +35,15 @@ function tool(id: string, name: string): ToolCallBlock {
             completedAt: 30
         },
         children: []
+    }
+}
+
+function titleChanged(id: string, title: string): AgentEventBlock {
+    return {
+        kind: 'agent-event',
+        id,
+        createdAt: Number(id.replace(/\D/g, '')) || 1,
+        event: { type: 'title-changed', title }
     }
 }
 
@@ -190,6 +199,20 @@ describe('work groups', () => {
         if (result[0]?.kind === 'work-group') {
             expect(result[0].blocks.map((block) => block.kind)).toEqual(['cli-output', 'tool-call'])
         }
+    })
+
+    it('keeps title changes outside folded execution groups', () => {
+        const result = buildVisibleWorkGroups([
+            reasoning('reasoning-1'),
+            titleChanged('title-2', 'Updated title'),
+            tool('tool-3', 'CodexBash')
+        ])
+
+        expect(result.map((block) => block.kind)).toEqual(['work-group', 'agent-event', 'work-group'])
+        expect(result[1]).toMatchObject({
+            kind: 'agent-event',
+            event: { type: 'title-changed', title: 'Updated title' }
+        })
     })
 
     it('uses active tool state for timing', () => {

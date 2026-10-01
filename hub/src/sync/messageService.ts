@@ -124,6 +124,12 @@ type TimelineSignals = {
     summary: TimelineWorkSummary
     toolCallIds: string[]
     toolResultIds: string[]
+    titleChange?: TimelineTitleChange
+}
+
+type TimelineTitleChange = {
+    title: string
+    callId: string | null
 }
 
 function emptyTimelineSummary(): TimelineWorkSummary {
@@ -191,6 +197,71 @@ function extractTaskNotificationSummary(value: unknown): string | null {
     const match = value.match(/<task-notification\b[^>]*>[\s\S]*?<summary>([\s\S]*?)<\/summary>[\s\S]*?<\/task-notification>/i)
     const summary = match?.[1]?.replace(/\s+/g, ' ').trim()
     return summary || null
+}
+
+const TITLE_CHANGE_TOOL_NAMES = new Set([
+    'change_title',
+    'hapi_change_title',
+    'hapi__change_title',
+    'mcp__hapi__change_title'
+])
+
+function isTitleChangeToolName(value: unknown): boolean {
+    return typeof value === 'string' && TITLE_CHANGE_TOOL_NAMES.has(value.trim().toLowerCase())
+}
+
+function extractTitleChangeTitle(value: unknown, depth = 0): string | null {
+    if (depth > 3 || value === null || value === undefined) return null
+    if (typeof value === 'string') {
+        try {
+            return extractTitleChangeTitle(JSON.parse(value), depth + 1)
+        } catch {
+            return null
+        }
+    }
+    if (!isObject(value)) return null
+
+    const title = asString(value.title)?.trim()
+    if (title) return title
+
+    for (const key of ['input', 'arguments', 'parameters']) {
+        const nested = extractTitleChangeTitle(value[key], depth + 1)
+        if (nested) return nested
+    }
+    return null
+}
+
+function findTitleChangeInvocation(value: unknown, depth = 0): TimelineTitleChange | null {
+    if (depth > 8 || value === null || value === undefined) return null
+    if (Array.isArray(value)) {
+        for (const item of value) {
+            const found = findTitleChangeInvocation(item, depth + 1)
+            if (found) return found
+        }
+        return null
+    }
+    if (!isObject(value)) return null
+
+    const name = asString(value.name) ?? asString(value.tool)
+    if (isTitleChangeToolName(name)) {
+        const title = extractTitleChangeTitle(value.input ?? value.arguments ?? value.invocation)
+        if (title) {
+            return {
+                title,
+                callId: asString(value.callId) ?? asString(value.call_id) ?? asString(value.id)
+            }
+        }
+    }
+
+    for (const key of ['content', 'data', 'message', 'payload', 'invocation', 'item']) {
+        const found = findTitleChangeInvocation(value[key], depth + 1)
+        if (found) return found
+    }
+    return null
+}
+
+function formatTitleChangeText(title: string): string {
+    return `Title changed to ${JSON.stringify(title)}`
 }
 
 function isHiddenOrNonRenderableAgentRecord(content: unknown): boolean {
@@ -345,6 +416,16 @@ function classifyTimelineMessage(content: unknown): TimelineSignals {
         return emptyTimelineSignals({ ignored: true })
     }
     const target = record?.content ?? content
+    const titleChange = findTitleChangeInvocation(target)
+    if (titleChange) {
+        return emptyTimelineSignals({
+            hasEvent: true,
+            hasText: true,
+            text: formatTitleChangeText(titleChange.title),
+            titleChange,
+            toolCallIds: titleChange.callId ? [titleChange.callId] : []
+        })
+    }
     const scanned = scanTimelineValue(target, 0, textParts, summary, toolCallIds, toolResultIds)
     const text = [...new Set(textParts)].join('\n\n').trim()
     return {
@@ -385,6 +466,7 @@ function summarizeTimelineMessages(
     let work: TimelineSummaryItem | null = null
     let workToolCallIds = new Set<string>()
     let workToolResultIds = new Set<string>()
+    const titleChangeCallIds = new Set<string>()
 
     const flushWork = () => {
         if (!work) return
@@ -413,6 +495,32 @@ function summarizeTimelineMessages(
         const role = unwrapRoleWrappedRecordEnvelope(message.content)?.role
         const signals = classifyTimelineMessage(message.content)
         if (signals.ignored) continue
+
+        // MCP tool results for change_title are implementation details. The
+        // invocation itself becomes the standalone title-change event below.
+        const isTitleChangeResultOnly = signals.toolResultIds.length > 0
+            && signals.toolResultIds.every((id) => titleChangeCallIds.has(id))
+            && !signals.hasText
+            && !signals.hasEvent
+            && signals.summary.reasoningCount === 0
+            && signals.summary.reviewCount === 0
+            && signals.summary.toolCount === 0
+        if (isTitleChangeResultOnly) continue
+
+        if (signals.titleChange) {
+            flushWork()
+            items.push({
+                id: 'event:' + message.id,
+                kind: 'event',
+                createdAt: message.createdAt,
+                seqStart: message.seq,
+                seqEnd: message.seq,
+                text: signals.text
+            })
+            if (signals.titleChange.callId) titleChangeCallIds.add(signals.titleChange.callId)
+            continue
+        }
+
         if (role === 'user' && !signals.hasWork) {
             if (!signals.hasText) continue
             flushWork()

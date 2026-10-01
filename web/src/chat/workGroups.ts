@@ -65,7 +65,9 @@ function isWorkGroupChild(block: VisibleChatBlock): block is WorkGroupChildBlock
     if (block.kind === 'agent-reasoning') return block.text.trim().length > 0
     if (block.kind === 'tool-group' || block.kind === 'tool-call') return true
     if (block.kind === 'cli-output') return block.source === 'assistant'
-    return block.kind === 'agent-event'
+    // Title changes are transcript metadata, not execution work. Keep them
+    // as standalone system messages so a long tool group cannot hide them.
+    return block.kind === 'agent-event' && block.event.type !== 'title-changed'
 }
 
 function isTurnBoundary(block: VisibleChatBlock): boolean {

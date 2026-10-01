@@ -150,7 +150,7 @@ export function getEventPresentation(event: AgentEvent): EventPresentation {
     }
     if (event.type === 'title-changed') {
         const title = typeof event.title === 'string' ? event.title : ''
-        return { icon: null, text: title ? `Title changed to "${title}"` : 'Title changed' }
+        return { icon: '✏️', text: title ? `Title changed to "${title}"` : 'Title changed' }
     }
     if (event.type === 'permission-mode-changed') {
         const modeValue = (event as Record<string, unknown>).mode
@@ -174,6 +174,9 @@ export function getEventPresentation(event: AgentEvent): EventPresentation {
     }
     if (event.type === 'message') {
         if (typeof event.message === 'string') {
+            if (event.message === 'Title changed' || event.message.startsWith('Title changed to "')) {
+                return { icon: '✏️', text: event.message }
+            }
             const compact = compactAutoRetryMessage(event.message)
             if (compact) {
                 const details = parseAutoRetryMessage(event.message)

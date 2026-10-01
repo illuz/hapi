@@ -1,6 +1,39 @@
 import { describe, expect, it } from 'vitest'
 import { getEventPresentation, formatMessageTimestamp, formatResetTime } from './presentation'
 
+describe('getEventPresentation — title changes', () => {
+    it('marks a title-change event with a pencil emoji', () => {
+        expect(getEventPresentation({ type: 'title-changed', title: 'Updated title' })).toEqual({
+            icon: '✏️',
+            text: 'Title changed to "Updated title"'
+        })
+    })
+
+    it('keeps the emoji when the title is empty', () => {
+        expect(getEventPresentation({ type: 'title-changed', title: '' })).toEqual({
+            icon: '✏️',
+            text: 'Title changed'
+        })
+    })
+
+    it.each(['Title changed to "Updated title"', 'Title changed'])(
+        'marks a summary timeline title-change message: %s',
+        (message) => {
+            expect(getEventPresentation({ type: 'message', message })).toEqual({
+                icon: '✏️',
+                text: message
+            })
+        }
+    )
+
+    it('does not add the title-change emoji to other messages', () => {
+        expect(getEventPresentation({ type: 'message', message: 'Finished updating the title.' })).toEqual({
+            icon: null,
+            text: 'Finished updating the title.'
+        })
+    })
+})
+
 describe('getEventPresentation — limit-warning', () => {
     it('formats five_hour warning', () => {
         const result = getEventPresentation({

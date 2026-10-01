@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { SessionMetadataSummary } from '@/types/api'
 import type { WorkGroupBlock, WorkGroupChildBlock } from '@/chat/workGroups'
 import { getEventPresentation } from '@/chat/presentation'
@@ -30,6 +30,54 @@ const workGroupOpenState = new Map<string, boolean>()
 // 一次会话只允许一次自动批量补齐，继续历史由顶部哨兵或“加载更早的”按钮驱动。
 const workGroupHistoryHydratedSessions = new Set<string>()
 const WORK_GROUP_HISTORY_AUTO_LOAD_PAGES = 4
+
+function JumpToFirstIcon(props: { className?: string }) {
+    return (
+        <svg
+            className={props.className ?? 'h-3.5 w-3.5'}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+        >
+            <path d="M5 5h14" />
+            <path d="M12 18V7" />
+            <path d="m8 11 4-4 4 4" />
+        </svg>
+    )
+}
+
+function JumpToLastIcon(props: { className?: string }) {
+    return (
+        <svg
+            className={props.className ?? 'h-3.5 w-3.5'}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+        >
+            <path d="M5 19h14" />
+            <path d="M12 6v11" />
+            <path d="m8 13 4 4 4-4" />
+        </svg>
+    )
+}
+
+function scrollWorkGroupContent(content: HTMLDivElement, top: number, behavior: ScrollBehavior): void {
+    if (typeof content.scrollTo === 'function') {
+        content.scrollTo({ top, behavior })
+    } else {
+        // jsdom does not implement HTMLElement.scrollTo; keeping this fallback
+        // also makes the navigation harmless in embedded WebViews without it.
+        content.scrollTop = top
+    }
+}
 
 function getWorkGroupOpenStateKeys(sessionId: string, block: WorkGroupBlock): string[] {
     const keys = block.stateKey
@@ -141,6 +189,15 @@ export function WorkGroupCard(props: {
     const [detailsLoadFailed, setDetailsLoadFailed] = useState(false)
     const hydrationRunRef = useRef(0)
     const detailsRequestRef = useRef<string | null>(null)
+    const contentRef = useRef<HTMLDivElement>(null)
+    const previousOpenRef = useRef(false)
+    const jumpToEndPendingRef = useRef(false)
+
+    const scrollToWorkGroupEdge = (edge: 'first' | 'last') => {
+        const content = contentRef.current
+        if (!content) return
+        scrollWorkGroupContent(content, edge === 'first' ? 0 : content.scrollHeight, 'smooth')
+    }
 
     const running = props.block.active || props.block.summary.runningCount > 0
     const pending = props.block.summary.pendingCount > 0
@@ -173,6 +230,22 @@ export function WorkGroupCard(props: {
         setDetailsLoadFailed(false)
         hydrationRunRef.current += 1
     }, [openStateSignature, props.block.defaultOpen])
+
+    // Opening a group should land on its newest process entry. Summary-mode
+    // cards keep the pending jump until their lazy details have arrived.
+    useLayoutEffect(() => {
+        if (open && !previousOpenRef.current) {
+            jumpToEndPendingRef.current = true
+        }
+        previousOpenRef.current = open
+        if (!open || !jumpToEndPendingRef.current) return
+        if (props.block.detailsState === 'summary' && props.block.blocks.length === 0) return
+
+        const content = contentRef.current
+        if (!content) return
+        scrollWorkGroupContent(content, content.scrollHeight, 'instant')
+        jumpToEndPendingRef.current = false
+    }, [open, props.block.blocks.length, props.block.detailsState, isHydratingHistory])
 
     // Summary-mode work groups deliberately do not carry their children in the
     // initial timeline response. Fetch the exact seq range only when the user
@@ -295,34 +368,59 @@ export function WorkGroupCard(props: {
     return (
         <Card className="overflow-hidden rounded-[20px] bg-[var(--app-reasoning-bg)] shadow-none" data-work-group="true" data-assistant-turn="true">
             <CardHeader className="space-y-0 p-3">
-                <button
-                    type="button"
-                    onClick={() => setOpen((value) => {
-                        const next = !value
-                        manualOpenStateRef.current = true
-                        for (const key of openStateKeys) workGroupOpenState.set(key, next)
-                        return next
-                    })}
-                    aria-expanded={open}
-                    className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]"
-                >
-                    <div className="flex items-center gap-2">
-                        <span className={cn('text-[var(--app-hint)] transition-transform', open ? 'rotate-90' : null)}>›</span>
-                        <CardTitle className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--app-fg)]">{title}</CardTitle>
-                        {running ? <span className="shrink-0 text-[var(--app-link)]"><ToolStatusIcon state="running" /></span> : null}
-                        {props.block.summary.pendingCount > 0 ? <span className="shrink-0 text-xs text-amber-700">{t('workGroup.pending', { n: props.block.summary.pendingCount })}</span> : null}
-                        {props.block.summary.errorCount > 0 ? <span className="shrink-0 text-xs text-red-600">{t('workGroup.errors', { n: props.block.summary.errorCount })}</span> : null}
-                    </div>
-                    {subtitleParts.length > 0 || timing.durationMs !== null ? (
-                        <div className="ml-5 mt-1 flex flex-wrap items-center gap-2 text-xs text-[var(--app-hint)]">
-                            {subtitleParts.length > 0 ? <span>{subtitleParts.join(' · ')}</span> : null}
-                            {timing.durationMs !== null ? <span className="font-mono">{formatDuration(timing.durationMs)}</span> : null}
+                <div className="flex items-start gap-1">
+                    <button
+                        type="button"
+                        onClick={() => setOpen((value) => {
+                            const next = !value
+                            manualOpenStateRef.current = true
+                            if (next) jumpToEndPendingRef.current = true
+                            for (const key of openStateKeys) workGroupOpenState.set(key, next)
+                            return next
+                        })}
+                        aria-expanded={open}
+                        className="min-w-0 flex-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]"
+                    >
+                        <div className="flex items-center gap-2">
+                            <span className={cn('text-[var(--app-hint)] transition-transform', open ? 'rotate-90' : null)}>›</span>
+                            <CardTitle className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--app-fg)]">{title}</CardTitle>
+                            {running ? <span className="shrink-0 text-[var(--app-link)]"><ToolStatusIcon state="running" /></span> : null}
+                            {props.block.summary.pendingCount > 0 ? <span className="shrink-0 text-xs text-amber-700">{t('workGroup.pending', { n: props.block.summary.pendingCount })}</span> : null}
+                            {props.block.summary.errorCount > 0 ? <span className="shrink-0 text-xs text-red-600">{t('workGroup.errors', { n: props.block.summary.errorCount })}</span> : null}
+                        </div>
+                        {subtitleParts.length > 0 || timing.durationMs !== null ? (
+                            <div className="ml-5 mt-1 flex flex-wrap items-center gap-2 text-xs text-[var(--app-hint)]">
+                                {subtitleParts.length > 0 ? <span>{subtitleParts.join(' · ')}</span> : null}
+                                {timing.durationMs !== null ? <span className="font-mono">{formatDuration(timing.durationMs)}</span> : null}
+                            </div>
+                        ) : null}
+                    </button>
+                    {open ? (
+                        <div className="flex shrink-0 items-center gap-0.5" role="group" aria-label={t('workGroup.navigation')}>
+                            <button
+                                type="button"
+                                aria-label={t('workGroup.jumpFirst')}
+                                title={t('workGroup.jumpFirst')}
+                                onClick={() => scrollToWorkGroupEdge('first')}
+                                className="rounded p-1 text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]"
+                            >
+                                <JumpToFirstIcon />
+                            </button>
+                            <button
+                                type="button"
+                                aria-label={t('workGroup.jumpLast')}
+                                title={t('workGroup.jumpLast')}
+                                onClick={() => scrollToWorkGroupEdge('last')}
+                                className="rounded p-1 text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]"
+                            >
+                                <JumpToLastIcon />
+                            </button>
                         </div>
                     ) : null}
-                </button>
+                </div>
             </CardHeader>
             {open ? (
-                <CardContent className="flex max-h-[60vh] flex-col gap-2 overflow-y-auto px-3 pb-3 pt-0">
+                <CardContent ref={contentRef} className="flex max-h-[60vh] flex-col gap-2 overflow-y-auto px-3 pb-3 pt-0">
                     {props.block.blocks.map((block) => (
                         <div key={block.id} className="min-w-0 shrink-0" data-work-group-child="true">
                             <WorkGroupChild block={block} metadata={props.metadata} />

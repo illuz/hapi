@@ -14,6 +14,9 @@ vi.mock('@/lib/use-translation', () => ({
                 'workGroup.working': 'Working',
                 'workGroup.reasoning': `${params?.n ?? 0} reasoning`,
                 'workGroup.tools': `${params?.n ?? 0} tools`,
+                'workGroup.navigation': 'Work process navigation',
+                'workGroup.jumpFirst': 'Jump to first work item',
+                'workGroup.jumpLast': 'Jump to last work item',
                 'workGroup.loadingOlderHistory': 'Loading older work…',
                 'workGroup.historyUnavailable': 'Older work is unavailable'
             }
@@ -129,6 +132,44 @@ describe('WorkGroupCard', () => {
 
         expect(screen.getByRole('button', { expanded: true })).toBeInTheDocument()
         expect(screen.getByText('inspect repository')).toBeInTheDocument()
+    })
+
+    it('jumps to the end on expand and exposes first/last navigation buttons', () => {
+        const originalScrollTo = HTMLElement.prototype.scrollTo
+        const scrollTo = vi.fn()
+        Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
+            configurable: true,
+            value: scrollTo
+        })
+
+        try {
+            renderCard({
+                ...makeGroup(false),
+                blocks: Array.from({ length: 3 }, (_, index) => makeReasoningBlock(`reasoning-nav-${index}`))
+            })
+
+            fireEvent.click(screen.getByRole('button', { expanded: false }))
+            expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ behavior: 'instant' }))
+            expect(screen.getByRole('button', { name: 'Jump to first work item' })).toBeInTheDocument()
+            expect(screen.getByRole('button', { name: 'Jump to last work item' })).toBeInTheDocument()
+
+            scrollTo.mockClear()
+            fireEvent.click(screen.getByRole('button', { name: 'Jump to first work item' }))
+            expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 0, behavior: 'smooth' }))
+
+            scrollTo.mockClear()
+            fireEvent.click(screen.getByRole('button', { name: 'Jump to last work item' }))
+            expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ behavior: 'smooth' }))
+        } finally {
+            if (originalScrollTo) {
+                Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
+                    configurable: true,
+                    value: originalScrollTo
+                })
+            } else {
+                delete (HTMLElement.prototype as { scrollTo?: unknown }).scrollTo
+            }
+        }
     })
 
     it('keeps the lazy-detail loading state until the detail request resolves', async () => {

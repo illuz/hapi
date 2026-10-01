@@ -24,6 +24,9 @@ const harness = vi.hoisted(() => ({
         updatedAt: number;
     },
     suppressTurnCompletion: false,
+    deferTurnCompletion: false,
+    activeTurns: 0,
+    maxConcurrentTurns: 0,
     remainingThreadSystemErrors: 0,
     startTurnMessages: [] as string[],
     failResumeThreadIds: [] as string[],
@@ -147,35 +150,46 @@ vi.mock('./codexAppServerClient', () => {
                 return { turn: { id: turnId } };
             }
 
-            if (params?.threadId === 'thread-1') {
-                const commandStart = {
-                    item: {
-                        id: 'cmd-1',
-                        type: 'commandExecution',
-                        command: 'echo ok',
-                        cwd: '/tmp/hapi-update'
-                    }
-                };
-                harness.notifications.push({ method: 'item/started', params: commandStart });
-                this.notificationHandler?.('item/started', commandStart);
-                this.notificationHandler?.('item/commandExecution/outputDelta', {
-                    itemId: 'cmd-1',
-                    delta: 'ok\n'
-                });
-                const commandEnd = {
-                    item: {
-                        id: 'cmd-1',
-                        type: 'commandExecution',
-                        exitCode: 0
-                    }
-                };
-                harness.notifications.push({ method: 'item/completed', params: commandEnd });
-                this.notificationHandler?.('item/completed', commandEnd);
-            }
+            const completeTurn = () => {
+                if (params?.threadId === 'thread-1') {
+                    const commandStart = {
+                        item: {
+                            id: 'cmd-1',
+                            type: 'commandExecution',
+                            command: 'echo ok',
+                            cwd: '/tmp/hapi-update'
+                        }
+                    };
+                    harness.notifications.push({ method: 'item/started', params: commandStart });
+                    this.notificationHandler?.('item/started', commandStart);
+                    this.notificationHandler?.('item/commandExecution/outputDelta', {
+                        itemId: 'cmd-1',
+                        delta: 'ok\n'
+                    });
+                    const commandEnd = {
+                        item: {
+                            id: 'cmd-1',
+                            type: 'commandExecution',
+                            exitCode: 0
+                        }
+                    };
+                    harness.notifications.push({ method: 'item/completed', params: commandEnd });
+                    this.notificationHandler?.('item/completed', commandEnd);
+                }
 
-            const completed = { status: 'Completed', turn: { id: turnId } };
-            harness.notifications.push({ method: 'turn/completed', params: completed });
-            this.notificationHandler?.('turn/completed', completed);
+                const completed = { status: 'Completed', turn: { id: turnId } };
+                harness.notifications.push({ method: 'turn/completed', params: completed });
+                this.notificationHandler?.('turn/completed', completed);
+                harness.activeTurns -= 1;
+            };
+
+            harness.activeTurns += 1;
+            harness.maxConcurrentTurns = Math.max(harness.maxConcurrentTurns, harness.activeTurns);
+            if (harness.deferTurnCompletion) {
+                setTimeout(completeTurn, 0);
+            } else {
+                completeTurn();
+            }
 
             return { turn: { id: turnId } };
         }
@@ -335,6 +349,9 @@ describe('codexRemoteLauncher', () => {
         harness.clearGoalThreadIds = [];
         harness.currentGoal = null;
         harness.suppressTurnCompletion = false;
+        harness.deferTurnCompletion = false;
+        harness.activeTurns = 0;
+        harness.maxConcurrentTurns = 0;
         harness.startTurnMessages = [];
         harness.failResumeThreadIds = [];
         harness.remainingThreadSystemErrors = 0;
@@ -375,6 +392,17 @@ describe('codexRemoteLauncher', () => {
         expect(sessionEvents.filter((event) => event.type === 'ready').length).toBeGreaterThanOrEqual(1);
         expect(thinkingChanges).toContain(true);
         expect(session.thinking).toBe(false);
+    });
+
+    it('waits for an active turn before starting the next queued message', async () => {
+        harness.deferTurnCompletion = true;
+        const { session } = createSessionStub(['first message', 'second message']);
+
+        const exitReason = await codexRemoteLauncher(session as never);
+
+        expect(exitReason).toBe('exit');
+        expect(harness.startTurnMessages).toEqual(['first message', 'second message']);
+        expect(harness.maxConcurrentTurns).toBe(1);
     });
 
     it('surfaces thread-level systemError only after same-thread retries are exhausted', async () => {

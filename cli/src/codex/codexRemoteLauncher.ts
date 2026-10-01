@@ -1142,9 +1142,22 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
             return true;
         };
 
+        const hasTurnInterruptingCommand = (): boolean => {
+            const queued = session.queue.queue[0];
+            if (!queued) {
+                return false;
+            }
+            const command = parseCodexSpecialCommand(queued.message);
+            return command.type === 'clear' || command.type === 'compact';
+        };
+
         while (!this.shouldExit) {
             logActiveHandles('loop-top');
-            if (!pending && (turnInFlight || recoveryInFlight) && session.queue.size() === 0) {
+            if (
+                !pending
+                && (turnInFlight || recoveryInFlight)
+                && !hasTurnInterruptingCommand()
+            ) {
                 await waitForTurnOrRecovery(this.abortController.signal);
                 if (this.abortController.signal.aborted && !this.shouldExit) {
                     logger.debug('[codex]: Internal wait aborted while turn/recovery was active; continuing');

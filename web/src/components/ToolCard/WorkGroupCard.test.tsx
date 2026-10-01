@@ -131,6 +131,21 @@ describe('WorkGroupCard', () => {
         expect(screen.getByText('inspect repository')).toBeInTheDocument()
     })
 
+    it('keeps a long execution list from shrinking its children to zero height', () => {
+        const baseGroup = makeGroup(true)
+        const group = {
+            ...baseGroup,
+            blocks: Array.from({ length: 24 }, (_, index) => makeReasoningBlock(`reasoning-long-${index}`)),
+            summary: { ...baseGroup.summary, reasoningCount: 24 }
+        }
+
+        renderCard(group)
+
+        const children = [...document.querySelectorAll('[data-work-group-child="true"]')]
+        expect(children).toHaveLength(24)
+        expect(children.every((child) => child.classList.contains('shrink-0'))).toBe(true)
+    })
+
     it('keeps a manual expansion across data refresh and remount', () => {
         const group = makeGroup()
         const view = renderCard(group)

@@ -261,10 +261,12 @@ export function WorkGroupCard(props: {
             {open ? (
                 <CardContent className="flex max-h-[60vh] flex-col gap-2 overflow-y-auto px-3 pb-3 pt-0">
                     {props.block.blocks.map((block) => (
-                        <WorkGroupChild key={block.id} block={block} metadata={props.metadata} />
+                        <div key={block.id} className="min-w-0 shrink-0" data-work-group-child="true">
+                            <WorkGroupChild block={block} metadata={props.metadata} />
+                        </div>
                     ))}
-                    {isHydratingHistory ? <div className="text-xs text-[var(--app-hint)]">{t('workGroup.loadingOlderHistory')}</div> : null}
-                    {!isHydratingHistory && historyLoadFailed && props.block.needsOlderHistory ? <div className="text-xs text-[var(--app-hint)]">{t('workGroup.historyUnavailable')}</div> : null}
+                    {isHydratingHistory ? <div className="shrink-0 text-xs text-[var(--app-hint)]">{t('workGroup.loadingOlderHistory')}</div> : null}
+                    {!isHydratingHistory && historyLoadFailed && props.block.needsOlderHistory ? <div className="shrink-0 text-xs text-[var(--app-hint)]">{t('workGroup.historyUnavailable')}</div> : null}
                 </CardContent>
             ) : null}
         </Card>

@@ -1,3 +1,4 @@
+import { isAutomaticContinuationMeta } from '@hapi/protocol/messages'
 import type {
     AgentEventBlock,
     AgentReasoningBlock,
@@ -6,6 +7,7 @@ import type {
     CliOutputBlock,
     CodexReviewBlock,
     ToolCallBlock,
+    UserTextBlock,
 } from '@/chat/types'
 import type { ToolGroupBlock, VisibleChatBlock } from '@/chat/toolGroups'
 
@@ -16,6 +18,7 @@ export type WorkGroupChildBlock =
     | CodexReviewBlock
     | CliOutputBlock
     | AgentEventBlock
+    | UserTextBlock
     | ToolCallBlock
     | ToolGroupBlock
 
@@ -62,6 +65,7 @@ export function isWorkGroupBlock(block: WorkVisibleChatBlock | ChatBlock): block
 }
 
 function isWorkGroupChild(block: VisibleChatBlock): block is WorkGroupChildBlock {
+    if (block.kind === 'user-text') return isAutomaticContinuationMeta(block.meta)
     if (block.kind === 'agent-reasoning') return block.text.trim().length > 0
     if (block.kind === 'tool-group' || block.kind === 'tool-call') return true
     if (block.kind === 'cli-output') return block.source === 'assistant'
@@ -71,7 +75,7 @@ function isWorkGroupChild(block: VisibleChatBlock): block is WorkGroupChildBlock
 }
 
 function isTurnBoundary(block: VisibleChatBlock): boolean {
-    return block.kind === 'user-text'
+    return (block.kind === 'user-text' && !isAutomaticContinuationMeta(block.meta))
         || (block.kind === 'cli-output' && block.source === 'user')
 }
 
@@ -289,7 +293,7 @@ export function buildVisibleWorkGroups(
 
         if (!isWorkGroupChild(block)) {
             visibleBlocks.push(block)
-            previousAnchorId = block.id
+            previousAnchorId = (block as VisibleChatBlock).id
             continue
         }
 
@@ -312,7 +316,7 @@ export function buildVisibleWorkGroups(
         const isLatestWorkGroup = !hasUserAfter && !hasExecutionAfter
         const active = timing.running || timing.pending || Boolean(options.isRunning && isLatestWorkGroup)
         const defaultOpen = active
-        const nextAnchor = blocks.slice(cursor).find((candidate) => !isWorkGroupChild(candidate))
+        const nextAnchor = blocks.slice(cursor).find((candidate) => !isWorkGroupChild(candidate)) as VisibleChatBlock | undefined
         const stateKey = nextAnchor
             ? `after:${nextAnchor.id}`
             : previousAnchorId

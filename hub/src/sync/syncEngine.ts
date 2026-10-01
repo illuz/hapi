@@ -362,7 +362,7 @@ export class SyncEngine {
 
     getTimelineSummary(
         sessionId: string,
-        options?: { limit?: number; beforeSeq?: number | null }
+        options?: { limit?: number; beforeSeq?: number | null; aroundSeq?: number | null }
     ): ReturnType<MessageService['getTimelineSummary']> {
         return this.messageService.getTimelineSummary(sessionId, options)
     }

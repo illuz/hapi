@@ -8,6 +8,7 @@ import { CliOutputBlock } from '@/components/CliOutputBlock'
 import { CodexReviewCard } from '@/components/AssistantChat/messages/CodexReviewCard'
 import { EventPresentationView } from '@/components/AssistantChat/messages/EventPresentationView'
 import { MessageActions } from '@/components/AssistantChat/messages/MessageActions'
+import { UserBubbleContent } from '@/components/AssistantChat/messages/user-bubble'
 import { ToolGroupCard } from '@/components/ToolCard/ToolGroupCard'
 import { ToolCard } from '@/components/ToolCard/ToolCard'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -100,6 +101,14 @@ function WorkGroupChild(props: {
     metadata: SessionMetadataSummary | null
 }) {
     const ctx = useHappyChatContext()
+
+    if (props.block.kind === 'user-text') {
+        return (
+            <div className="rounded-xl border border-[var(--app-divider)] bg-[var(--app-bg)] px-3 py-2 text-xs text-[var(--app-hint)]">
+                <UserBubbleContent text={props.block.text} />
+            </div>
+        )
+    }
 
     if (props.block.kind === 'tool-group') {
         return <ToolGroupCard block={props.block} metadata={props.metadata} suppressHistoryHydration defaultOpenOverride />

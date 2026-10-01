@@ -49,6 +49,7 @@ import { allocateContinueRoundWithSource } from '@/lib/continueRounds'
 import { findUnsupportedCodexBuiltinSlashCommand } from '@/lib/codexSlashCommands'
 import { mergeCodexModelOptions } from '@/lib/codexModelOptions'
 import { useCodexExplorationCollapse } from '@/hooks/useCodexExplorationCollapse'
+import { isAutomaticContinuationMeta } from '@hapi/protocol/messages'
 import {
     AUTO_CONTINUE_DEFAULT_REMAINING,
     AUTO_CONTINUE_DEFAULT_KEYWORDS,
@@ -63,10 +64,12 @@ import {
 type SessionSendOptions = {
     localId?: string
     silent?: boolean
+    sentFrom?: 'auto-continue'
 }
 
 function isTimelineDetailChild(block: VisibleChatBlock): block is WorkGroupChildBlock {
-    return block.kind === 'agent-reasoning'
+    return (block.kind === 'user-text' && isAutomaticContinuationMeta(block.meta))
+        || block.kind === 'agent-reasoning'
         || block.kind === 'tool-group'
         || block.kind === 'tool-call'
         || block.kind === 'cli-output' && block.source === 'assistant'
@@ -103,7 +106,6 @@ const EMPTY_TIMELINE_SUMMARY = {
 
 type TimelineDetailEntry = {
     groupId: string
-    version: number
     children: WorkGroupChildBlock[]
 }
 
@@ -453,14 +455,13 @@ export function SessionChat(props: {
         if (!props.onLoadTimelineDetails) return 'failed'
         const requestedSessionId = props.session.id
         const detailKey = getTimelineDetailKey(groupId)
-        const requestedVersion = props.messagesVersion
         try {
             const messages = await props.onLoadTimelineDetails(groupId)
             if (timelineDetailsSessionRef.current !== requestedSessionId) return 'failed'
             const children = buildTimelineDetailChildren(messages, props.session.agentState, codexExplorationCollapsed)
             setTimelineDetails((current) => ({
                 ...current,
-                [detailKey]: { groupId, version: requestedVersion, children }
+                [detailKey]: { groupId, children }
             }))
             setTimelineDetailErrors((current) => {
                 const next = new Set(current)
@@ -492,8 +493,11 @@ export function SessionChat(props: {
                 // 刷新实时工作组时保留旧明细。范围 id 或时间轴版本变化后，卡片会重新
                 // 请求明细，但不会先闪成空内容，也不会丢失内部滚动位置。
                 const details = detailEntry?.children ?? []
+                // A timeline refresh does not invalidate an immutable group. The
+                // range id changes when the live tail grows, so only that change
+                // should trigger a detail request; keeping the old entry loaded
+                // avoids a blank flash and preserves the inner scroll position.
                 const detailsLoaded = detailEntry?.groupId === item.id
-                    && detailEntry.version === props.messagesVersion
                 const sourceSummary = item.work ?? EMPTY_TIMELINE_SUMMARY
                 const isLive = props.session.thinking && item.id === latestWorkGroupId
                 const summary = isLive
@@ -731,7 +735,7 @@ export function SessionChat(props: {
         const localId = handleSend(
             autoContinuePrompt,
             undefined,
-            source === 'auto' ? { silent: true } : undefined
+            source === 'auto' ? { silent: true, sentFrom: 'auto-continue' } : undefined
         )
         if (localId) {
             allocateContinueRoundWithSource(props.session.id, localId, source)

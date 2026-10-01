@@ -581,11 +581,12 @@ function SessionPage() {
 
     const handleLoadMessageAtSeq = useCallback(async (seq: number) => {
         if (summaryMode) {
-            setSummaryMode(false)
-            await activateFullMessages()
+            // 大纲定位优先在摘要时间轴内完成，避免切换到原始消息窗口后
+            // 触发 Tail Sync、连续补页，再被自动滚回最新消息。
+            return await timeline.loadAtSeq(seq)
         }
         return await loadMessageAtSeq(seq)
-    }, [activateFullMessages, loadMessageAtSeq, summaryMode])
+    }, [loadMessageAtSeq, summaryMode, timeline.loadAtSeq])
 
     const handleAtBottomChange = useCallback((atBottom: boolean) => {
         if (!summaryMode) setAtBottom(atBottom)

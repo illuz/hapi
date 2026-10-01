@@ -35,6 +35,7 @@ export type TimelineSummaryResponse = {
         limit: number
         nextBeforeSeq: number | null
         hasMore: boolean
+        epoch?: number
     }
 }
 

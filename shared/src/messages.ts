@@ -35,6 +35,11 @@ export function unwrapRoleWrappedRecordEnvelope(value: unknown): RoleWrappedReco
     return null
 }
 
+/** 只按来源识别自动续跑，不能把用户手动输入的 continue 一并隐藏。 */
+export function isAutomaticContinuationMeta(meta: unknown): boolean {
+    return isObject(meta) && (meta.sentFrom === 'auto-continue' || meta.sentFrom === 'auto-retry')
+}
+
 export function isClaudeChatVisibleSystemSubtype(subtype: unknown): subtype is string {
     return typeof subtype === 'string' && VISIBLE_CLAUDE_SYSTEM_SUBTYPES.has(subtype)
 }

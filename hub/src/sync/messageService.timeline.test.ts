@@ -264,4 +264,57 @@ describe('MessageService timeline', () => {
         expect(summary.items[0]?.id).toBe('work-group:3-4')
         expect(summary.items[0]?.work?.reasoningCount).toBe(1)
     })
+
+    it('folds automatic continuation messages into the surrounding work group', () => {
+        const rows = [
+            createMessage(1, { role: 'user', content: 'run the checks', meta: { sentFrom: 'webapp' } }),
+            createMessage(2, { role: 'agent', content: { type: 'codex', data: { type: 'tool-call', callId: 'call-1', name: 'test', input: {} } } }),
+            createMessage(3, { role: 'user', content: 'continue', meta: { sentFrom: 'auto-continue' } }),
+            createMessage(4, { role: 'agent', content: { type: 'codex', data: { type: 'tool-call-result', callId: 'call-1', output: 'passed' } } }),
+            createMessage(5, { role: 'agent', content: { type: 'output', data: { type: 'summary', summary: 'All checks passed.' } } })
+        ]
+        const fakeStore = {
+            messages: {
+                getMessagesBySeqRange: (_sessionId: string, options: { startSeq?: number; endSeq?: number; limit?: number }) => rows.filter((row) => (
+                    (options.startSeq === undefined || row.seq >= options.startSeq)
+                    && (options.endSeq === undefined || row.seq <= options.endSeq)
+                )),
+                getMaxSeq: () => rows.at(-1)?.seq ?? 0,
+                getMessageEpoch: () => 0,
+                getUserTurnMessages: () => rows.filter((row) => row.content && typeof row.content === 'object' && (row.content as { role?: string }).role === 'user')
+            }
+        }
+        const service = new MessageService(fakeStore as never, {} as never, {} as never)
+
+        const summary = service.getTimelineSummary('session-1')
+        expect(summary.items.map((item) => item.kind)).toEqual(['user', 'work-group', 'assistant'])
+        expect(summary.items[1]).toMatchObject({ id: 'work-group:2-4', seqStart: 2, seqEnd: 4 })
+        expect(summary.items[1]?.work?.toolCount).toBe(1)
+        expect(service.getConversationOutline('session-1').map((item) => item.text)).toEqual(['run the checks'])
+    })
+
+    it('supports around-seq loading from the cached compact projection', () => {
+        const rows = [
+            createMessage(1, { role: 'user', content: 'first' }),
+            createMessage(2, { role: 'agent', content: { type: 'output', data: { type: 'summary', summary: 'first answer' } } }),
+            createMessage(3, { role: 'user', content: 'second' }),
+            createMessage(4, { role: 'agent', content: { type: 'output', data: { type: 'summary', summary: 'second answer' } } })
+        ]
+        const fakeStore = {
+            messages: {
+                getMessagesBySeqRange: (_sessionId: string, options: { startSeq?: number; endSeq?: number; limit?: number }) => rows.filter((row) => (
+                    (options.startSeq === undefined || row.seq >= options.startSeq)
+                    && (options.endSeq === undefined || row.seq <= options.endSeq)
+                )),
+                getMaxSeq: () => rows.at(-1)?.seq ?? 0,
+                getMessageEpoch: () => 0
+            }
+        }
+        const service = new MessageService(fakeStore as never, {} as never, {} as never)
+
+        const summary = service.getTimelineSummary('session-1', { limit: 1, aroundSeq: 3 })
+        expect(summary.items).toHaveLength(1)
+        expect(summary.items[0]).toMatchObject({ kind: 'user', text: 'second', seqStart: 3 })
+        expect(summary.page.epoch).toBe(0)
+    })
 })

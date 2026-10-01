@@ -114,6 +114,33 @@ describe('work groups', () => {
         expect(result.map((block) => block.kind)).toEqual(['user-text', 'work-group', 'agent-text', 'user-text', 'work-group'])
     })
 
+    it('keeps automatic continuation inside the folded execution group', () => {
+        const result = buildVisibleWorkGroups([
+            reasoning('reasoning-1'),
+            {
+                kind: 'user-text',
+                id: 'auto-continue-1',
+                localId: 'auto-continue-1',
+                createdAt: 10,
+                text: 'continue',
+                meta: { sentFrom: 'auto-continue' }
+            },
+            tool('tool-1', 'Read'),
+            {
+                kind: 'agent-text',
+                id: 'answer-1',
+                localId: null,
+                createdAt: 40,
+                text: 'Done.'
+            }
+        ])
+
+        expect(result.map((block) => block.kind)).toEqual(['work-group', 'agent-text'])
+        if (result[0]?.kind === 'work-group') {
+            expect(result[0].blocks.map((block) => block.id)).toContain('auto-continue-1')
+        }
+    })
+
     it('opens the latest group while the turn is running', () => {
         const result = buildVisibleWorkGroups([reasoning('reasoning-1')], { isRunning: true })
         expect(result[0]?.kind).toBe('work-group')

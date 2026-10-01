@@ -20,11 +20,13 @@ type SendMessageInput = {
     attachments?: AttachmentMetadata[]
     /** Automatic continuation messages should not produce user feedback. */
     silent?: boolean
+    sentFrom?: 'auto-continue'
 }
 
 export type SendMessageOptions = {
     localId?: string
     silent?: boolean
+    sentFrom?: 'auto-continue'
 }
 
 type BlockedReason = 'no-api' | 'no-session' | 'pending'
@@ -50,7 +52,8 @@ function createOptimisticMessage(input: SendMessageInput, status: 'queued' | 'se
                 type: 'text',
                 text: input.text,
                 attachments: input.attachments
-            }
+            },
+            ...(input.sentFrom ? { meta: { sentFrom: input.sentFrom } } : {})
         },
         createdAt: input.createdAt,
         // Explicit null so the strict-null queued check matches. A pre-V8 hub
@@ -93,7 +96,7 @@ export function useSendMessage(
             if (!api) {
                 throw new Error('API unavailable')
             }
-            await api.sendMessage(input.sessionId, input.text, input.localId, input.attachments)
+            await api.sendMessage(input.sessionId, input.text, input.localId, input.attachments, input.sentFrom)
         },
         onMutate: async (input) => {
             const status = isSessionThinkingRef.current ? 'queued' as const : 'sending' as const
@@ -176,6 +179,7 @@ export function useSendMessage(
                 createdAt,
                 attachments,
                 silent,
+                sentFrom: optionsArg?.sentFrom
             })
         })()
         return localId

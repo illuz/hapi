@@ -8,7 +8,7 @@ import type {
     TimelineWorkSummary
 } from '@hapi/protocol/types'
 import type { QueuedStateResponse } from '@hapi/protocol/schemas'
-import { isClaudeChatVisibleMessage, unwrapRoleWrappedRecordEnvelope } from '@hapi/protocol/messages'
+import { isAutomaticContinuationMeta, isClaudeChatVisibleMessage, unwrapRoleWrappedRecordEnvelope } from '@hapi/protocol/messages'
 import type { Server } from 'socket.io'
 import { randomUUID } from 'node:crypto'
 import type { Store, CancelQueuedMessageResult } from '../store'
@@ -16,10 +16,17 @@ import { EventPublisher } from './eventPublisher'
 
 type MessagePosition = { at: number; seq: number }
 
-const TIMELINE_DEFAULT_LIMIT = 60
-const TIMELINE_MAX_LIMIT = 100
+const TIMELINE_DEFAULT_LIMIT = 500
+const TIMELINE_MAX_LIMIT = 1000
 const TIMELINE_RAW_SCAN_LIMIT = 5_000
 const TIMELINE_DETAIL_LIMIT = 10_000
+const TIMELINE_CACHE_SESSIONS = 16
+
+type TimelineCacheEntry = {
+    epoch: number
+    maxSeq: number
+    items: TimelineSummaryItem[]
+}
 
 export type IncrementalMessagesResponse = {
     messages: DecryptedMessage[]
@@ -399,6 +406,10 @@ function classifyTimelineMessage(content: unknown): TimelineSignals {
     const toolCallIds = new Set<string>()
     const toolResultIds = new Set<string>()
     const record = unwrapRoleWrappedRecordEnvelope(content)
+    if (record?.role === 'user' && isAutomaticContinuationMeta(record.meta)) {
+        summary.eventCount = 1
+        return emptyTimelineSignals({ hasWork: true, hasEvent: true, summary })
+    }
     if (record?.role === 'agent' && isObject(record.content) && record.content.type === 'output' && isObject(record.content.data)) {
         const data = record.content.data
         if (data.type === 'user' && isObject(data.message)) {
@@ -637,6 +648,7 @@ function summarizeTimelineMessages(
 }
 
 export class MessageService {
+    private readonly timelineCache = new Map<string, TimelineCacheEntry>()
     constructor(
         private readonly store: Store,
         private readonly io: Server,
@@ -657,41 +669,101 @@ export class MessageService {
     }
 
     getConversationOutline(sessionId: string): ConversationOutlineEntry[] {
-        return this.store.messages.getUserTurnMessages(sessionId).map((message) => ({
+        return this.store.messages.getUserTurnMessages(sessionId)
+            .filter((message) => !isAutomaticContinuationMeta(unwrapRoleWrappedRecordEnvelope(message.content)?.meta))
+            .map((message) => ({
             messageId: message.id,
             text: extractUserText(message.content),
             createdAt: message.createdAt,
             seq: message.seq
-        }))
+            }))
+    }
+
+    private readTimelineMessages(sessionId: string, startSeq: number, endSeq: number) {
+        const messages: ReturnType<Store['messages']['getMessagesBySeqRange']> = []
+        let cursor = startSeq
+        while (cursor <= endSeq) {
+            const rows = this.store.messages.getMessagesBySeqRange(sessionId, {
+                startSeq: cursor,
+                endSeq,
+                limit: TIMELINE_RAW_SCAN_LIMIT
+            })
+            if (rows.length === 0) break
+            messages.push(...rows)
+            const next = rows.at(-1)!.seq + 1
+            if (next <= cursor) break
+            cursor = next
+        }
+        return messages
+    }
+
+    /** 缓存紧凑投影，追加消息只重算最后一个用户轮次；不持有原始工具输出。 */
+    private getTimelineProjection(sessionId: string): TimelineCacheEntry {
+        const messageStore = this.store.messages as Store['messages'] & {
+            getMessageEpoch?: (id: string) => number
+            getMaxSeq?: (id: string) => number
+        }
+        const epoch = messageStore.getMessageEpoch?.(sessionId) ?? 0
+        const maxSeq = messageStore.getMaxSeq?.(sessionId)
+            ?? this.store.messages.getMessagesBySeqRange(sessionId, { limit: 1 })[0]?.seq
+            ?? 0
+        const cached = this.timelineCache.get(sessionId)
+        if (cached?.epoch === epoch && cached.maxSeq === maxSeq) return cached
+
+        const canAppend = cached?.epoch === epoch && cached.maxSeq < maxSeq
+        const lastUser = canAppend
+            ? [...cached.items].reverse().find((item) => item.kind === 'user')
+            : undefined
+        const startSeq = lastUser?.seqStart ?? 1
+        const prefix = canAppend ? cached.items.filter((item) => item.seqEnd < startSeq) : []
+        const items = [...prefix, ...summarizeTimelineMessages(this.readTimelineMessages(sessionId, startSeq, maxSeq))]
+        const entry = { epoch, maxSeq, items }
+        this.timelineCache.delete(sessionId)
+        this.timelineCache.set(sessionId, entry)
+        if (this.timelineCache.size > TIMELINE_CACHE_SESSIONS) {
+            this.timelineCache.delete(this.timelineCache.keys().next().value!)
+        }
+        return entry
     }
 
     getTimelineSummary(
         sessionId: string,
-        options: { limit?: number; beforeSeq?: number | null } = {}
+        options: { limit?: number; beforeSeq?: number | null; aroundSeq?: number | null } = {}
     ): TimelineSummaryResponse {
         const limit = Math.min(
             TIMELINE_MAX_LIMIT,
             Math.max(1, Math.floor(options.limit ?? TIMELINE_DEFAULT_LIMIT))
         )
-        const rawMessages = this.store.messages.getMessagesBySeqRange(sessionId, {
-            beforeSeq: options.beforeSeq ?? undefined,
-            limit: TIMELINE_RAW_SCAN_LIMIT
-        })
-        const allItems = summarizeTimelineMessages(rawMessages)
-        const items = allItems.slice(-limit)
-        const nextBeforeSeq = items[0]?.seqStart ?? rawMessages[0]?.seq ?? null
-        const hasMore = nextBeforeSeq !== null
-            && this.store.messages.getMessagesBySeqRange(sessionId, {
-                beforeSeq: nextBeforeSeq,
-                limit: 1
-            }).length > 0
+        const projection = this.getTimelineProjection(sessionId)
+        const allItems = projection.items
+        let start = Math.max(0, allItems.length - limit)
+        let end = allItems.length
+        if (options.beforeSeq != null) {
+            const boundary = allItems.findIndex((item) => item.seqStart >= options.beforeSeq!)
+            end = boundary === -1 ? allItems.length : boundary
+            start = Math.max(0, end - limit)
+        } else if (options.aroundSeq != null) {
+            let target = allItems.findIndex((item) => item.seqStart <= options.aroundSeq! && item.seqEnd >= options.aroundSeq!)
+            if (target === -1) {
+                target = allItems.findIndex((item) => item.seqStart >= options.aroundSeq!)
+                if (target === -1 && allItems.length > 0) target = allItems.length - 1
+            }
+            if (target === -1) {
+                start = end = 0
+            } else {
+                start = Math.max(0, target - Math.floor(limit / 4))
+                end = Math.min(allItems.length, start + limit)
+            }
+        }
+        const items = allItems.slice(start, end)
 
         return {
             items,
             page: {
                 limit,
-                nextBeforeSeq,
-                hasMore
+                nextBeforeSeq: items[0]?.seqStart ?? null,
+                hasMore: start > 0,
+                epoch: projection.epoch
             }
         }
     }
@@ -707,11 +779,8 @@ export class MessageService {
             throw new Error('Invalid timeline group range')
         }
 
-        const messages = this.store.messages.getMessagesBySeqRange(sessionId, {
-            startSeq,
-            endSeq,
-            limit: TIMELINE_DETAIL_LIMIT
-        })
+        // 展开接口只读取本工作组，跨 DB 查询批次也一次返回，不触发主列表分页。
+        const messages = this.readTimelineMessages(sessionId, startSeq, endSeq)
         const group = summarizeTimelineMessages(messages).find((item) => item.kind === 'work-group') ?? {
             id: groupId,
             kind: 'work-group' as const,

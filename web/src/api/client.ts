@@ -331,11 +331,15 @@ export class ApiClient {
     async getTimelineSummary(sessionId: string, options?: {
         limit?: number
         beforeSeq?: number | null
+        aroundSeq?: number | null
     }): Promise<TimelineSummaryResponse> {
         const params = new URLSearchParams()
         if (options?.limit !== undefined) params.set('limit', `${options.limit}`)
         if (options?.beforeSeq !== undefined && options.beforeSeq !== null) {
             params.set('beforeSeq', `${options.beforeSeq}`)
+        }
+        if (options?.aroundSeq !== undefined && options.aroundSeq !== null) {
+            params.set('aroundSeq', `${options.aroundSeq}`)
         }
         const qs = params.toString()
         return await this.request<TimelineSummaryResponse>(
@@ -457,13 +461,20 @@ export class ApiClient {
         )
     }
 
-    async sendMessage(sessionId: string, text: string, localId?: string | null, attachments?: AttachmentMetadata[]): Promise<void> {
+    async sendMessage(
+        sessionId: string,
+        text: string,
+        localId?: string | null,
+        attachments?: AttachmentMetadata[],
+        sentFrom?: 'auto-continue'
+    ): Promise<void> {
         await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/messages`, {
             method: 'POST',
             body: JSON.stringify({
                 text,
                 localId: localId ?? undefined,
-                attachments: attachments ?? undefined
+                attachments: attachments ?? undefined,
+                sentFrom: sentFrom ?? undefined
             })
         })
     }

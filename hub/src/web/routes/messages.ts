@@ -44,14 +44,18 @@ const querySchema = z.object({
     })
 
 const timelineQuerySchema = z.object({
-    limit: z.coerce.number().int().min(1).max(100).optional(),
-    beforeSeq: z.coerce.number().int().min(1).optional()
+    limit: z.coerce.number().int().min(1).max(1000).optional(),
+    beforeSeq: z.coerce.number().int().min(1).optional(),
+    aroundSeq: z.coerce.number().int().min(1).optional()
+}).refine((data) => [data.beforeSeq, data.aroundSeq].filter((value) => value !== undefined).length <= 1, {
+    message: 'Timeline cursors are mutually exclusive'
 })
 
 const sendMessageBodySchema = z.object({
     text: z.string(),
     localId: z.string().min(1).optional(),
-    attachments: z.array(AttachmentMetadataSchema).optional()
+    attachments: z.array(AttachmentMetadataSchema).optional(),
+    sentFrom: z.enum(['webapp', 'auto-continue']).optional()
 })
 
 export function createMessagesRoutes(getSyncEngine: () => SyncEngine | null): Hono<WebAppEnv> {
@@ -252,7 +256,7 @@ export function createMessagesRoutes(getSyncEngine: () => SyncEngine | null): Ho
             text: parsed.data.text,
             localId: parsed.data.localId,
             attachments: parsed.data.attachments,
-            sentFrom: 'webapp'
+            sentFrom: parsed.data.sentFrom ?? 'webapp'
         })
         return c.json({ ok: true })
     })

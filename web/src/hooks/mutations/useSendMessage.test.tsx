@@ -6,6 +6,7 @@ import { useSendMessage } from './useSendMessage'
 import type { ApiClient } from '@/api/client'
 import { playNotificationSound } from '@/lib/readyChime'
 import { setStoredPlaybackMode } from '@/lib/readySound'
+import { appendOptimisticMessage } from '@/lib/message-window-store'
 
 const hapticNotification = vi.fn()
 
@@ -144,14 +145,15 @@ describe('useSendMessage', () => {
     })
 
     it('keeps automatic continue messages silent', async () => {
-        const api = createMockApi()
+        const sendMessage = vi.fn(async () => {})
+        const api = createMockApi(sendMessage)
         const { result } = renderHook(
             () => useSendMessage(api, 'session-A'),
             { wrapper: createWrapper() },
         )
 
         act(() => {
-            result.current.sendMessage('continue', undefined, { silent: true })
+            result.current.sendMessage('continue', undefined, { silent: true, sentFrom: 'auto-continue' })
         })
 
         await waitFor(() => {
@@ -159,5 +161,9 @@ describe('useSendMessage', () => {
         })
         expect(playNotificationSound).not.toHaveBeenCalled()
         expect(hapticNotification).not.toHaveBeenCalled()
+        expect(sendMessage).toHaveBeenCalledWith('session-A', 'continue', 'local-id-1', undefined, 'auto-continue')
+        expect(appendOptimisticMessage).toHaveBeenCalledWith('session-A', expect.objectContaining({
+            content: expect.objectContaining({ meta: { sentFrom: 'auto-continue' } })
+        }))
     })
 })

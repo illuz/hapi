@@ -8,7 +8,7 @@ function createApp(opts?: {
     steerQueuedMessage?: (sessionId: string, messageId: string) => Promise<unknown>
     getQueuedState?: (sessionId: string, localIds: string[]) => unknown
     getMessagesPage?: (sessionId: string, options: { limit: number; beforeSeq?: number | null }) => unknown
-    getTimelineSummary?: (sessionId: string, options: { limit?: number; beforeSeq?: number }) => unknown
+    getTimelineSummary?: (sessionId: string, options: { limit?: number; beforeSeq?: number; aroundSeq?: number }) => unknown
     getTimelineDetails?: (sessionId: string, groupId: string) => unknown
 }) {
     const engine = {
@@ -108,7 +108,7 @@ describe('messages routes', () => {
     })
 
     it('returns the compact timeline with its cursor', async () => {
-        let captured: { sessionId: string; options: { limit?: number; beforeSeq?: number } } | null = null
+        let captured: { sessionId: string; options: { limit?: number; beforeSeq?: number; aroundSeq?: number } } | null = null
         const app = createApp({
             getTimelineSummary: (sessionId, options) => {
                 captured = { sessionId, options }
@@ -132,6 +132,21 @@ describe('messages routes', () => {
         expect(captured!).toEqual({ sessionId: 'session-1', options: { limit: 20, beforeSeq: 50 } })
         const body = await response.json() as { items: Array<{ id: string }> }
         expect(body.items[0].id).toBe('work-group:10-12')
+    })
+
+    it('routes around-seq timeline lookups without entering the raw message API', async () => {
+        let captured: { sessionId: string; options: { limit?: number; beforeSeq?: number; aroundSeq?: number } } | null = null
+        const app = createApp({
+            getTimelineSummary: (sessionId, options) => {
+                captured = { sessionId, options }
+                return { items: [], page: { limit: options.limit ?? 500, nextBeforeSeq: null, hasMore: false } }
+            }
+        })
+
+        const response = await app.request('/api/sessions/session-1/timeline?limit=500&aroundSeq=451')
+
+        expect(response.status).toBe(200)
+        expect(captured!).toEqual({ sessionId: 'session-1', options: { limit: 500, aroundSeq: 451 } })
     })
 
     it('routes a work-group detail request separately from the timeline', async () => {

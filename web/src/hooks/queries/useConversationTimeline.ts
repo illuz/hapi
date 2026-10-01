@@ -2,18 +2,39 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ApiClient } from '@/api/client'
 import type { DecryptedMessage, TimelineSummaryItem } from '@/types/api'
 
-const TIMELINE_PAGE_LIMIT = 60
+// 折叠态只携带摘要，不携带工具明细；一次多取一些可以让大纲定位停留在
+// 摘要时间轴内，而不是切回原始消息窗口后连续触发多次分页。
+const TIMELINE_PAGE_LIMIT = 500
 
 type TimelinePageState = {
     items: TimelineSummaryItem[]
     nextBeforeSeq: number | null
     hasMore: boolean
+    epoch: number | null
 }
 
 const EMPTY_PAGE: TimelinePageState = {
     items: [],
     nextBeforeSeq: null,
-    hasMore: false
+    hasMore: false,
+    epoch: null
+}
+
+function getTimelineItemKey(item: TimelineSummaryItem): string {
+    // 工作组会随着尾部消息追加而从 work-group:start-end 变更为新的 range id；
+    // seqStart 才是同一折叠轮次的稳定身份。
+    return item.kind === 'work-group'
+        ? `work-group:${item.seqStart}`
+        : item.id
+}
+
+function mergeTimelineItems(current: TimelineSummaryItem[], incoming: TimelineSummaryItem[]): TimelineSummaryItem[] {
+    const byKey = new Map<string, TimelineSummaryItem>()
+    for (const item of current) byKey.set(getTimelineItemKey(item), item)
+    for (const item of incoming) byKey.set(getTimelineItemKey(item), item)
+    return [...byKey.values()].sort((left, right) => (
+        left.seqStart - right.seqStart || left.seqEnd - right.seqEnd
+    ))
 }
 
 /**
@@ -32,6 +53,7 @@ export function useConversationTimeline(options: {
     error: string | null
     version: number
     loadMore: () => Promise<boolean>
+    loadAtSeq: (seq: number) => Promise<boolean>
     loadDetails: (groupId: string) => Promise<DecryptedMessage[]>
     refetch: () => Promise<void>
 } {
@@ -54,10 +76,16 @@ export function useConversationTimeline(options: {
                 limit: TIMELINE_PAGE_LIMIT
             })
             if (generation !== requestGenerationRef.current) return
-            setPage({
-                items: response.items,
-                nextBeforeSeq: response.page.nextBeforeSeq,
-                hasMore: response.page.hasMore
+            setPage((current) => {
+                const responseEpoch = response.page.epoch ?? null
+                const canMerge = current.items.length > 0 && current.epoch === responseEpoch
+                const items = canMerge ? mergeTimelineItems(current.items, response.items) : response.items
+                return {
+                    items,
+                    nextBeforeSeq: items[0]?.seqStart ?? response.page.nextBeforeSeq,
+                    hasMore: canMerge ? current.hasMore || response.page.hasMore : response.page.hasMore,
+                    epoch: responseEpoch
+                }
             })
             setVersion((value) => value + 1)
         } catch (cause) {
@@ -93,12 +121,21 @@ export function useConversationTimeline(options: {
                 beforeSeq: page.nextBeforeSeq
             })
             setPage((current) => {
-                const existingIds = new Set(current.items.map((item) => item.id))
-                const olderItems = response.items.filter((item) => !existingIds.has(item.id))
+                const responseEpoch = response.page.epoch ?? current.epoch
+                if (current.epoch !== null && responseEpoch !== null && current.epoch !== responseEpoch) {
+                    return {
+                        items: response.items,
+                        nextBeforeSeq: response.page.nextBeforeSeq,
+                        hasMore: response.page.hasMore,
+                        epoch: responseEpoch
+                    }
+                }
+                const items = mergeTimelineItems(current.items, response.items)
                 return {
-                    items: [...olderItems, ...current.items],
-                    nextBeforeSeq: response.page.nextBeforeSeq,
-                    hasMore: response.page.hasMore
+                    items,
+                    nextBeforeSeq: items[0]?.seqStart ?? response.page.nextBeforeSeq,
+                    hasMore: response.page.hasMore,
+                    epoch: responseEpoch
                 }
             })
             setVersion((value) => value + 1)
@@ -116,6 +153,34 @@ export function useConversationTimeline(options: {
             setIsLoadingMore(false)
         }
     }, [options.api, options.sessionId, page.hasMore, page.nextBeforeSeq])
+
+    const loadAtSeq = useCallback(async (seq: number): Promise<boolean> => {
+        if (!options.api || !options.sessionId || !Number.isSafeInteger(seq) || seq < 1) return false
+        try {
+            const response = await options.api.getTimelineSummary(options.sessionId, {
+                limit: TIMELINE_PAGE_LIMIT,
+                aroundSeq: seq
+            })
+            setPage((current) => {
+                const responseEpoch = response.page.epoch ?? current.epoch
+                const sameEpoch = current.items.length > 0
+                    && (current.epoch === null || responseEpoch === null || current.epoch === responseEpoch)
+                const items = sameEpoch ? mergeTimelineItems(current.items, response.items) : response.items
+                return {
+                    items,
+                    nextBeforeSeq: items[0]?.seqStart ?? response.page.nextBeforeSeq,
+                    hasMore: sameEpoch ? current.hasMore || response.page.hasMore : response.page.hasMore,
+                    epoch: responseEpoch
+                }
+            })
+            setVersion((value) => value + 1)
+            setError(null)
+            return response.items.some((item) => item.seqStart <= seq && item.seqEnd >= seq)
+        } catch (cause) {
+            setError(cause instanceof Error ? cause.message : 'Failed to load selected timeline item')
+            return false
+        }
+    }, [options.api, options.sessionId])
 
     const loadDetails = useCallback(async (groupId: string): Promise<DecryptedMessage[]> => {
         const cached = detailsCacheRef.current.get(groupId)
@@ -147,6 +212,7 @@ export function useConversationTimeline(options: {
         error,
         version,
         loadMore,
+        loadAtSeq,
         loadDetails,
         refetch
     }

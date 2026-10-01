@@ -45,6 +45,8 @@ export type WorkGroupBlock = {
     historyState: 'complete' | 'needs-older-history'
     needsOlderHistory: boolean
     summary: WorkGroupSummary
+    /** Summary-mode groups fetch their child blocks only after opening. */
+    detailsState?: 'summary' | 'loaded' | 'error'
 }
 
 export type WorkVisibleChatBlock = VisibleChatBlock | WorkGroupBlock

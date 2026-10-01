@@ -7,6 +7,8 @@ import { createMessagesRoutes } from './messages'
 function createApp(opts?: {
     steerQueuedMessage?: (sessionId: string, messageId: string) => Promise<unknown>
     getQueuedState?: (sessionId: string, localIds: string[]) => unknown
+    getTimelineSummary?: (sessionId: string, options: { limit?: number; beforeSeq?: number }) => unknown
+    getTimelineDetails?: (sessionId: string, groupId: string) => unknown
 }) {
     const engine = {
         resolveSessionAccess: () => ({
@@ -28,6 +30,22 @@ function createApp(opts?: {
                 seq: 451
             }
         ]),
+        getTimelineSummary: opts?.getTimelineSummary ?? (() => ({
+            items: [],
+            page: { limit: 60, nextBeforeSeq: null, hasMore: false }
+        })),
+        getTimelineDetails: opts?.getTimelineDetails ?? (() => ({
+            group: {
+                id: 'work-group:1-2',
+                kind: 'work-group',
+                createdAt: 1000,
+                seqStart: 1,
+                seqEnd: 2,
+                work: {}
+            },
+            messages: [],
+            page: { limit: 10000, nextBeforeSeq: null, hasMore: false }
+        })),
         getIncrementalMessagesPage: (_sessionId: string, options: { limit?: number }) => ({
             messages: [],
             page: {
@@ -82,6 +100,50 @@ describe('messages routes', () => {
                 }
             ]
         })
+    })
+
+    it('returns the compact timeline with its cursor', async () => {
+        let captured: { sessionId: string; options: { limit?: number; beforeSeq?: number } } | null = null
+        const app = createApp({
+            getTimelineSummary: (sessionId, options) => {
+                captured = { sessionId, options }
+                return {
+                    items: [{
+                        id: 'work-group:10-12',
+                        kind: 'work-group',
+                        createdAt: 1000,
+                        seqStart: 10,
+                        seqEnd: 12,
+                        work: { toolCount: 2 }
+                    }],
+                    page: { limit: options.limit ?? 60, nextBeforeSeq: 10, hasMore: true }
+                }
+            }
+        })
+
+        const response = await app.request('/api/sessions/session-1/timeline?limit=20&beforeSeq=50')
+
+        expect(response.status).toBe(200)
+        expect(captured!).toEqual({ sessionId: 'session-1', options: { limit: 20, beforeSeq: 50 } })
+        const body = await response.json() as { items: Array<{ id: string }> }
+        expect(body.items[0].id).toBe('work-group:10-12')
+    })
+
+    it('routes a work-group detail request separately from the timeline', async () => {
+        let captured: { sessionId: string; groupId: string } | null = null
+        const app = createApp({
+            getTimelineDetails: (sessionId, groupId) => {
+                captured = { sessionId, groupId }
+                return { group: { id: groupId }, messages: [{ id: 'message-1' }] }
+            }
+        })
+
+        const response = await app.request('/api/sessions/session-1/timeline/work-group%3A10-12')
+
+        expect(response.status).toBe(200)
+        expect(captured!).toEqual({ sessionId: 'session-1', groupId: 'work-group:10-12' })
+        const body = await response.json() as { group: { id: string } }
+        expect(body.group.id).toBe('work-group:10-12')
     })
 
     it('accepts a tail cursor and routes it to incremental pagination', async () => {

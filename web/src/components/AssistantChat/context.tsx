@@ -4,6 +4,10 @@ import type { ApiClient } from '@/api/client'
 import type { TerminalToolDisplayMode } from '@/hooks/useTerminalToolDisplayMode'
 import type { SessionMetadataSummary } from '@/types/api'
 
+export type HistoryLoadOptions = {
+    maxPages?: number
+}
+
 export type HappyChatContextValue = {
     api: ApiClient
     sessionId: string
@@ -16,7 +20,8 @@ export type HappyChatContextValue = {
     hasMoreMessages?: boolean
     isSyncingTail?: boolean
     isLoadingMoreMessages?: boolean
-    loadOlderMessagesPreservingScroll?: () => Promise<'loaded' | 'transient-stop' | 'terminal-stop' | 'failed'>
+    loadOlderMessagesPreservingScroll?: (options?: HistoryLoadOptions) => Promise<'loaded' | 'transient-stop' | 'terminal-stop' | 'failed'>
+    loadWorkGroupDetails?: (groupId: string) => Promise<'loaded' | 'failed'>
 }
 
 const HappyChatContext = createContext<HappyChatContextValue | null>(null)

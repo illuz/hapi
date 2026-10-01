@@ -131,6 +131,31 @@ describe('WorkGroupCard', () => {
         expect(screen.getByText('inspect repository')).toBeInTheDocument()
     })
 
+    it('keeps the lazy-detail loading state until the detail request resolves', async () => {
+        let resolveDetails: ((result: 'loaded' | 'failed') => void) | undefined
+        const loadWorkGroupDetails = vi.fn(() => new Promise<'loaded' | 'failed'>((resolve) => {
+            resolveDetails = resolve
+        }))
+        const group = {
+            ...makeGroup(false),
+            blocks: [],
+            detailsState: 'summary' as const
+        }
+
+        render(
+            <HappyChatProvider value={{ ...contextValue, loadWorkGroupDetails }}>
+                <WorkGroupCard block={group} metadata={null} />
+            </HappyChatProvider>
+        )
+
+        fireEvent.click(screen.getByRole('button', { expanded: false }))
+        await waitFor(() => expect(loadWorkGroupDetails).toHaveBeenCalledWith(group.id))
+        expect(screen.getByText('Loading older work…')).toBeInTheDocument()
+
+        resolveDetails?.('loaded')
+        await waitFor(() => expect(screen.queryByText('Loading older work…')).not.toBeInTheDocument())
+    })
+
     it('keeps a long execution list from shrinking its children to zero height', () => {
         const baseGroup = makeGroup(true)
         const group = {
@@ -194,7 +219,7 @@ describe('WorkGroupCard', () => {
         expect(screen.queryByText('Older work is unavailable')).not.toBeInTheDocument()
     })
 
-    it('loads only one older page when an old work group is expanded', async () => {
+    it('loads a bounded batch when an old work group is expanded', async () => {
         const loadOlderMessagesPreservingScroll = vi.fn().mockResolvedValue('loaded')
         const group = {
             ...makeGroup(false),
@@ -216,6 +241,7 @@ describe('WorkGroupCard', () => {
 
         fireEvent.click(screen.getByRole('button', { expanded: false }))
         await waitFor(() => expect(loadOlderMessagesPreservingScroll).toHaveBeenCalledTimes(1))
+        expect(loadOlderMessagesPreservingScroll).toHaveBeenCalledWith({ maxPages: 4 })
 
         // 前插历史会按数组下标重新挂载卡片；同一会话不能因此再次自动补页。
         view.unmount()

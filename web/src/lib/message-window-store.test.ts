@@ -5,6 +5,7 @@ import {
     appendOptimisticMessage,
     activateMessageWindow,
     clearMessageWindow,
+    fetchOlderMessages,
     fetchMessagesAtSeq,
     getMessageWindowState,
     ingestIncomingMessages,
@@ -336,6 +337,97 @@ describe('incremental tail synchronization', () => {
         const state = getMessageWindowState(SESSION_ID)
         expect(state.messages.map((message) => message.id)).toEqual(['tail-new'])
         expect(state.warning).toBeNull()
+    })
+})
+
+describe('batched older history loading', () => {
+    const SESSION_ID = 'session-batched-older-history-test'
+
+    afterEach(() => {
+        clearMessageWindow(SESSION_ID)
+    })
+
+    it('fetches multiple pages and publishes one prepend update', async () => {
+        const latest = [
+            makeUserMessage({ id: 'latest-201', seq: 201, createdAt: 201 }),
+            makeUserMessage({ id: 'latest-202', seq: 202, createdAt: 202 })
+        ]
+        const olderFirst = [
+            makeUserMessage({ id: 'older-101', seq: 101, createdAt: 101 }),
+            makeUserMessage({ id: 'older-102', seq: 102, createdAt: 102 })
+        ]
+        const olderLast = [
+            makeUserMessage({ id: 'older-1', seq: 1, createdAt: 1 }),
+            makeUserMessage({ id: 'older-2', seq: 2, createdAt: 2 })
+        ]
+        const getMessages = vi.fn()
+            .mockResolvedValueOnce({
+                messages: latest,
+                page: {
+                    direction: 'latest' as const,
+                    limit: 200,
+                    epoch: 7,
+                    reset: false,
+                    nextBeforeSeq: 201,
+                    nextBeforeAt: 201,
+                    nextAfterSeq: 202,
+                    nextAfterAt: 202,
+                    snapshotHeadSeq: 202,
+                    snapshotHeadAt: 202,
+                    hasMore: true
+                }
+            })
+            .mockResolvedValueOnce({
+                messages: olderFirst,
+                page: {
+                    direction: 'before' as const,
+                    limit: 200,
+                    epoch: 7,
+                    nextBeforeSeq: 101,
+                    nextBeforeAt: 101,
+                    hasMore: true
+                }
+            })
+            .mockResolvedValueOnce({
+                messages: olderLast,
+                page: {
+                    direction: 'before' as const,
+                    limit: 200,
+                    epoch: 7,
+                    nextBeforeSeq: 1,
+                    nextBeforeAt: 1,
+                    hasMore: false
+                }
+            })
+        const api = { getMessages } as unknown as ApiClient
+
+        await syncTailMessages(api, SESSION_ID)
+        const historyVersionBefore = getMessageWindowState(SESSION_ID).historyVersion
+        const loaded = await fetchOlderMessages(api, SESSION_ID, { maxPages: 2 })
+
+        expect(loaded).toBe(true)
+        expect(getMessages).toHaveBeenNthCalledWith(2, SESSION_ID, {
+            beforeAt: 201,
+            beforeSeq: 201,
+            limit: 200
+        })
+        expect(getMessages).toHaveBeenNthCalledWith(3, SESSION_ID, {
+            beforeAt: 101,
+            beforeSeq: 101,
+            limit: 200
+        })
+        const state = getMessageWindowState(SESSION_ID)
+        expect(state.messages.map((message) => message.id)).toEqual([
+            'older-1',
+            'older-2',
+            'older-101',
+            'older-102',
+            'latest-201',
+            'latest-202'
+        ])
+        expect(state.hasMore).toBe(false)
+        expect(state.historyVersion).toBe(historyVersionBefore + 1)
+        expect(state.isLoadingMore).toBe(false)
     })
 })
 

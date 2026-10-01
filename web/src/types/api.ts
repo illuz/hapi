@@ -7,6 +7,12 @@ import type {
     WorktreeMetadata
 } from '@hapi/protocol/types'
 import type {
+    TimelineDetailsResponse as ProtocolTimelineDetailsResponse,
+    TimelineSummaryItem as ProtocolTimelineSummaryItem,
+    TimelineSummaryResponse as ProtocolTimelineSummaryResponse,
+    TimelineWorkSummary as ProtocolTimelineWorkSummary
+} from '@hapi/protocol/types'
+import type {
     CronRunStatus,
     ProjectAgentConfig,
     ProjectCronConfig,
@@ -40,6 +46,11 @@ export type {
     TodoItem,
     WorktreeMetadata
 } from '@hapi/protocol/types'
+
+export type TimelineWorkSummary = ProtocolTimelineWorkSummary
+export type TimelineSummaryItem = ProtocolTimelineSummaryItem
+export type TimelineSummaryResponse = ProtocolTimelineSummaryResponse
+export type TimelineDetailsResponse = ProtocolTimelineDetailsResponse
 
 export type {
     CronRunStatus,

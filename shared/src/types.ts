@@ -16,6 +16,12 @@ export type {
     WorktreeMetadata
 } from './schemas'
 export type { AutoContinueSettings } from './autoContinue'
+export type {
+    TimelineDetailsResponse,
+    TimelineSummaryItem,
+    TimelineSummaryResponse,
+    TimelineWorkSummary
+} from './timeline'
 
 export type { SessionSummary, SessionSummaryMetadata } from './sessionSummary'
 export { AGENT_MESSAGE_PAYLOAD_TYPE } from './modes'

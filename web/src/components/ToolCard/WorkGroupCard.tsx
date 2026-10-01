@@ -27,8 +27,9 @@ function formatDuration(ms: number): string {
 const workGroupOpenState = new Map<string, boolean>()
 // 历史前插会让 assistant-ui 按数组下标重新挂载工作组卡片。对仍位于最早边界的
 // 工作组，不能因为重新挂载就再次自动补页；否则一次展开会连续发起多次请求。
-// 一次会话只允许一页自动补齐，继续历史由顶部哨兵或“加载更早的”按钮驱动。
+// 一次会话只允许一次自动批量补齐，继续历史由顶部哨兵或“加载更早的”按钮驱动。
 const workGroupHistoryHydratedSessions = new Set<string>()
+const WORK_GROUP_HISTORY_AUTO_LOAD_PAGES = 4
 
 function getWorkGroupOpenStateKeys(sessionId: string, block: WorkGroupBlock): string[] {
     const keys = block.stateKey
@@ -137,7 +138,9 @@ export function WorkGroupCard(props: {
     const [isHydratingHistory, setIsHydratingHistory] = useState(false)
     const [historyExhausted, setHistoryExhausted] = useState(false)
     const [historyLoadFailed, setHistoryLoadFailed] = useState(false)
+    const [detailsLoadFailed, setDetailsLoadFailed] = useState(false)
     const hydrationRunRef = useRef(0)
+    const detailsRequestRef = useRef<string | null>(null)
 
     const running = props.block.active || props.block.summary.runningCount > 0
     const pending = props.block.summary.pendingCount > 0
@@ -167,13 +170,55 @@ export function WorkGroupCard(props: {
         setIsHydratingHistory(false)
         setHistoryExhausted(false)
         setHistoryLoadFailed(false)
+        setDetailsLoadFailed(false)
         hydrationRunRef.current += 1
     }, [openStateSignature, props.block.defaultOpen])
 
+    // Summary-mode work groups deliberately do not carry their children in the
+    // initial timeline response. Fetch the exact seq range only when the user
+    // opens the card, and keep the request out of the generic history loader.
     useEffect(() => {
-        if (!open || !props.block.needsOlderHistory) {
-            hydrationRunRef.current += 1
+        if (!open) {
+            detailsRequestRef.current = null
+            return
+        }
+        if (!ctx.loadWorkGroupDetails) return
+        if (props.block.detailsState === 'loaded') {
+            // Allow a later timeline invalidation to request the same group
+            // again after its children are cleared by SessionChat.
+            detailsRequestRef.current = null
+            return
+        }
+        if (props.block.detailsState !== 'summary' && props.block.detailsState !== 'error') return
+        const requestKey = `${ctx.sessionId}:${props.block.id}`
+        if (detailsRequestRef.current === requestKey) return
+
+        detailsRequestRef.current = requestKey
+        const runId = hydrationRunRef.current + 1
+        hydrationRunRef.current = runId
+        setIsHydratingHistory(true)
+        void ctx.loadWorkGroupDetails(props.block.id).then((result) => {
+            if (hydrationRunRef.current !== runId) return
             setIsHydratingHistory(false)
+            setDetailsLoadFailed(result === 'failed')
+        }).catch(() => {
+            if (hydrationRunRef.current !== runId) return
+            setIsHydratingHistory(false)
+            setDetailsLoadFailed(true)
+        })
+    }, [ctx.loadWorkGroupDetails, ctx.sessionId, open, props.block.detailsState, props.block.id])
+
+    useEffect(() => {
+        const hasLazyDetails = props.block.detailsState !== undefined
+        if (!open || !props.block.needsOlderHistory) {
+            // Summary-mode cards use the same visual slot for lazy detail
+            // loading. Do not cancel that request from the raw-history
+            // branch, which would otherwise hide the loading state as soon
+            // as the card opens.
+            if (!hasLazyDetails) {
+                hydrationRunRef.current += 1
+                setIsHydratingHistory(false)
+            }
             if (!props.block.needsOlderHistory) setHistoryExhausted(false)
             return
         }
@@ -192,7 +237,7 @@ export function WorkGroupCard(props: {
         const runId = hydrationRunRef.current + 1
         hydrationRunRef.current = runId
         setIsHydratingHistory(true)
-        void ctx.loadOlderMessagesPreservingScroll().then((result) => {
+        void ctx.loadOlderMessagesPreservingScroll({ maxPages: WORK_GROUP_HISTORY_AUTO_LOAD_PAGES }).then((result) => {
             if (hydrationRunRef.current !== runId) return
             setIsHydratingHistory(false)
             if (result === 'terminal-stop') {
@@ -201,7 +246,7 @@ export function WorkGroupCard(props: {
                 workGroupHistoryHydratedSessions.add(ctx.sessionId)
                 setHistoryExhausted(true)
             } else if (result === 'loaded') {
-                // 一页已经足够展示工作组的更早部分；后续页面由顶部哨兵或按钮驱动。
+                // 一次批量请求最多覆盖 800 条旧消息，后续页面由顶部哨兵或按钮驱动。
                 // 只做一次自动补齐，避免哨兵保持可见时展开卡片连续发起请求。
                 workGroupHistoryHydratedSessions.add(ctx.sessionId)
                 setHistoryExhausted(true)
@@ -284,6 +329,7 @@ export function WorkGroupCard(props: {
                         </div>
                     ))}
                     {isHydratingHistory ? <div className="shrink-0 text-xs text-[var(--app-hint)]">{t('workGroup.loadingOlderHistory')}</div> : null}
+                    {!isHydratingHistory && (detailsLoadFailed || props.block.detailsState === 'error') && props.block.detailsState !== 'loaded' ? <div className="shrink-0 text-xs text-[var(--app-hint)]">{t('workGroup.historyUnavailable')}</div> : null}
                     {!isHydratingHistory && historyLoadFailed && props.block.needsOlderHistory ? <div className="shrink-0 text-xs text-[var(--app-hint)]">{t('workGroup.historyUnavailable')}</div> : null}
                 </CardContent>
             ) : null}

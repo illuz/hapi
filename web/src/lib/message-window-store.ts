@@ -29,7 +29,13 @@ export const INITIAL_PAGE_SIZE = 200
 const AGENT_RUN_WINDOW_SIZE = 800
 const OLDER_LOAD_WINDOW_SIZE = 800
 const PAGE_SIZE = 200
+const MAX_OLDER_LOAD_PAGES = 8
 const CACHED_REENTRY_PAGE_SIZE = 20
+
+export type OlderMessagesLoadOptions = {
+    /** 一次调用最多连续拉取的旧消息页数；默认保持单页行为。 */
+    maxPages?: number
+}
 
 type MessagePosition = {
     at: number
@@ -872,12 +878,22 @@ export function fetchLatestMessages(api: ApiClient, sessionId: string): Promise<
     return syncTailMessages(api, sessionId)
 }
 
-export async function fetchOlderMessages(api: ApiClient, sessionId: string): Promise<boolean> {
+function normalizeOlderLoadPageCount(value: number | undefined): number {
+    if (!Number.isFinite(value)) return 1
+    return Math.min(MAX_OLDER_LOAD_PAGES, Math.max(1, Math.floor(value!)))
+}
+
+export async function fetchOlderMessages(
+    api: ApiClient,
+    sessionId: string,
+    options: OlderMessagesLoadOptions = {}
+): Promise<boolean> {
     const initial = getState(sessionId)
-    const before = readPosition(initial.oldestPositionAt, initial.oldestPositionSeq)
+    let before = readPosition(initial.oldestPositionAt, initial.oldestPositionSeq)
     if (initial.isSyncingTail || initial.isLoadingMore || !initial.hasMore || !before) {
         return false
     }
+    const maxPages = normalizeOlderLoadPageCount(options.maxPages)
     const generation = initial.olderGeneration + 1
     updateState(sessionId, (previous) => buildState(previous, {
         olderGeneration: generation,
@@ -886,45 +902,71 @@ export async function fetchOlderMessages(api: ApiClient, sessionId: string): Pro
     }))
 
     try {
-        const response = await api.getMessages(sessionId, {
-            beforeAt: before.at,
-            beforeSeq: before.seq,
-            limit: PAGE_SIZE
-        })
-        if (getState(sessionId).olderGeneration !== generation) return false
-
-        if (initial.epoch !== null && response.page.epoch !== undefined && response.page.epoch !== initial.epoch) {
-            updateState(sessionId, (previous) => {
-                if (previous.olderGeneration !== generation) return previous
-                return buildState(previous, {
-                    isLoadingMore: false,
-                    epoch: null,
-                    newestPositionAt: null,
-                    newestPositionSeq: null,
-                    requiresLatestReset: true
-                })
+        const incoming: DecryptedMessage[] = []
+        let hasMore: boolean = initial.hasMore
+        let epoch = initial.epoch
+        for (let pageIndex = 0; pageIndex < maxPages && hasMore && before; pageIndex += 1) {
+            const response = await api.getMessages(sessionId, {
+                beforeAt: before.at,
+                beforeSeq: before.seq,
+                limit: PAGE_SIZE
             })
-            await syncTailMessages(api, sessionId, { ensureAfterCurrent: true })
-            return false
+            if (getState(sessionId).olderGeneration !== generation) return false
+
+            if (epoch !== null && response.page.epoch !== undefined && response.page.epoch !== epoch) {
+                updateState(sessionId, (previous) => {
+                    if (previous.olderGeneration !== generation) return previous
+                    return buildState(previous, {
+                        isLoadingMore: false,
+                        epoch: null,
+                        newestPositionAt: null,
+                        newestPositionSeq: null,
+                        requiresLatestReset: true
+                    })
+                })
+                await syncTailMessages(api, sessionId, { ensureAfterCurrent: true })
+                return false
+            }
+
+            epoch = response.page.epoch ?? epoch
+            incoming.push(...response.messages)
+            hasMore = response.page.hasMore
+            const nextBefore = readPosition(response.page.nextBeforeAt, response.page.nextBeforeSeq)
+            if (!nextBefore || comparePosition(nextBefore, before) >= 0) {
+                before = nextBefore
+                hasMore = false
+                break
+            }
+            before = nextBefore
         }
 
         updateState(sessionId, (previous) => {
             if (previous.olderGeneration !== generation) return previous
-            const merged = mergeIntoWindow(previous, response.messages, {
+            if (incoming.length === 0) {
+                return buildState(previous, {
+                    hasMore,
+                    epoch: epoch ?? previous.epoch,
+                    oldestPositionAt: before?.at ?? null,
+                    oldestPositionSeq: before?.seq ?? null,
+                    isLoadingMore: false,
+                    warning: null
+                })
+            }
+            const merged = mergeIntoWindow(previous, incoming, {
                 mode: 'prepend',
                 regularLimit: OLDER_LOAD_WINDOW_SIZE
             })
             return buildState(merged, {
-                hasMore: response.page.hasMore,
-                epoch: response.page.epoch ?? previous.epoch,
-                oldestPositionAt: response.page.nextBeforeAt ?? null,
-                oldestPositionSeq: response.page.nextBeforeSeq ?? null,
+                hasMore,
+                epoch: epoch ?? previous.epoch,
+                oldestPositionAt: before?.at ?? null,
+                oldestPositionSeq: before?.seq ?? null,
                 isLoadingMore: false,
                 historyVersion: previous.historyVersion + 1,
                 warning: null
             })
         })
-        return true
+        return incoming.length > 0
     } catch (error) {
         updateState(sessionId, (previous) => {
             if (previous.olderGeneration !== generation) return previous

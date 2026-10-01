@@ -1,12 +1,25 @@
-import type { AttachmentMetadata, DecryptedMessage } from '@hapi/protocol/types'
+import { asString, isObject } from '@hapi/protocol'
+import type {
+    AttachmentMetadata,
+    DecryptedMessage,
+    TimelineDetailsResponse,
+    TimelineSummaryItem,
+    TimelineSummaryResponse,
+    TimelineWorkSummary
+} from '@hapi/protocol/types'
 import type { QueuedStateResponse } from '@hapi/protocol/schemas'
-import { unwrapRoleWrappedRecordEnvelope } from '@hapi/protocol/messages'
+import { isClaudeChatVisibleMessage, unwrapRoleWrappedRecordEnvelope } from '@hapi/protocol/messages'
 import type { Server } from 'socket.io'
 import { randomUUID } from 'node:crypto'
 import type { Store, CancelQueuedMessageResult } from '../store'
 import { EventPublisher } from './eventPublisher'
 
 type MessagePosition = { at: number; seq: number }
+
+const TIMELINE_DEFAULT_LIMIT = 60
+const TIMELINE_MAX_LIMIT = 100
+const TIMELINE_RAW_SCAN_LIMIT = 5_000
+const TIMELINE_DETAIL_LIMIT = 10_000
 
 export type IncrementalMessagesResponse = {
     messages: DecryptedMessage[]
@@ -102,6 +115,382 @@ function extractUserText(content: unknown): string {
     return ''
 }
 
+type TimelineSignals = {
+    ignored: boolean
+    hasWork: boolean
+    hasEvent: boolean
+    hasText: boolean
+    text: string
+    summary: TimelineWorkSummary
+    toolCallIds: string[]
+    toolResultIds: string[]
+}
+
+function emptyTimelineSummary(): TimelineWorkSummary {
+    return {
+        reasoningCount: 0,
+        reviewCount: 0,
+        eventCount: 0,
+        toolGroupCount: 0,
+        toolCount: 0,
+        errorCount: 0,
+        runningCount: 0,
+        pendingCount: 0
+    }
+}
+
+function appendText(target: string[], value: unknown): void {
+    if (typeof value !== 'string') return
+    const text = value.trim()
+    if (text.length > 0) target.push(text)
+}
+
+function hasNonBlankField(value: Record<string, unknown>, ...keys: string[]): boolean {
+    return keys.some((key) => {
+        const candidate = value[key]
+        return typeof candidate === 'string' && candidate.trim().length > 0
+    })
+}
+
+function hasValidCodexTokenUsage(value: unknown): boolean {
+    if (!isObject(value)) return false
+    const usage = isObject(value.last)
+        ? value.last
+        : isObject(value.total)
+            ? value.total
+            : value
+    const input = usage.inputTokens ?? usage.input_tokens
+    const output = usage.outputTokens ?? usage.output_tokens
+    return typeof input === 'number' && Number.isFinite(input)
+        && typeof output === 'number' && Number.isFinite(output)
+}
+
+function hasValidCodexPlan(value: Record<string, unknown>): boolean {
+    const plan = value.plan ?? value.update ?? value.items ?? value.steps
+    if (Array.isArray(plan)) return plan.length > 0
+    if (!isObject(plan)) return false
+    return ['plan', 'items', 'steps'].some((key) => Array.isArray(plan[key]) && plan[key].length > 0)
+}
+
+function emptyTimelineSignals(overrides: Partial<TimelineSignals> = {}): TimelineSignals {
+    return {
+        ignored: false,
+        hasWork: false,
+        hasEvent: false,
+        hasText: false,
+        text: '',
+        summary: emptyTimelineSummary(),
+        toolCallIds: [],
+        toolResultIds: [],
+        ...overrides
+    }
+}
+
+function extractTaskNotificationSummary(value: unknown): string | null {
+    if (typeof value !== 'string') return null
+    const match = value.match(/<task-notification\b[^>]*>[\s\S]*?<summary>([\s\S]*?)<\/summary>[\s\S]*?<\/task-notification>/i)
+    const summary = match?.[1]?.replace(/\s+/g, ' ').trim()
+    return summary || null
+}
+
+function isHiddenOrNonRenderableAgentRecord(content: unknown): boolean {
+    if (!isObject(content)) return false
+
+    if (content.type === 'output' && isObject(content.data)) {
+        const data = content.data
+        if (data.isMeta === true || data.isCompactSummary === true) return true
+        const type = asString(data.type)
+        if (type && !isClaudeChatVisibleMessage({ type, subtype: data.subtype })) return true
+    }
+
+    if (content.type === 'codex' && isObject(content.data)) {
+        const data = content.data
+        const type = asString(data.type)
+        if (type === 'token_count') return true
+        if (type === 'message' && !hasNonBlankField(data, 'message')) return true
+        if (type === 'reasoning' && !hasNonBlankField(data, 'message')) return true
+        if (type === 'tool-call' && !hasNonBlankField(data, 'callId')) return true
+        if (type === 'tool-call-result' && !hasNonBlankField(data, 'callId', 'tool_use_id')) return true
+        if (type === 'plan_update' && !hasValidCodexPlan(data)) return true
+        if (type === 'token_count' && !hasValidCodexTokenUsage(data.info)) return true
+    }
+
+    if (content.type === 'event' && isObject(content.data) && content.data.type === 'ready') {
+        return true
+    }
+    return false
+}
+
+function scanTimelineValue(
+    value: unknown,
+    depth: number,
+    textParts: string[],
+    summary: TimelineWorkSummary,
+    toolCallIds: Set<string>,
+    toolResultIds: Set<string>
+): {
+    hasWork: boolean
+    hasEvent: boolean
+} {
+    if (depth > 8 || value === null || value === undefined) {
+        return { hasWork: false, hasEvent: false }
+    }
+    if (typeof value === 'string') {
+        appendText(textParts, value)
+        return { hasWork: false, hasEvent: false }
+    }
+    if (Array.isArray(value)) {
+        let hasWork = false
+        let hasEvent = false
+        for (const item of value) {
+            const result = scanTimelineValue(item, depth + 1, textParts, summary, toolCallIds, toolResultIds)
+            hasWork = hasWork || result.hasWork
+            hasEvent = hasEvent || result.hasEvent
+        }
+        return { hasWork, hasEvent }
+    }
+    if (!isObject(value)) return { hasWork: false, hasEvent: false }
+
+    const type = asString(value.type)
+    if (
+        (type === 'tool_use' && hasNonBlankField(value, 'id'))
+        || (type === 'tool-call' && hasNonBlankField(value, 'callId'))
+    ) {
+        const id = asString(value.id) ?? asString(value.callId)
+        if (id) toolCallIds.add(id)
+        summary.toolCount += 1
+        if (summary.toolGroupCount === 0) summary.toolGroupCount = 1
+        if (value.is_error === true || value.isError === true) summary.errorCount += 1
+        return { hasWork: true, hasEvent: false }
+    }
+    if (
+        (type === 'tool_use_result' && hasNonBlankField(value, 'tool_use_id', 'toolUseId'))
+        || (type === 'tool-call-result' && hasNonBlankField(value, 'callId', 'tool_use_id'))
+        || (type === 'tool_result' && hasNonBlankField(value, 'tool_use_id', 'toolUseId'))
+        || (type === 'tool-result' && hasNonBlankField(value, 'tool_use_id', 'toolUseId'))
+    ) {
+        const id = asString(value.tool_use_id) ?? asString(value.toolUseId) ?? asString(value.callId)
+        if (id) toolResultIds.add(id)
+        if (summary.toolGroupCount === 0) summary.toolGroupCount = 1
+        if (value.is_error === true || value.isError === true) summary.errorCount += 1
+        return { hasWork: true, hasEvent: false }
+    }
+    if (
+        (type === 'thinking' && hasNonBlankField(value, 'thinking', 'text'))
+        || (type === 'reasoning' && hasNonBlankField(value, 'message', 'text'))
+        || (type === 'plan_update' && hasValidCodexPlan(value))
+    ) {
+        if (type === 'plan_update') {
+            summary.toolCount += 1
+            summary.toolGroupCount = Math.max(1, summary.toolGroupCount)
+        } else {
+            summary.reasoningCount += 1
+        }
+        return { hasWork: true, hasEvent: false }
+    }
+    if (type === 'codex-review' || type === 'review') {
+        summary.reviewCount += 1
+        return { hasWork: true, hasEvent: false }
+    }
+    if (type === 'event' || type === 'system') {
+        summary.eventCount += 1
+        return { hasWork: true, hasEvent: true }
+    }
+    if (type === 'token_count' || type === 'token-count') {
+        return { hasWork: false, hasEvent: false }
+    }
+
+    appendText(textParts, value.text)
+    appendText(textParts, value.message)
+    appendText(textParts, value.summary)
+
+    let hasWork = false
+    let hasEvent = false
+    for (const [key, child] of Object.entries(value)) {
+        if (key === 'input' || key === 'output' || key === 'content' || key === 'data' || key === 'message' || key === 'payload') {
+            const result = scanTimelineValue(child, depth + 1, textParts, summary, toolCallIds, toolResultIds)
+            hasWork = hasWork || result.hasWork
+            hasEvent = hasEvent || result.hasEvent
+        }
+    }
+    return { hasWork, hasEvent }
+}
+
+function classifyTimelineMessage(content: unknown): TimelineSignals {
+    const summary = emptyTimelineSummary()
+    const textParts: string[] = []
+    const toolCallIds = new Set<string>()
+    const toolResultIds = new Set<string>()
+    const record = unwrapRoleWrappedRecordEnvelope(content)
+    if (record?.role === 'agent' && isObject(record.content) && record.content.type === 'output' && isObject(record.content.data)) {
+        const data = record.content.data
+        if (data.type === 'user' && isObject(data.message)) {
+            const taskSummary = extractTaskNotificationSummary(data.message.content)
+            if (taskSummary) {
+                summary.eventCount = 1
+                return emptyTimelineSignals({ hasWork: true, hasEvent: true, summary })
+            }
+            if (typeof data.message.content === 'string') {
+                return emptyTimelineSignals({ ignored: true })
+            }
+        }
+    }
+    if (record?.role === 'agent' && isHiddenOrNonRenderableAgentRecord(record.content)) {
+        return emptyTimelineSignals({ ignored: true })
+    }
+    const target = record?.content ?? content
+    const scanned = scanTimelineValue(target, 0, textParts, summary, toolCallIds, toolResultIds)
+    const text = [...new Set(textParts)].join('\n\n').trim()
+    return {
+        ignored: false,
+        hasWork: scanned.hasWork,
+        hasEvent: scanned.hasEvent,
+        hasText: text.length > 0,
+        text,
+        summary,
+        toolCallIds: [...toolCallIds],
+        toolResultIds: [...toolResultIds]
+    }
+}
+
+function getCodexSnapshotKey(content: unknown): string | null {
+    const record = unwrapRoleWrappedRecordEnvelope(content)
+    if (record?.role !== 'agent' || !isObject(record.content) || record.content.type !== 'codex') return null
+    if (!isObject(record.content.data)) return null
+    const type = asString(record.content.data.type)
+    if (type !== 'message' && type !== 'reasoning') return null
+    const streamId = asString(record.content.data.id)
+    return streamId ? `${type}:${streamId}` : null
+}
+
+function summarizeTimelineMessages(
+    messages: ReturnType<Store['messages']['getMessagesBySeqRange']>
+): TimelineSummaryItem[] {
+    const items: TimelineSummaryItem[] = []
+    const latestSnapshotSeq = new Map<string, number>()
+    for (const message of messages) {
+        const key = getCodexSnapshotKey(message.content)
+        if (key) latestSnapshotSeq.set(key, message.seq)
+    }
+    const visibleMessages = messages.filter((message) => {
+        const key = getCodexSnapshotKey(message.content)
+        return !key || latestSnapshotSeq.get(key) === message.seq
+    })
+    let work: TimelineSummaryItem | null = null
+    let workToolCallIds = new Set<string>()
+    let workToolResultIds = new Set<string>()
+
+    const flushWork = () => {
+        if (!work) return
+        const runningCount = [...workToolCallIds].filter((id) => !workToolResultIds.has(id)).length
+        if (work.work) {
+            work.work.runningCount = runningCount
+            const invocationCount = new Set([...workToolCallIds, ...workToolResultIds]).size
+            const nonInvocationTools = Math.max(0, work.work.toolCount - workToolCallIds.size)
+            work.work.toolCount = Math.max(work.work.toolCount, invocationCount + nonInvocationTools)
+            if (runningCount > 0) {
+                work.completedAt = null
+                work.durationMs = null
+            }
+        }
+        items.push(work)
+        work = null
+        workToolCallIds = new Set()
+        workToolResultIds = new Set()
+    }
+
+    for (const message of visibleMessages) {
+        const role = unwrapRoleWrappedRecordEnvelope(message.content)?.role
+        const signals = classifyTimelineMessage(message.content)
+        if (signals.ignored) continue
+        if (role === 'user' && !signals.hasWork) {
+            if (!signals.hasText) continue
+            flushWork()
+            items.push({
+                id: 'user:' + message.id,
+                kind: 'user',
+                createdAt: message.createdAt,
+                seqStart: message.seq,
+                seqEnd: message.seq,
+                text: extractUserText(message.content)
+            })
+            continue
+        }
+
+        if (signals.hasWork) {
+            // A single assistant payload may contain commentary followed by a
+            // tool call. Keep the commentary visible outside the folded group;
+            // the detail endpoint still returns the whole raw message range.
+            if (signals.hasText) {
+                flushWork()
+                items.push({
+                    id: 'assistant:' + message.id,
+                    kind: 'assistant',
+                    createdAt: message.createdAt,
+                    seqStart: message.seq,
+                    seqEnd: message.seq,
+                    text: signals.text
+                })
+            }
+            if (!work) {
+                work = {
+                    id: 'work-group:' + message.seq + '-' + message.seq,
+                    kind: 'work-group',
+                    createdAt: message.createdAt,
+                    seqStart: message.seq,
+                    seqEnd: message.seq,
+                    startedAt: message.createdAt,
+                    completedAt: message.createdAt,
+                    durationMs: 0,
+                    work: signals.summary
+                }
+                workToolCallIds = new Set(signals.toolCallIds)
+                workToolResultIds = new Set(signals.toolResultIds)
+            } else {
+                work.seqEnd = message.seq
+                work.id = 'work-group:' + work.seqStart + '-' + work.seqEnd
+                work.completedAt = message.createdAt
+                work.durationMs = Math.max(0, message.createdAt - work.createdAt)
+                const current = work.work ?? emptyTimelineSummary()
+                for (const key of Object.keys(current) as Array<keyof TimelineWorkSummary>) {
+                    current[key] += signals.summary[key]
+                }
+                work.work = current
+                for (const id of signals.toolCallIds) workToolCallIds.add(id)
+                for (const id of signals.toolResultIds) workToolResultIds.add(id)
+            }
+            continue
+        }
+
+        // Unknown/empty payloads are not visible Web blocks. They must not
+        // split the surrounding execution group.
+        if (!signals.hasText && !signals.hasEvent) continue
+
+        flushWork()
+        if (signals.hasEvent) {
+            items.push({
+                id: 'event:' + message.id,
+                kind: 'event',
+                createdAt: message.createdAt,
+                seqStart: message.seq,
+                seqEnd: message.seq,
+                text: signals.text
+            })
+        } else if (signals.hasText) {
+            items.push({
+                id: 'assistant:' + message.id,
+                kind: 'assistant',
+                createdAt: message.createdAt,
+                seqStart: message.seq,
+                seqEnd: message.seq,
+                text: signals.text
+            })
+        }
+    }
+    flushWork()
+    return items
+}
+
 export class MessageService {
     constructor(
         private readonly store: Store,
@@ -129,6 +518,78 @@ export class MessageService {
             createdAt: message.createdAt,
             seq: message.seq
         }))
+    }
+
+    getTimelineSummary(
+        sessionId: string,
+        options: { limit?: number; beforeSeq?: number | null } = {}
+    ): TimelineSummaryResponse {
+        const limit = Math.min(
+            TIMELINE_MAX_LIMIT,
+            Math.max(1, Math.floor(options.limit ?? TIMELINE_DEFAULT_LIMIT))
+        )
+        const rawMessages = this.store.messages.getMessagesBySeqRange(sessionId, {
+            beforeSeq: options.beforeSeq ?? undefined,
+            limit: TIMELINE_RAW_SCAN_LIMIT
+        })
+        const allItems = summarizeTimelineMessages(rawMessages)
+        const items = allItems.slice(-limit)
+        const nextBeforeSeq = items[0]?.seqStart ?? rawMessages[0]?.seq ?? null
+        const hasMore = nextBeforeSeq !== null
+            && this.store.messages.getMessagesBySeqRange(sessionId, {
+                beforeSeq: nextBeforeSeq,
+                limit: 1
+            }).length > 0
+
+        return {
+            items,
+            page: {
+                limit,
+                nextBeforeSeq,
+                hasMore
+            }
+        }
+    }
+
+    getTimelineDetails(sessionId: string, groupId: string): TimelineDetailsResponse {
+        const match = /^work-group:(\d+)-(\d+)$/.exec(groupId)
+        if (!match) {
+            throw new Error('Invalid timeline group')
+        }
+        const startSeq = Number(match[1])
+        const endSeq = Number(match[2])
+        if (!Number.isSafeInteger(startSeq) || !Number.isSafeInteger(endSeq) || startSeq < 1 || endSeq < startSeq) {
+            throw new Error('Invalid timeline group range')
+        }
+
+        const messages = this.store.messages.getMessagesBySeqRange(sessionId, {
+            startSeq,
+            endSeq,
+            limit: TIMELINE_DETAIL_LIMIT
+        })
+        const group = summarizeTimelineMessages(messages).find((item) => item.kind === 'work-group') ?? {
+            id: groupId,
+            kind: 'work-group' as const,
+            createdAt: messages[0]?.createdAt ?? Date.now(),
+            seqStart: startSeq,
+            seqEnd: endSeq,
+            startedAt: messages[0]?.createdAt ?? null,
+            completedAt: messages.at(-1)?.createdAt ?? null,
+            durationMs: messages.length > 1
+                ? Math.max(0, (messages.at(-1)?.createdAt ?? 0) - (messages[0]?.createdAt ?? 0))
+                : 0,
+            work: emptyTimelineSummary()
+        }
+
+        return {
+            group,
+            messages: messages.map(toDecryptedMessage),
+            page: {
+                limit: TIMELINE_DETAIL_LIMIT,
+                nextBeforeSeq: null,
+                hasMore: messages.length >= TIMELINE_DETAIL_LIMIT
+            }
+        }
     }
 
     /** Return the hub's authoritative invocation state for client local ids. */

@@ -8,11 +8,12 @@ import type {
     DecryptedMessage,
     PermissionMode,
     Session,
-    SlashCommand
+    SlashCommand,
+    TimelineSummaryItem
 } from '@/types/api'
 import type { ChatBlock, NormalizedMessage } from '@/chat/types'
 import { buildVisibleChatBlocks, isToolGroupBlock, type ToolGroupBlock, type VisibleChatBlock } from '@/chat/toolGroups'
-import { buildVisibleWorkGroups, isWorkGroupBlock, type WorkGroupBlock, type WorkVisibleChatBlock } from '@/chat/workGroups'
+import { buildVisibleWorkGroups, isWorkGroupBlock, type WorkGroupBlock, type WorkGroupChildBlock, type WorkVisibleChatBlock } from '@/chat/workGroups'
 import type { ConversationOutlineItem } from '@/chat/outline'
 import type { Suggestion } from '@/hooks/useActiveSuggestions'
 import { normalizeDecryptedMessage } from '@/chat/normalize'
@@ -22,6 +23,7 @@ import { buildConversationOutline, buildConversationOutlineFromEntries } from '@
 import { isQueuedForInvocation } from '@/lib/messages'
 import { HappyComposer, type QuickPromptAction } from '@/components/AssistantChat/HappyComposer'
 import { HappyThread } from '@/components/AssistantChat/HappyThread'
+import type { HistoryLoadOptions } from '@/components/AssistantChat/context'
 import { QueuedMessagesBar } from '@/components/AssistantChat/QueuedMessagesBar'
 import { useHappyRuntime } from '@/lib/assistant-runtime'
 import { createAttachmentAdapter } from '@/lib/attachmentAdapter'
@@ -63,6 +65,42 @@ type SessionSendOptions = {
     silent?: boolean
 }
 
+function isTimelineDetailChild(block: VisibleChatBlock): block is WorkGroupChildBlock {
+    return block.kind === 'agent-reasoning'
+        || block.kind === 'tool-group'
+        || block.kind === 'tool-call'
+        || block.kind === 'cli-output' && block.source === 'assistant'
+        || block.kind === 'agent-event'
+        || block.kind === 'codex-review'
+}
+
+function buildTimelineDetailChildren(
+    messages: DecryptedMessage[],
+    agentState: Session['agentState'],
+    codexExplorationCollapsed: boolean
+): WorkGroupChildBlock[] {
+    const normalized = messages
+        .map(normalizeDecryptedMessage)
+        .filter((message): message is NormalizedMessage => message !== null)
+    const reduced = reduceChatBlocks(normalized, agentState)
+    const visible = buildVisibleChatBlocks(reduced.blocks, {
+        hasMoreMessages: false,
+        codexExplorationCollapsed
+    })
+    return visible.filter(isTimelineDetailChild)
+}
+
+const EMPTY_TIMELINE_SUMMARY = {
+    reasoningCount: 0,
+    reviewCount: 0,
+    eventCount: 0,
+    toolGroupCount: 0,
+    toolCount: 0,
+    errorCount: 0,
+    runningCount: 0,
+    pendingCount: 0
+}
+
 export function SessionChat(props: {
     api: ApiClient
     session: Session
@@ -75,10 +113,13 @@ export function SessionChat(props: {
     pendingCount: number
     messagesVersion: number
     historyVersion?: number
+    timelineItems?: TimelineSummaryItem[]
     onBack: () => void
     onRefresh: () => void
-    onLoadMore: () => Promise<unknown>
+    onLoadMore: (options?: HistoryLoadOptions) => Promise<unknown>
     onLoadMessageAtSeq: (seq: number) => Promise<boolean>
+    onLoadTimelineDetails?: (groupId: string) => Promise<DecryptedMessage[]>
+    onEnterFullMode?: () => void
     onSend: (text: string, attachments?: AttachmentMetadata[], options?: SessionSendOptions) => string | null
     onFlushPending: () => void
     onAtBottomChange: (atBottom: boolean) => void
@@ -96,6 +137,10 @@ export function SessionChat(props: {
     const blocksByIdRef = useRef<Map<string, ChatBlock>>(new Map())
     const visibleToolGroupsRef = useRef<ToolGroupBlock[]>([])
     const visibleWorkGroupsRef = useRef<WorkGroupBlock[]>([])
+    const [timelineDetails, setTimelineDetails] = useState<Record<string, WorkGroupChildBlock[]>>({})
+    const [timelineDetailErrors, setTimelineDetailErrors] = useState<Set<string>>(new Set())
+    const timelineDetailsSessionRef = useRef(props.session.id)
+    const timelineDetailsVersionRef = useRef<number | null>(null)
     const { codexExplorationCollapsed } = useCodexExplorationCollapse()
     const [forceScrollToken, setForceScrollToken] = useState(0)
     const [autoContinueEnabled, setAutoContinueEnabled] = useState(false)
@@ -286,9 +331,31 @@ export function SessionChat(props: {
         blocksByIdRef.current.clear()
         visibleToolGroupsRef.current = []
         visibleWorkGroupsRef.current = []
+        timelineDetailsSessionRef.current = props.session.id
+        timelineDetailsVersionRef.current = null
+        setTimelineDetails({})
+        setTimelineDetailErrors(new Set())
         setOutlineOpen(false)
         setOutlineForkingItemIndex(null)
     }, [props.session.id])
+
+    // A timeline refresh invalidates the detail cache as well. Keep the open
+    // state in WorkGroupCard, but force an already-open group to re-request its
+    // exact range so live tool results cannot leave stale children on screen.
+    useEffect(() => {
+        if (props.timelineItems === undefined) {
+            timelineDetailsVersionRef.current = null
+            return
+        }
+        if (
+            timelineDetailsVersionRef.current !== null
+            && timelineDetailsVersionRef.current !== props.messagesVersion
+        ) {
+            setTimelineDetails({})
+            setTimelineDetailErrors(new Set())
+        }
+        timelineDetailsVersionRef.current = props.messagesVersion
+    }, [props.messagesVersion, props.timelineItems])
 
     useEffect(() => {
         const state = loadAutoContinueState(props.session.id)
@@ -377,7 +444,7 @@ export function SessionChat(props: {
         }),
         [reconciled.blocks, props.hasMoreMessages, codexExplorationCollapsed]
     )
-    const visibleChatBlocks: WorkVisibleChatBlock[] = useMemo(
+    const fullChatBlocks: WorkVisibleChatBlock[] = useMemo(
         () => buildVisibleWorkGroups(visibleToolBlocks, {
             hasMoreMessages: props.hasMoreMessages,
             previousGroups: visibleWorkGroupsRef.current,
@@ -386,18 +453,93 @@ export function SessionChat(props: {
         [visibleToolBlocks, props.hasMoreMessages, props.session.thinking]
     )
 
+    const loadWorkGroupDetails = useCallback(async (groupId: string): Promise<'loaded' | 'failed'> => {
+        if (!props.onLoadTimelineDetails) return 'failed'
+        const requestedSessionId = props.session.id
+        try {
+            const messages = await props.onLoadTimelineDetails(groupId)
+            if (timelineDetailsSessionRef.current !== requestedSessionId) return 'failed'
+            const children = buildTimelineDetailChildren(messages, props.session.agentState, codexExplorationCollapsed)
+            setTimelineDetails((current) => ({ ...current, [groupId]: children }))
+            setTimelineDetailErrors((current) => {
+                const next = new Set(current)
+                next.delete(groupId)
+                return next
+            })
+            return 'loaded'
+        } catch {
+            if (timelineDetailsSessionRef.current !== requestedSessionId) return 'failed'
+            setTimelineDetailErrors((current) => new Set(current).add(groupId))
+            return 'failed'
+        }
+    }, [props.onLoadTimelineDetails, props.session.id, codexExplorationCollapsed])
+
+    const visibleChatBlocks = useMemo<WorkVisibleChatBlock[]>(() => {
+        if (props.timelineItems === undefined) return fullChatBlocks
+        return props.timelineItems.map((item): WorkVisibleChatBlock => {
+            if (item.kind === 'work-group') {
+                const details = timelineDetails[item.id]
+                return {
+                    kind: 'work-group',
+                    id: item.id,
+                    // Keep the open/closed state stable while the live tail
+                    // extends the same work group and its end sequence changes.
+                    stateKey: `timeline:${item.seqStart}`,
+                    createdAt: item.createdAt,
+                    startedAt: item.startedAt ?? null,
+                    completedAt: item.completedAt ?? null,
+                    durationMs: item.durationMs ?? null,
+                    blocks: details ?? [],
+                    active: false,
+                    defaultOpen: false,
+                    historyState: 'complete',
+                    needsOlderHistory: false,
+                    summary: item.work ?? EMPTY_TIMELINE_SUMMARY,
+                    detailsState: details ? 'loaded' : timelineDetailErrors.has(item.id) ? 'error' : 'summary'
+                }
+            }
+            if (item.kind === 'user') {
+                return {
+                    kind: 'user-text',
+                    id: item.id.replace(/^user:/, ''),
+                    localId: null,
+                    createdAt: item.createdAt,
+                    text: item.text ?? ''
+                }
+            }
+            if (item.kind === 'assistant') {
+                return {
+                    kind: 'agent-text',
+                    id: item.id.replace(/^assistant:/, ''),
+                    sourceMessageId: item.id.replace(/^assistant:/, ''),
+                    localId: null,
+                    createdAt: item.createdAt,
+                    text: item.text ?? ''
+                }
+            }
+            return {
+                kind: 'agent-event',
+                id: item.id.replace(/^event:/, ''),
+                createdAt: item.createdAt,
+                event: { type: 'message', message: item.text ?? '' }
+            }
+        })
+    }, [props.timelineItems, fullChatBlocks, timelineDetails, timelineDetailErrors])
+
     useEffect(() => {
         blocksByIdRef.current = reconciled.byId
     }, [reconciled.byId])
 
     useEffect(() => {
         visibleToolGroupsRef.current = visibleToolBlocks.filter(isToolGroupBlock)
-        visibleWorkGroupsRef.current = visibleChatBlocks.filter(isWorkGroupBlock)
-    }, [visibleChatBlocks, visibleToolBlocks])
+        visibleWorkGroupsRef.current = fullChatBlocks.filter(isWorkGroupBlock)
+    }, [fullChatBlocks, visibleToolBlocks])
 
     const loadedOutlineItems = useMemo(
-        () => buildConversationOutline(reconciled.blocks),
-        [reconciled.blocks]
+        () => buildConversationOutline(props.timelineItems !== undefined
+            ? visibleChatBlocks.filter((block): block is ChatBlock => block.kind !== 'work-group' && block.kind !== 'tool-group')
+            : reconciled.blocks),
+        [reconciled.blocks, props.timelineItems, visibleChatBlocks]
     )
     const completeOutlineItems = useMemo(
         () => conversationOutlineState.entries
@@ -542,10 +684,16 @@ export function SessionChat(props: {
             }
         }
 
+        props.onEnterFullMode?.()
         const localId = props.onSend(text, attachments, options)
         setForceScrollToken((token) => token + 1)
         return localId
-    }, [agentFlavor, props.availableSlashCommands, props.onSend, props.session.id, addToast, haptic, t])
+    }, [agentFlavor, props.availableSlashCommands, props.onSend, props.onEnterFullMode, props.session.id, addToast, haptic, t])
+
+    const handleRetryMessage = useCallback((localId: string) => {
+        props.onEnterFullMode?.()
+        props.onRetryMessage?.(localId)
+    }, [props.onEnterFullMode, props.onRetryMessage])
 
     const handleSendContinue = useCallback((source: 'manual' | 'auto' = 'manual') => {
         const localId = handleSend(
@@ -807,7 +955,7 @@ export function SessionChat(props: {
                         metadata={props.session.metadata}
                         disabled={sessionInactive}
                         onRefresh={props.onRefresh}
-                        onRetryMessage={props.onRetryMessage}
+                        onRetryMessage={handleRetryMessage}
                         onForkMessage={forkFromOutlineSupported ? handleForkFromMessage : undefined}
                         onFlushPending={props.onFlushPending}
                         onAtBottomChange={props.onAtBottomChange}
@@ -815,13 +963,15 @@ export function SessionChat(props: {
                         messagesWarning={props.messagesWarning}
                         hasMoreMessages={props.hasMoreMessages}
                         isLoadingMoreMessages={props.isLoadingMoreMessages}
+                        disableAutoLoadOlder={props.timelineItems !== undefined}
                         onLoadMore={props.onLoadMore}
                         onLoadMessageAtSeq={props.onLoadMessageAtSeq}
+                        onLoadWorkGroupDetails={props.timelineItems !== undefined ? loadWorkGroupDetails : undefined}
                         pendingCount={props.pendingCount}
-                        rawMessagesCount={visibleMessages.length}
-                        normalizedMessagesCount={normalizedMessages.length}
-                messagesVersion={props.messagesVersion}
-                historyVersion={props.historyVersion}
+                        rawMessagesCount={props.timelineItems?.length ?? visibleMessages.length}
+                        normalizedMessagesCount={props.timelineItems?.length ?? normalizedMessages.length}
+                        messagesVersion={props.messagesVersion}
+                        historyVersion={props.historyVersion}
                         forceScrollToken={forceScrollToken}
                         outlineOpen={outlineOpen}
                         outlineTitle={outlineTitle}

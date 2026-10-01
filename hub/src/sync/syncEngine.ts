@@ -360,6 +360,20 @@ export class SyncEngine {
         return this.messageService.getConversationOutline(sessionId)
     }
 
+    getTimelineSummary(
+        sessionId: string,
+        options?: { limit?: number; beforeSeq?: number | null }
+    ): ReturnType<MessageService['getTimelineSummary']> {
+        return this.messageService.getTimelineSummary(sessionId, options)
+    }
+
+    getTimelineDetails(
+        sessionId: string,
+        groupId: string
+    ): ReturnType<MessageService['getTimelineDetails']> {
+        return this.messageService.getTimelineDetails(sessionId, groupId)
+    }
+
     searchConversationHistory(options: Parameters<Store['history']['search']>[0]): ReturnType<Store['history']['search']> {
         if (options.scope === 'session' && options.sessionId) {
             try {

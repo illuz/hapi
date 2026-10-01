@@ -15,6 +15,8 @@ import type {
     MessagesResponse,
     ConversationOutlineResponse,
     ConversationHistoryResponse,
+    TimelineDetailsResponse,
+    TimelineSummaryResponse,
     CodexModelsResponse,
     CustomCodexModelResponse,
     CustomCodexModelsResponse,
@@ -323,6 +325,27 @@ export class ApiClient {
     async getConversationOutline(sessionId: string): Promise<ConversationOutlineResponse> {
         return await this.request<ConversationOutlineResponse>(
             `/api/sessions/${encodeURIComponent(sessionId)}/outline`
+        )
+    }
+
+    async getTimelineSummary(sessionId: string, options?: {
+        limit?: number
+        beforeSeq?: number | null
+    }): Promise<TimelineSummaryResponse> {
+        const params = new URLSearchParams()
+        if (options?.limit !== undefined) params.set('limit', `${options.limit}`)
+        if (options?.beforeSeq !== undefined && options.beforeSeq !== null) {
+            params.set('beforeSeq', `${options.beforeSeq}`)
+        }
+        const qs = params.toString()
+        return await this.request<TimelineSummaryResponse>(
+            `/api/sessions/${encodeURIComponent(sessionId)}/timeline${qs ? `?${qs}` : ''}`
+        )
+    }
+
+    async getTimelineDetails(sessionId: string, groupId: string): Promise<TimelineDetailsResponse> {
+        return await this.request<TimelineDetailsResponse>(
+            `/api/sessions/${encodeURIComponent(sessionId)}/timeline/${encodeURIComponent(groupId)}`
         )
     }
 

@@ -249,7 +249,15 @@ function AppInner() {
                 queryClient.invalidateQueries({ queryKey: queryKeys.conversationOutline(selectedSessionId) })
             ] : [])
         ]
-        const refreshMessages = (selectedSessionId && api)
+        // SessionPage owns the initial chat data path. It starts with the
+        // compact timeline and deliberately defers the raw message window
+        // until the user sends a message or opens a work group. Fetching the
+        // raw tail here would defeat that split during SSE connection setup.
+        const isCurrentSessionChat = Boolean(
+            selectedSessionId
+            && (pathname === `/sessions/${selectedSessionId}` || pathname === `/sessions/${selectedSessionId}/`)
+        )
+        const refreshMessages = selectedSessionId && api && !isCurrentSessionChat
             ? fetchLatestMessages(api, selectedSessionId)
             : Promise.resolve()
         Promise.all([...invalidations, refreshMessages])
@@ -262,7 +270,7 @@ function AppInner() {
                     endSync()
                 }
             })
-    }, [api, queryClient, selectedSessionId, startSync, endSync])
+    }, [api, pathname, queryClient, selectedSessionId, startSync, endSync])
 
     const handleSseDisconnect = useCallback((reason: string) => {
         // Only show reconnecting banner if we've already connected once
@@ -273,15 +281,30 @@ function AppInner() {
     }, [])
 
     const handleSseEvent = useCallback((event: SyncEvent) => {
-        if (event.type !== 'messages-invalidated') {
+        const isCurrentSessionChat = Boolean(
+            selectedSessionId
+            && (pathname === `/sessions/${selectedSessionId}` || pathname === `/sessions/${selectedSessionId}/`)
+        )
+        if (
+            isCurrentSessionChat
+            && (event.type === 'messages-invalidated' || event.type === 'message-received')
+            && typeof window !== 'undefined'
+        ) {
+            // SessionPage decides whether the current view owns the compact
+            // timeline or the raw message window. Do not clear/fetch the raw
+            // store here, otherwise a background SSE update would force the
+            // summary view into full-history mode.
+            window.dispatchEvent(new CustomEvent('hapi:session-messages-updated', {
+                detail: { sessionId: event.sessionId, type: event.type }
+            }))
             return
         }
-        if (!api || event.sessionId !== selectedSessionId) {
+        if (event.type !== 'messages-invalidated' || !api || event.sessionId !== selectedSessionId) {
             return
         }
         clearMessageWindow(event.sessionId)
         void fetchLatestMessages(api, event.sessionId)
-    }, [api, selectedSessionId])
+    }, [api, pathname, selectedSessionId])
 
     useEffect(() => {
         if (!selectedSessionId) {

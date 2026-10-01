@@ -41,6 +41,11 @@ const querySchema = z.object({
         path: ['epoch']
     })
 
+const timelineQuerySchema = z.object({
+    limit: z.coerce.number().int().min(1).max(100).optional(),
+    beforeSeq: z.coerce.number().int().min(1).optional()
+})
+
 const sendMessageBodySchema = z.object({
     text: z.string(),
     localId: z.string().min(1).optional(),
@@ -62,6 +67,44 @@ export function createMessagesRoutes(getSyncEngine: () => SyncEngine | null): Ho
         }
 
         return c.json({ items: engine.getConversationOutline(sessionResult.sessionId) })
+    })
+
+    app.get('/sessions/:id/timeline', (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) {
+            return engine
+        }
+
+        const sessionResult = requireSessionFromParam(c, engine)
+        if (sessionResult instanceof Response) {
+            return sessionResult
+        }
+        const parsed = timelineQuerySchema.safeParse(c.req.query())
+        if (!parsed.success) {
+            return c.json({ error: 'Invalid query', issues: parsed.error.flatten() }, 400)
+        }
+
+        return c.json(engine.getTimelineSummary(sessionResult.sessionId, parsed.data))
+    })
+
+    app.get('/sessions/:id/timeline/:groupId', (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) {
+            return engine
+        }
+
+        const sessionResult = requireSessionFromParam(c, engine)
+        if (sessionResult instanceof Response) {
+            return sessionResult
+        }
+
+        try {
+            return c.json(engine.getTimelineDetails(sessionResult.sessionId, c.req.param('groupId')))
+        } catch (error) {
+            return c.json({
+                error: error instanceof Error ? error.message : 'Invalid timeline group'
+            }, 400)
+        }
     })
 
     app.get('/sessions/:id/messages', async (c) => {

@@ -28,6 +28,7 @@ import { useAppGoBack } from '@/hooks/useAppGoBack'
 import { isTelegramApp } from '@/hooks/useTelegram'
 import { useSidebarResize } from '@/hooks/useSidebarResize'
 import { useMessages } from '@/hooks/queries/useMessages'
+import { useConversationTimeline } from '@/hooks/queries/useConversationTimeline'
 import { useMachines } from '@/hooks/queries/useMachines'
 import { useSession } from '@/hooks/queries/useSession'
 import { useSessions } from '@/hooks/queries/useSessions'
@@ -39,7 +40,7 @@ import { useSendMessage } from '@/hooks/mutations/useSendMessage'
 import { queryKeys } from '@/lib/query-keys'
 import { useToast } from '@/lib/toast-context'
 import { useTranslation } from '@/lib/use-translation'
-import { fetchLatestMessages, seedMessageWindowFromSession } from '@/lib/message-window-store'
+import { clearMessageWindow, fetchLatestMessages, seedMessageWindowFromSession } from '@/lib/message-window-store'
 import { clearDraftsAfterSend } from '@/lib/clearDraftsAfterSend'
 import { getMachineTitle } from '@/lib/machineTitle'
 import { filterSessionsByActivityOrMarker } from '@/lib/sessionFilters'
@@ -509,6 +510,7 @@ function SessionPage() {
     const queryClient = useQueryClient()
     const { addToast } = useToast()
     const { sessionId } = useParams({ from: '/sessions/$sessionId' })
+    const [summaryMode, setSummaryMode] = useState(true)
     const {
         session,
         isLoading: sessionLoading,
@@ -530,7 +532,68 @@ function SessionPage() {
         historyVersion,
         flushPending,
         setAtBottom,
-    } = useMessages(api, sessionId)
+        activateFullMessages,
+    } = useMessages(api, sessionId, { deferInitialSync: true })
+    const timeline = useConversationTimeline({
+        api,
+        sessionId,
+        enabled: summaryMode
+    })
+
+    useEffect(() => {
+        setSummaryMode(true)
+    }, [sessionId])
+
+    const enterFullMode = useCallback(() => {
+        setSummaryMode(false)
+        void activateFullMessages()
+    }, [activateFullMessages])
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return
+        let refreshTimer: number | null = null
+        const handleSessionMessagesUpdated = (event: Event) => {
+            const detail = (event as CustomEvent<{ sessionId?: string; type?: string }>).detail
+            if (!detail || detail.sessionId !== sessionId) return
+            if (refreshTimer !== null) window.clearTimeout(refreshTimer)
+            refreshTimer = window.setTimeout(() => {
+                refreshTimer = null
+                if (summaryMode) {
+                    void timeline.refetch()
+                    return
+                }
+                if (detail.type === 'messages-invalidated') {
+                    clearMessageWindow(sessionId)
+                    void refetchMessages()
+                }
+            }, 120)
+        }
+        window.addEventListener('hapi:session-messages-updated', handleSessionMessagesUpdated)
+        return () => {
+            if (refreshTimer !== null) window.clearTimeout(refreshTimer)
+            window.removeEventListener('hapi:session-messages-updated', handleSessionMessagesUpdated)
+        }
+    }, [refetchMessages, sessionId, summaryMode, timeline.refetch])
+
+    const handleLoadMore = useCallback(async (options?: { maxPages?: number }) => {
+        return summaryMode ? await timeline.loadMore() : await loadMoreMessages(options)
+    }, [summaryMode, timeline.loadMore, loadMoreMessages])
+
+    const handleLoadMessageAtSeq = useCallback(async (seq: number) => {
+        if (summaryMode) {
+            setSummaryMode(false)
+            await activateFullMessages()
+        }
+        return await loadMessageAtSeq(seq)
+    }, [activateFullMessages, loadMessageAtSeq, summaryMode])
+
+    const handleAtBottomChange = useCallback((atBottom: boolean) => {
+        if (!summaryMode) setAtBottom(atBottom)
+    }, [setAtBottom, summaryMode])
+
+    const handleFlushPending = useCallback(() => {
+        if (!summaryMode) flushPending()
+    }, [flushPending, summaryMode])
     const {
         sendMessage,
         retryMessage,
@@ -616,8 +679,9 @@ function SessionPage() {
 
     const refreshSelectedSession = useCallback(() => {
         void refetchSession()
-        void refetchMessages()
-    }, [refetchMessages, refetchSession])
+        if (summaryMode) void timeline.refetch()
+        else void refetchMessages()
+    }, [refetchMessages, refetchSession, summaryMode, timeline.refetch])
 
     if (!session) {
         if (sessionLoading) {
@@ -643,21 +707,24 @@ function SessionPage() {
             api={api}
             session={session}
             messages={messages}
-            messagesWarning={messagesWarning}
-            hasMoreMessages={messagesHasMore}
-            isLoadingMessages={messagesLoading}
-            isLoadingMoreMessages={messagesLoadingMore}
+            timelineItems={summaryMode ? timeline.items : undefined}
+            messagesWarning={summaryMode ? timeline.error : messagesWarning}
+            hasMoreMessages={summaryMode ? timeline.hasMore : messagesHasMore}
+            isLoadingMessages={summaryMode ? timeline.isLoading : messagesLoading}
+            isLoadingMoreMessages={summaryMode ? timeline.isLoadingMore : messagesLoadingMore}
             isSending={isSending}
             pendingCount={pendingCount}
-            messagesVersion={messagesVersion}
-            historyVersion={historyVersion}
+            messagesVersion={summaryMode ? timeline.version : messagesVersion}
+            historyVersion={summaryMode ? timeline.version : historyVersion}
             onBack={goBack}
             onRefresh={refreshSelectedSession}
-            onLoadMore={loadMoreMessages}
-            onLoadMessageAtSeq={loadMessageAtSeq}
+            onLoadMore={handleLoadMore}
+            onLoadMessageAtSeq={handleLoadMessageAtSeq}
+            onLoadTimelineDetails={timeline.loadDetails}
+            onEnterFullMode={enterFullMode}
             onSend={sendMessage}
-            onFlushPending={flushPending}
-            onAtBottomChange={setAtBottom}
+            onFlushPending={handleFlushPending}
+            onAtBottomChange={handleAtBottomChange}
             onRetryMessage={retryMessage}
             autocompleteSuggestions={getAutocompleteSuggestions}
             availableSlashCommands={slashCommands}

@@ -129,6 +129,40 @@ export function getMessagesAfter(
     return rows.map(toStoredMessage)
 }
 
+/** Read an ascending seq window for compact timeline summaries and details. */
+export function getMessagesBySeqRange(
+    db: Database,
+    sessionId: string,
+    options: { startSeq?: number; endSeq?: number; beforeSeq?: number; limit?: number } = {}
+): StoredMessage[] {
+    const requestedLimit = options.limit ?? 5000
+    const safeLimit = Number.isFinite(requestedLimit)
+        ? Math.max(1, Math.min(10_000, Math.floor(requestedLimit)))
+        : 5000
+    const startSeq = Number.isFinite(options.startSeq) ? Math.max(1, Math.floor(options.startSeq!)) : null
+    const endSeq = Number.isFinite(options.endSeq) ? Math.max(1, Math.floor(options.endSeq!)) : null
+    const beforeSeq = Number.isFinite(options.beforeSeq) ? Math.max(1, Math.floor(options.beforeSeq!)) : null
+    const hasRange = startSeq !== null || endSeq !== null
+    const order = hasRange ? 'ASC' : 'DESC'
+    const rows = db.prepare(`
+        SELECT * FROM messages
+        WHERE session_id = @sessionId
+          AND (@startSeq IS NULL OR seq >= @startSeq)
+          AND (@endSeq IS NULL OR seq <= @endSeq)
+          AND (@beforeSeq IS NULL OR seq < @beforeSeq)
+        ORDER BY seq ${order}
+        LIMIT @limit
+    `).all({
+        sessionId,
+        startSeq,
+        endSeq,
+        beforeSeq,
+        limit: safeLimit
+    }) as DbMessageRow[]
+    if (hasRange) return rows.map(toStoredMessage)
+    return rows.reverse().map(toStoredMessage)
+}
+
 export function getMessagesSince(
     db: Database,
     sessionId: string,

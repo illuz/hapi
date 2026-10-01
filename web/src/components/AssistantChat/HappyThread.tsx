@@ -4,7 +4,7 @@ import type { ApiClient } from '@/api/client'
 import type { SessionMetadataSummary } from '@/types/api'
 import type { ConversationOutlineItem } from '@/chat/outline'
 import { getConversationMessageAnchorId } from '@/chat/outline'
-import { HappyChatProvider } from '@/components/AssistantChat/context'
+import { HappyChatProvider, type HistoryLoadOptions } from '@/components/AssistantChat/context'
 import { MarkdownLinkBehaviorProvider } from '@/components/assistant-ui/markdown-link-behavior'
 import { HappyAssistantMessage } from '@/components/AssistantChat/messages/AssistantMessage'
 import { HappyUserMessage } from '@/components/AssistantChat/messages/UserMessage'
@@ -448,8 +448,11 @@ export function HappyThread(props: {
     messagesWarning: string | null
     hasMoreMessages: boolean
     isLoadingMoreMessages: boolean
-    onLoadMore: () => Promise<unknown>
+    /** Summary timelines page older summaries explicitly; do not auto-load raw history on card focus. */
+    disableAutoLoadOlder?: boolean
+    onLoadMore: (options?: HistoryLoadOptions) => Promise<unknown>
     onLoadMessageAtSeq?: (seq: number) => Promise<boolean>
+    onLoadWorkGroupDetails?: (groupId: string) => Promise<'loaded' | 'failed'>
     pendingCount: number
     rawMessagesCount: number
     normalizedMessagesCount: number
@@ -483,7 +486,7 @@ export function HappyThread(props: {
     const hasMoreMessagesRef = useRef(props.hasMoreMessages)
     const isLoadingMessagesRef = useRef(props.isLoadingMessages)
     const onLoadMoreRef = useRef(props.onLoadMore)
-    const handleLoadMoreRef = useRef<() => void>(() => {})
+    const handleLoadMoreRef = useRef<(options?: HistoryLoadOptions) => void>(() => {})
     const atBottomRef = useRef(true)
     const onAtBottomChangeRef = useRef(props.onAtBottomChange)
     const onFlushPendingRef = useRef(props.onFlushPending)
@@ -829,7 +832,7 @@ export function HappyThread(props: {
         scrollToBottom()
     }, [props.forceScrollToken, scrollToBottom])
 
-    const loadOlderMessagesOutcome = useCallback(async (): Promise<'loaded' | 'transient-stop' | 'terminal-stop' | 'failed'> => {
+    const loadOlderMessagesOutcome = useCallback(async (options: HistoryLoadOptions = {}): Promise<'loaded' | 'transient-stop' | 'terminal-stop' | 'failed'> => {
         if (
             isInitialScrollSettling()
             || isLoadingMessagesRef.current
@@ -866,7 +869,7 @@ export function HappyThread(props: {
         loadStartedRef.current = false
         let loadPromise: Promise<unknown>
         try {
-            loadPromise = onLoadMoreRef.current()
+            loadPromise = onLoadMoreRef.current(options)
         } catch (error) {
             pendingScrollRef.current = null
             loadLockRef.current = false
@@ -897,12 +900,12 @@ export function HappyThread(props: {
         }
     }, [isInitialScrollSettling])
 
-    const loadOlderMessages = useCallback(async () => (
-        (await loadOlderMessagesOutcome()) === 'loaded'
+    const loadOlderMessages = useCallback(async (options?: HistoryLoadOptions) => (
+        (await loadOlderMessagesOutcome(options)) === 'loaded'
     ), [loadOlderMessagesOutcome])
 
-    const handleLoadMore = useCallback(() => {
-        void loadOlderMessages()
+    const handleLoadMore = useCallback((options?: HistoryLoadOptions) => {
+        void loadOlderMessages(options)
     }, [loadOlderMessages])
 
     const handlePreviousConversation = useCallback(() => {
@@ -1019,7 +1022,13 @@ export function HappyThread(props: {
     useEffect(() => {
         const sentinel = topSentinelRef.current
         const viewport = viewportRef.current
-        if (!sentinel || !viewport || !props.hasMoreMessages || props.isLoadingMessages) {
+        if (
+            props.disableAutoLoadOlder
+            || !sentinel
+            || !viewport
+            || !props.hasMoreMessages
+            || props.isLoadingMessages
+        ) {
             return
         }
         if (typeof IntersectionObserver === 'undefined') {
@@ -1061,7 +1070,7 @@ export function HappyThread(props: {
 
         observer.observe(sentinel)
         return () => observer.disconnect()
-    }, [props.hasMoreMessages, props.isLoadingMessages, isInitialScrollSettling])
+    }, [props.disableAutoLoadOlder, props.hasMoreMessages, props.isLoadingMessages, isInitialScrollSettling])
 
     useEffect(() => {
         const content = contentRef.current
@@ -1129,7 +1138,8 @@ export function HappyThread(props: {
             hasMoreMessages: props.hasMoreMessages,
             isSyncingTail: props.isLoadingMessages,
             isLoadingMoreMessages: props.isLoadingMoreMessages,
-            loadOlderMessagesPreservingScroll: loadOlderMessagesOutcome
+            loadOlderMessagesPreservingScroll: loadOlderMessagesOutcome,
+            loadWorkGroupDetails: props.onLoadWorkGroupDetails
         }}>
             <MarkdownLinkBehaviorProvider
                 behavior="copy-non-file"
@@ -1163,7 +1173,7 @@ export function HappyThread(props: {
                                                 <Button
                                                     variant="outline"
                                                     size="sm"
-                                                    onClick={handleLoadMore}
+                                                    onClick={() => handleLoadMore()}
                                                     disabled={props.isLoadingMoreMessages || props.isLoadingMessages}
                                                     aria-busy={props.isLoadingMoreMessages}
                                                     className="gap-1.5 text-xs opacity-80 hover:opacity-100"

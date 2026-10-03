@@ -5,6 +5,7 @@ import type { DecryptedMessage, TimelineSummaryItem } from '@/types/api'
 // 折叠态只携带摘要，不携带工具明细；一次多取一些可以让大纲定位停留在
 // 摘要时间轴内，而不是切回原始消息窗口后连续触发多次分页。
 const TIMELINE_PAGE_LIMIT = 500
+const COMPLETION_REFRESH_DELAY_MS = 160
 
 type TimelinePageState = {
     items: TimelineSummaryItem[]
@@ -45,6 +46,10 @@ export function useConversationTimeline(options: {
     api: ApiClient | null
     sessionId: string | null
     enabled: boolean
+    sessionState?: {
+        active: boolean
+        thinking: boolean
+    } | null
 }): {
     items: TimelineSummaryItem[]
     isLoading: boolean
@@ -65,6 +70,17 @@ export function useConversationTimeline(options: {
     const requestGenerationRef = useRef(0)
     const detailsCacheRef = useRef<Map<string, Promise<DecryptedMessage[]>>>(new Map())
     const loadingMoreRef = useRef(false)
+    const previousSessionStateRef = useRef<{
+        sessionId: string
+        active: boolean
+        thinking: boolean
+    } | null>(null)
+    const completionRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const completionRefreshScheduledRef = useRef(false)
+    const currentSessionIdRef = useRef(options.sessionId)
+    const enabledRef = useRef(options.enabled)
+    currentSessionIdRef.current = options.sessionId
+    enabledRef.current = options.enabled
 
     const loadFirstPage = useCallback(async () => {
         if (!options.api || !options.sessionId) return
@@ -108,6 +124,58 @@ export function useConversationTimeline(options: {
             void loadFirstPage()
         }
     }, [loadFirstPage, options.enabled, options.sessionId])
+
+    useEffect(() => {
+        const sessionState = options.sessionState
+        if (!options.enabled || !options.sessionId || !sessionState) {
+            previousSessionStateRef.current = null
+            completionRefreshScheduledRef.current = false
+            return
+        }
+
+        const current = {
+            sessionId: options.sessionId,
+            active: sessionState.active,
+            thinking: sessionState.thinking
+        }
+        const previous = previousSessionStateRef.current
+        previousSessionStateRef.current = current
+
+        // A new turn starts a new completion cycle. Keep a pending refresh from
+        // the previous cycle so an automatic continuation cannot cancel the
+        // final assistant reply that just arrived.
+        if (current.thinking) {
+            completionRefreshScheduledRef.current = false
+        }
+
+        const completed = previous
+            && previous.sessionId === current.sessionId
+            && previous.thinking
+            && (!current.thinking || !current.active)
+        if (
+            !completed
+            || completionRefreshScheduledRef.current
+            || completionRefreshTimerRef.current !== null
+        ) {
+            return
+        }
+
+        completionRefreshScheduledRef.current = true
+        completionRefreshTimerRef.current = setTimeout(() => {
+            completionRefreshTimerRef.current = null
+            if (!enabledRef.current || currentSessionIdRef.current !== current.sessionId) return
+            void loadFirstPage()
+        }, COMPLETION_REFRESH_DELAY_MS)
+    }, [loadFirstPage, options.enabled, options.sessionId, options.sessionState?.active, options.sessionState?.thinking])
+
+    useEffect(() => {
+        return () => {
+            if (completionRefreshTimerRef.current !== null) {
+                clearTimeout(completionRefreshTimerRef.current)
+                completionRefreshTimerRef.current = null
+            }
+        }
+    }, [])
 
     const loadMore = useCallback(async (): Promise<boolean> => {
         if (!options.api || !options.sessionId || !page.hasMore || page.nextBeforeSeq === null || loadingMoreRef.current) {

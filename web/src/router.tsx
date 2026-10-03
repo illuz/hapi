@@ -537,7 +537,10 @@ function SessionPage() {
     const timeline = useConversationTimeline({
         api,
         sessionId,
-        enabled: summaryMode
+        enabled: summaryMode,
+        sessionState: session
+            ? { active: session.active, thinking: session.thinking }
+            : null
     })
 
     useEffect(() => {

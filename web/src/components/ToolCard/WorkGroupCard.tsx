@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { SessionMetadataSummary } from '@/types/api'
-import type { WorkGroupBlock, WorkGroupChildBlock } from '@/chat/workGroups'
+import { isWorkGroupWaitingForInput, type WorkGroupBlock, type WorkGroupChildBlock } from '@/chat/workGroups'
 import { getEventPresentation } from '@/chat/presentation'
 import { getConversationMessageAnchorId } from '@/chat/outline'
 import { MarkdownRenderer } from '@/components/MarkdownRenderer'
@@ -11,6 +11,8 @@ import { MessageActions } from '@/components/AssistantChat/messages/MessageActio
 import { UserBubbleContent } from '@/components/AssistantChat/messages/user-bubble'
 import { ToolGroupCard } from '@/components/ToolCard/ToolGroupCard'
 import { ToolCard } from '@/components/ToolCard/ToolCard'
+import { QuestionIcon } from '@/components/ToolCard/icons'
+import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useHappyChatContext } from '@/components/AssistantChat/context'
 import { ToolStatusIcon } from '@/components/ToolCard/ToolCard'
@@ -204,8 +206,10 @@ export function WorkGroupCard(props: {
         scrollWorkGroupContent(content, edge === 'first' ? 0 : content.scrollHeight, 'smooth')
     }
 
-    const running = props.block.active || props.block.summary.runningCount > 0
-    const pending = props.block.summary.pendingCount > 0
+    const waitingForInput = props.block.summary.waitingForInputCount > 0
+        || props.block.blocks.some(isWorkGroupWaitingForInput)
+    const running = !waitingForInput && (props.block.active || props.block.summary.runningCount > 0)
+    const pending = !waitingForInput && props.block.summary.pendingCount > 0
     const active = running || pending
     const timing = (() => {
         const startedAt = props.block.startedAt
@@ -357,11 +361,13 @@ export function WorkGroupCard(props: {
         return () => window.clearInterval(interval)
     }, [active])
 
-    const title = active
-        ? t('workGroup.working')
-        : timing.durationMs !== null
-            ? t('workGroup.workedFor', { duration: formatDuration(timing.durationMs) })
-            : t('workGroup.title')
+    const title = waitingForInput
+        ? t('workGroup.waitingForInput')
+        : active
+            ? t('workGroup.working')
+            : timing.durationMs !== null
+                ? t('workGroup.workedFor', { duration: formatDuration(timing.durationMs) })
+                : t('workGroup.title')
     const subtitleParts: string[] = []
     if (props.block.summary.reasoningCount > 0) {
         subtitleParts.push(t('workGroup.reasoning', { n: props.block.summary.reasoningCount }))
@@ -371,7 +377,17 @@ export function WorkGroupCard(props: {
     }
 
     return (
-        <Card className="overflow-hidden rounded-[20px] bg-[var(--app-reasoning-bg)] shadow-none" data-work-group="true" data-assistant-turn="true">
+        <Card
+            className={cn(
+                'overflow-hidden rounded-[20px] shadow-none',
+                waitingForInput
+                    ? 'border border-[var(--app-badge-warning-border)] bg-[var(--app-badge-warning-bg)]'
+                    : 'bg-[var(--app-reasoning-bg)]'
+            )}
+            data-work-group="true"
+            data-assistant-turn="true"
+            data-waiting-for-input={waitingForInput ? 'true' : undefined}
+        >
             <CardHeader className="space-y-0 p-3">
                 <div className="flex items-start gap-1">
                     <button
@@ -389,8 +405,19 @@ export function WorkGroupCard(props: {
                         <div className="flex items-center gap-2">
                             <span className={cn('text-[var(--app-hint)] transition-transform', open ? 'rotate-90' : null)}>›</span>
                             <CardTitle className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--app-fg)]">{title}</CardTitle>
+                            {waitingForInput ? (
+                                <Badge
+                                    variant="warning"
+                                    role="status"
+                                    title={t('workGroup.waitingForInput')}
+                                    className="shrink-0 gap-1 px-2 py-0.5 text-[11px]"
+                                >
+                                    <QuestionIcon className="h-3 w-3" />
+                                    {t('tool.question')}
+                                </Badge>
+                            ) : null}
                             {running ? <span className="shrink-0 text-[var(--app-link)]"><ToolStatusIcon state="running" /></span> : null}
-                            {props.block.summary.pendingCount > 0 ? <span className="shrink-0 text-xs text-amber-700">{t('workGroup.pending', { n: props.block.summary.pendingCount })}</span> : null}
+                            {props.block.summary.pendingCount > 0 && !waitingForInput ? <span className="shrink-0 text-xs text-amber-700">{t('workGroup.pending', { n: props.block.summary.pendingCount })}</span> : null}
                             {props.block.summary.errorCount > 0 ? <span className="shrink-0 text-xs text-red-600">{t('workGroup.errors', { n: props.block.summary.errorCount })}</span> : null}
                         </div>
                         {subtitleParts.length > 0 || timing.durationMs !== null ? (

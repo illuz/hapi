@@ -12,6 +12,8 @@ vi.mock('@/lib/use-translation', () => ({
             const labels: Record<string, string> = {
                 'workGroup.title': 'Worked',
                 'workGroup.working': 'Working',
+                'workGroup.waitingForInput': 'Waiting for your input',
+                'tool.question': 'Question',
                 'workGroup.reasoning': `${params?.n ?? 0} reasoning`,
                 'workGroup.tools': `${params?.n ?? 0} tools`,
                 'workGroup.navigation': 'Work process navigation',
@@ -105,7 +107,8 @@ function makeGroup(defaultOpen = false): WorkGroupBlock {
             toolCount: 0,
             errorCount: 0,
             runningCount: 0,
-            pendingCount: 0
+            pendingCount: 0,
+            waitingForInputCount: 0
         }
     }
 }
@@ -132,6 +135,22 @@ describe('WorkGroupCard', () => {
 
         expect(screen.getByRole('button', { expanded: true })).toBeInTheDocument()
         expect(screen.getByText('inspect repository')).toBeInTheDocument()
+    })
+
+    it('highlights a collapsed work group that waits for user input', () => {
+        const baseGroup = makeGroup()
+        const group: WorkGroupBlock = {
+            ...baseGroup,
+            summary: { ...baseGroup.summary, waitingForInputCount: 1 }
+        }
+
+        renderCard(group)
+
+        const card = document.querySelector('[data-work-group="true"]')
+        expect(card).toHaveAttribute('data-waiting-for-input', 'true')
+        expect(card).toHaveClass('bg-[var(--app-badge-warning-bg)]')
+        expect(screen.getByRole('status')).toHaveTextContent('Question')
+        expect(screen.getByText('Waiting for your input')).toBeInTheDocument()
     })
 
     it('jumps to the end on expand and exposes first/last navigation buttons', () => {

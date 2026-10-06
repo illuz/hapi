@@ -260,7 +260,7 @@ export function AskUserQuestionFooter(props: {
             <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                        <Badge variant="default">
+                        <Badge variant="warning">
                             {t('tool.question')}
                         </Badge>
                         <span className="rounded-full border border-[var(--app-border)] bg-[var(--app-subtle-bg)] px-2 py-0.5 font-mono text-[11px] text-[var(--app-hint)]">

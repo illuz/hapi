@@ -10,6 +10,8 @@ import type {
     UserTextBlock,
 } from '@/chat/types'
 import type { ToolGroupBlock, VisibleChatBlock } from '@/chat/toolGroups'
+import { isAskUserQuestionToolName } from '@/components/ToolCard/askUserQuestion'
+import { isRequestUserInputToolName } from '@/components/ToolCard/requestUserInput'
 
 /** 可收进单个 assistant turn 的块。 */
 export type WorkGroupChildBlock =
@@ -31,6 +33,7 @@ export type WorkGroupSummary = {
     errorCount: number
     runningCount: number
     pendingCount: number
+    waitingForInputCount: number
 }
 
 export type WorkGroupBlock = {
@@ -122,6 +125,21 @@ function getBlockDuration(block: WorkGroupChildBlock): number | null {
             : null
     }
     return null
+}
+
+function isWaitingForInputTool(tool: ToolCallBlock): boolean {
+    if (tool.tool.state === 'completed' || tool.tool.state === 'error') return false
+    return tool.tool.permission?.status === 'pending'
+        || isAskUserQuestionToolName(tool.tool.name)
+        || isRequestUserInputToolName(tool.tool.name)
+}
+
+/** Whether a work-group child still needs an explicit user response. */
+export function isWorkGroupWaitingForInput(block: WorkGroupChildBlock): boolean {
+    if (block.kind === 'tool-group') return block.tools.some(isWaitingForInputTool)
+    if (block.kind !== 'tool-call') return false
+    return isWaitingForInputTool(block)
+        || block.children.some((child) => child.kind === 'tool-call' && isWaitingForInputTool(child))
 }
 
 function addBlockTiming(
@@ -223,6 +241,7 @@ function summarizeWorkGroup(blocks: WorkGroupChildBlock[]): WorkGroupSummary {
     let errorCount = 0
     let runningCount = 0
     let pendingCount = 0
+    let waitingForInputCount = 0
 
     for (const block of blocks) {
         if (block.kind === 'agent-reasoning') {
@@ -250,6 +269,7 @@ function summarizeWorkGroup(blocks: WorkGroupChildBlock[]): WorkGroupSummary {
             errorCount += block.summary.errorCount
             runningCount += block.summary.runningCount
             pendingCount += block.summary.pendingCount
+            waitingForInputCount += block.tools.filter(isWaitingForInputTool).length
             continue
         }
 
@@ -259,6 +279,7 @@ function summarizeWorkGroup(blocks: WorkGroupChildBlock[]): WorkGroupSummary {
         if (block.tool.state === 'error') errorCount += 1
         if (block.tool.state === 'running') runningCount += 1
         if (block.tool.state === 'pending') pendingCount += 1
+        if (isWaitingForInputTool(block)) waitingForInputCount += 1
     }
 
     return {
@@ -269,7 +290,8 @@ function summarizeWorkGroup(blocks: WorkGroupChildBlock[]): WorkGroupSummary {
         toolCount,
         errorCount,
         runningCount,
-        pendingCount
+        pendingCount,
+        waitingForInputCount
     }
 }
 
@@ -363,11 +385,13 @@ const WORK_GROUP_MARKER = '__happy_work_group__'
 export function createWorkGroupArtifact(group: WorkGroupBlock): ToolCallBlock {
     const state: ToolCallBlock['tool']['state'] = group.summary.errorCount > 0
         ? 'error'
-        : group.active || group.summary.runningCount > 0
-            ? 'running'
-            : group.summary.pendingCount > 0
-                ? 'pending'
-                : 'completed'
+        : group.summary.waitingForInputCount > 0
+            ? 'pending'
+            : group.active || group.summary.runningCount > 0
+                ? 'running'
+                : group.summary.pendingCount > 0
+                    ? 'pending'
+                    : 'completed'
 
     return {
         kind: 'tool-call',

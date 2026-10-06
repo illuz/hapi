@@ -151,6 +151,32 @@ describe('work groups', () => {
         }
     })
 
+    it('marks a waiting question as pending in the assistant-ui artifact', () => {
+        const result = buildVisibleWorkGroups([{
+            kind: 'tool-call',
+            id: 'question-1',
+            localId: null,
+            createdAt: 1,
+            tool: {
+                id: 'question-1',
+                name: 'AskUserQuestion',
+                state: 'pending',
+                input: { questions: [] },
+                createdAt: 1,
+                startedAt: null,
+                completedAt: null,
+                description: null
+            },
+            children: []
+        }])
+
+        expect(result[0]?.kind).toBe('work-group')
+        if (result[0]?.kind === 'work-group') {
+            expect(result[0].summary.waitingForInputCount).toBe(1)
+            expect(createWorkGroupArtifact(result[0]).tool.state).toBe('pending')
+        }
+    })
+
     it('does not reopen an older group when a new user turn is running', () => {
         const result = buildVisibleWorkGroups([
             reasoning('reasoning-1'),

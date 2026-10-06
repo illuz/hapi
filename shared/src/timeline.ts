@@ -10,6 +10,8 @@ export type TimelineWorkSummary = {
     errorCount: number
     runningCount: number
     pendingCount: number
+    /** Interactive tool calls that still require an answer from the user. */
+    waitingForInputCount?: number
 }
 
 export type TimelineSummaryItem = {

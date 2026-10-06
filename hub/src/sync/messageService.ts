@@ -131,12 +131,24 @@ type TimelineSignals = {
     summary: TimelineWorkSummary
     toolCallIds: string[]
     toolResultIds: string[]
+    waitingToolCallIds: string[]
     titleChange?: TimelineTitleChange
 }
 
 type TimelineTitleChange = {
     title: string
     callId: string | null
+}
+
+const USER_INPUT_TOOL_NAMES = new Set([
+    'askuserquestion',
+    'ask_user_question',
+    'requestuserinput',
+    'request_user_input'
+])
+
+function isUserInputToolName(value: unknown): boolean {
+    return typeof value === 'string' && USER_INPUT_TOOL_NAMES.has(value.trim().toLowerCase())
 }
 
 function emptyTimelineSummary(): TimelineWorkSummary {
@@ -148,7 +160,8 @@ function emptyTimelineSummary(): TimelineWorkSummary {
         toolCount: 0,
         errorCount: 0,
         runningCount: 0,
-        pendingCount: 0
+        pendingCount: 0,
+        waitingForInputCount: 0
     }
 }
 
@@ -195,6 +208,7 @@ function emptyTimelineSignals(overrides: Partial<TimelineSignals> = {}): Timelin
         summary: emptyTimelineSummary(),
         toolCallIds: [],
         toolResultIds: [],
+        waitingToolCallIds: [],
         ...overrides
     }
 }
@@ -305,7 +319,8 @@ function scanTimelineValue(
     textParts: string[],
     summary: TimelineWorkSummary,
     toolCallIds: Set<string>,
-    toolResultIds: Set<string>
+    toolResultIds: Set<string>,
+    waitingToolCallIds: Set<string>
 ): {
     hasWork: boolean
     hasEvent: boolean
@@ -321,7 +336,7 @@ function scanTimelineValue(
         let hasWork = false
         let hasEvent = false
         for (const item of value) {
-            const result = scanTimelineValue(item, depth + 1, textParts, summary, toolCallIds, toolResultIds)
+            const result = scanTimelineValue(item, depth + 1, textParts, summary, toolCallIds, toolResultIds, waitingToolCallIds)
             hasWork = hasWork || result.hasWork
             hasEvent = hasEvent || result.hasEvent
         }
@@ -342,7 +357,13 @@ function scanTimelineValue(
         const id = type === 'tool-call'
             ? asString(value.callId)
             : asString(value.id)
-        if (id) toolCallIds.add(id)
+        if (id) {
+            toolCallIds.add(id)
+            const toolName = asString(value.name) ?? asString(value.toolName) ?? asString(value.tool_name)
+            if (isUserInputToolName(toolName) && waitingToolCallIds.add(id)) {
+                summary.waitingForInputCount = (summary.waitingForInputCount ?? 0) + 1
+            }
+        }
         summary.toolCount += 1
         if (summary.toolGroupCount === 0) summary.toolGroupCount = 1
         if (value.is_error === true || value.isError === true) summary.errorCount += 1
@@ -392,7 +413,7 @@ function scanTimelineValue(
     let hasEvent = false
     for (const [key, child] of Object.entries(value)) {
         if (key === 'input' || key === 'output' || key === 'content' || key === 'data' || key === 'message' || key === 'payload') {
-            const result = scanTimelineValue(child, depth + 1, textParts, summary, toolCallIds, toolResultIds)
+            const result = scanTimelineValue(child, depth + 1, textParts, summary, toolCallIds, toolResultIds, waitingToolCallIds)
             hasWork = hasWork || result.hasWork
             hasEvent = hasEvent || result.hasEvent
         }
@@ -405,6 +426,7 @@ function classifyTimelineMessage(content: unknown): TimelineSignals {
     const textParts: string[] = []
     const toolCallIds = new Set<string>()
     const toolResultIds = new Set<string>()
+    const waitingToolCallIds = new Set<string>()
     const record = unwrapRoleWrappedRecordEnvelope(content)
     if (record?.role === 'user' && isAutomaticContinuationMeta(record.meta)) {
         summary.eventCount = 1
@@ -434,10 +456,11 @@ function classifyTimelineMessage(content: unknown): TimelineSignals {
             hasText: true,
             text: formatTitleChangeText(titleChange.title),
             titleChange,
-            toolCallIds: titleChange.callId ? [titleChange.callId] : []
+            toolCallIds: titleChange.callId ? [titleChange.callId] : [],
+            waitingToolCallIds: []
         })
     }
-    const scanned = scanTimelineValue(target, 0, textParts, summary, toolCallIds, toolResultIds)
+    const scanned = scanTimelineValue(target, 0, textParts, summary, toolCallIds, toolResultIds, waitingToolCallIds)
     const text = [...new Set(textParts)].join('\n\n').trim()
     return {
         ignored: false,
@@ -447,7 +470,8 @@ function classifyTimelineMessage(content: unknown): TimelineSignals {
         text,
         summary,
         toolCallIds: [...toolCallIds],
-        toolResultIds: [...toolResultIds]
+        toolResultIds: [...toolResultIds],
+        waitingToolCallIds: [...waitingToolCallIds]
     }
 }
 
@@ -477,6 +501,8 @@ function summarizeTimelineMessages(
     let work: TimelineSummaryItem | null = null
     let workToolCallIds = new Set<string>()
     let workToolResultIds = new Set<string>()
+    let workWaitingToolCallIds = new Set<string>()
+    let workWaitingToolResultIds = new Set<string>()
     const titleChangeCallIds = new Set<string>()
     const pendingTitleChangeSummaries = new Set<string>()
 
@@ -494,8 +520,12 @@ function summarizeTimelineMessages(
     const flushWork = (completionAt?: number) => {
         if (!work) return
         const runningCount = [...workToolCallIds].filter((id) => !workToolResultIds.has(id)).length
+        const waitingForInputCount = [...workWaitingToolCallIds]
+            .filter((id) => !workWaitingToolResultIds.has(id))
+            .length
         if (work.work) {
             work.work.runningCount = runningCount
+            work.work.waitingForInputCount = waitingForInputCount
             const invocationCount = new Set([...workToolCallIds, ...workToolResultIds]).size
             const nonInvocationTools = Math.max(0, work.work.toolCount - workToolCallIds.size)
             work.work.toolCount = Math.max(work.work.toolCount, invocationCount + nonInvocationTools)
@@ -519,6 +549,8 @@ function summarizeTimelineMessages(
         work = null
         workToolCallIds = new Set()
         workToolResultIds = new Set()
+        workWaitingToolCallIds = new Set()
+        workWaitingToolResultIds = new Set()
     }
 
     for (const message of visibleMessages) {
@@ -604,6 +636,8 @@ function summarizeTimelineMessages(
                 }
                 workToolCallIds = new Set(signals.toolCallIds)
                 workToolResultIds = new Set(signals.toolResultIds)
+                workWaitingToolCallIds = new Set(signals.waitingToolCallIds)
+                workWaitingToolResultIds = new Set(signals.toolResultIds)
             } else {
                 work.seqEnd = message.seq
                 work.id = 'work-group:' + work.seqStart + '-' + work.seqEnd
@@ -612,11 +646,13 @@ function summarizeTimelineMessages(
                 work.durationMs = Math.max(0, message.createdAt - work.createdAt)
                 const current = work.work ?? emptyTimelineSummary()
                 for (const key of Object.keys(current) as Array<keyof TimelineWorkSummary>) {
-                    current[key] += signals.summary[key]
+                    current[key] = (current[key] ?? 0) + (signals.summary[key] ?? 0)
                 }
                 work.work = current
                 for (const id of signals.toolCallIds) workToolCallIds.add(id)
                 for (const id of signals.toolResultIds) workToolResultIds.add(id)
+                for (const id of signals.waitingToolCallIds) workWaitingToolCallIds.add(id)
+                for (const id of signals.toolResultIds) workWaitingToolResultIds.add(id)
             }
             continue
         }

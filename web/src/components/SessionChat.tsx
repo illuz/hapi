@@ -101,7 +101,8 @@ const EMPTY_TIMELINE_SUMMARY = {
     toolCount: 0,
     errorCount: 0,
     runningCount: 0,
-    pendingCount: 0
+    pendingCount: 0,
+    waitingForInputCount: 0
 }
 
 type TimelineDetailEntry = {
@@ -501,8 +502,8 @@ export function SessionChat(props: {
                 const sourceSummary = item.work ?? EMPTY_TIMELINE_SUMMARY
                 const isLive = props.session.thinking && item.id === latestWorkGroupId
                 const summary = isLive
-                    ? sourceSummary
-                    : { ...sourceSummary, runningCount: 0, pendingCount: 0 }
+                    ? { ...sourceSummary, waitingForInputCount: sourceSummary.waitingForInputCount ?? 0 }
+                    : { ...sourceSummary, runningCount: 0, pendingCount: 0, waitingForInputCount: sourceSummary.waitingForInputCount ?? 0 }
                 const startedAt = item.startedAt ?? null
                 const observedEndAt = item.completedAt ?? item.lastActivityAt ?? item.createdAt
                 const observedDuration = startedAt !== null && observedEndAt >= startedAt

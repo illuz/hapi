@@ -475,6 +475,7 @@ export default {
   'toolGroup.codex.search': 'Searched',
   'workGroup.title': 'Worked',
   'workGroup.working': 'Working',
+  'workGroup.waitingForInput': 'Waiting for your input',
   'workGroup.workedFor': 'Worked for {duration}',
   'workGroup.reasoning': '{n} reasoning',
   'workGroup.tools': '{n} tools',

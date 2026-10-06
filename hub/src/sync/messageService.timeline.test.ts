@@ -255,6 +255,62 @@ describe('MessageService timeline', () => {
         expect(summary.items[0]?.durationMs).toBeNull()
     })
 
+    it('marks an unanswered user-input tool in the compact work summary', () => {
+        const rows = [
+            createMessage(1, { role: 'agent', content: { type: 'codex', data: { type: 'tool-call', callId: 'question-1', name: 'AskUserQuestion', input: { questions: [] } } } }),
+            createMessage(2, { role: 'agent', content: { type: 'codex', data: { type: 'tool-call-result', callId: 'question-1', output: 'answered' } } })
+        ]
+        const fakeStore = {
+            messages: {
+                getMessagesBySeqRange: (_sessionId: string, options: { startSeq?: number; endSeq?: number; limit?: number }) => rows.filter((row) => (
+                    (options.startSeq === undefined || row.seq >= options.startSeq)
+                    && (options.endSeq === undefined || row.seq <= options.endSeq)
+                )).slice(0, options.limit ?? 5000),
+                getMaxSeq: () => rows.at(-1)?.seq ?? 0
+            }
+        }
+        const service = new MessageService(fakeStore as never, {} as never, {} as never)
+
+        const runningRows = rows.slice(0, 1)
+        const runningService = new MessageService({
+            messages: {
+                getMessagesBySeqRange: () => runningRows,
+                getMaxSeq: () => 1
+            }
+        } as never, {} as never, {} as never)
+
+        expect(runningService.getTimelineSummary('session-1').items[0]?.work?.waitingForInputCount).toBe(1)
+        expect(service.getTimelineSummary('session-1').items[0]?.work?.waitingForInputCount).toBe(0)
+    })
+
+    it('recognizes an unanswered Claude AskUserQuestion invocation', () => {
+        const rows = [createMessage(1, {
+            role: 'agent',
+            content: {
+                type: 'output',
+                data: {
+                    type: 'assistant',
+                    message: {
+                        content: [{
+                            type: 'tool_use',
+                            id: 'question-claude-1',
+                            name: 'AskUserQuestion',
+                            input: { questions: [] }
+                        }]
+                    }
+                }
+            }
+        })]
+        const service = new MessageService({
+            messages: {
+                getMessagesBySeqRange: () => rows,
+                getMaxSeq: () => 1
+            }
+        } as never, {} as never, {} as never)
+
+        expect(service.getTimelineSummary('session-1').items[0]?.work?.waitingForInputCount).toBe(1)
+    })
+
     it('folds task notifications without exposing the raw XML payload', () => {
         const rows = [
             createMessage(1, {

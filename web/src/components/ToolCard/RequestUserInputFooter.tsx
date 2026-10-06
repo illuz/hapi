@@ -189,7 +189,7 @@ export function RequestUserInputFooter(props: {
             <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                        <Badge variant="default">
+                        <Badge variant="warning">
                             {t('tool.question')}
                         </Badge>
                         <span className="font-mono text-xs text-[var(--app-hint)]">

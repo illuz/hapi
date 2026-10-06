@@ -477,6 +477,7 @@ export default {
   'toolGroup.codex.search': '搜索',
   'workGroup.title': '工作过程',
   'workGroup.working': '工作中',
+  'workGroup.waitingForInput': '等待你的输入',
   'workGroup.workedFor': '工作了 {duration}',
   'workGroup.reasoning': '{n} 段思考',
   'workGroup.tools': '{n} 个工具调用',

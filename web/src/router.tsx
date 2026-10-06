@@ -64,6 +64,9 @@ import { AutoRetryIcon } from '@/components/icons'
 import { ShareClient } from '@/api/shareClient'
 import { SharePasswordGate } from '@/components/share/SharePasswordGate'
 import { SharedSessionChat } from '@/components/share/SharedSessionChat'
+import { installSafeScrollRestoration } from '@/lib/scrollRestoration'
+
+installSafeScrollRestoration()
 
 function BackIcon(props: { className?: string }) {
     return (
@@ -1160,6 +1163,8 @@ export function createAppRouter(history?: RouterHistory) {
         routeTree,
         history,
         scrollRestoration: true,
+        // 使用 URL 作为滚动恢复 key，避免同一会话重复访问产生无限历史条目。
+        getScrollRestorationKey: (location) => location.href,
     })
 }
 

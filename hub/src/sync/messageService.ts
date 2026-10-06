@@ -491,7 +491,7 @@ function summarizeTimelineMessages(
         return false
     }
 
-    const flushWork = () => {
+    const flushWork = (completionAt?: number) => {
         if (!work) return
         const runningCount = [...workToolCallIds].filter((id) => !workToolResultIds.has(id)).length
         if (work.work) {
@@ -506,6 +506,13 @@ function summarizeTimelineMessages(
             if (runningCount > 0) {
                 work.completedAt = null
                 work.durationMs = null
+            } else if (
+                typeof completionAt === 'number'
+                && Number.isFinite(completionAt)
+                && completionAt >= work.createdAt
+            ) {
+                work.completedAt = Math.max(work.completedAt ?? work.createdAt, completionAt)
+                work.durationMs = Math.max(work.durationMs ?? 0, completionAt - work.createdAt)
             }
         }
         items.push(work)
@@ -531,7 +538,7 @@ function summarizeTimelineMessages(
         if (isTitleChangeResultOnly) continue
 
         if (signals.titleChange) {
-            flushWork()
+            flushWork(message.createdAt)
             items.push({
                 id: 'event:' + message.id,
                 kind: 'event',
@@ -569,7 +576,7 @@ function summarizeTimelineMessages(
             // the detail endpoint still returns the whole raw message range.
             if (signals.hasText) {
                 const titleChange = consumeTitleChangeSummary(signals.text)
-                flushWork()
+                flushWork(message.createdAt)
                 items.push({
                     id: 'assistant:' + message.id,
                     kind: 'assistant',
@@ -618,7 +625,7 @@ function summarizeTimelineMessages(
         // split the surrounding execution group.
         if (!signals.hasText && !signals.hasEvent) continue
 
-        flushWork()
+        flushWork(role === 'user' ? undefined : message.createdAt)
         if (signals.hasEvent) {
             items.push({
                 id: 'event:' + message.id,

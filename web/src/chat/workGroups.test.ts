@@ -251,4 +251,33 @@ describe('work groups', () => {
         expect(timing.durationMs).toBe(20)
         expect(timing.running).toBe(false)
     })
+
+    it('does not let a short explicit duration hide a longer observed work span', () => {
+        const block = tool('read-1', 'Read')
+        block.tool.completedAt = 100
+        block.durationMs = 20
+
+        const timing = getWorkGroupTiming([block], 200)
+
+        expect(timing.durationMs).toBe(90)
+    })
+
+    it('closes the work timer at the following assistant reply', () => {
+        const result = buildVisibleWorkGroups([
+            reasoning('reasoning-2'),
+            {
+                kind: 'agent-text',
+                id: 'answer-60',
+                localId: null,
+                createdAt: 60,
+                text: 'Done.'
+            }
+        ])
+
+        expect(result[0]?.kind).toBe('work-group')
+        if (result[0]?.kind === 'work-group') {
+            expect(result[0].completedAt).toBe(60)
+            expect(result[0].durationMs).toBe(58)
+        }
+    })
 })

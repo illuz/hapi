@@ -55,12 +55,42 @@ describe('MessageService timeline', () => {
         expect(summary.items[2]?.work?.toolGroupCount).toBe(1)
         expect(summary.items[2]?.work?.toolCount).toBe(1)
         expect(summary.items[2]?.work?.runningCount).toBe(0)
-        expect(summary.items[2]?.completedAt).toBe(5000)
+        expect(summary.items[2]?.completedAt).toBe(6000)
+        expect(summary.items[2]?.durationMs).toBe(3000)
         expect(summary.items[3]?.text).toBe('The repository contains a README.')
 
         const details = service.getTimelineDetails('session-1', 'work-group:3-5')
         expect(details.messages.map((message) => message.seq)).toEqual([3, 4, 5])
         expect(details.group.id).toBe('work-group:3-5')
+    })
+
+    it('keeps the folded work duration through the final assistant reply', () => {
+        const rows = [
+            createMessage(1, { role: 'user', content: 'run the checks' }),
+            createMessage(2, { role: 'agent', content: { type: 'codex', data: { type: 'reasoning', message: 'checking files' } } }),
+            createMessage(3, { role: 'agent', content: { type: 'codex', data: { type: 'tool-call', callId: 'call-1', name: 'test', input: {} } } }),
+            createMessage(20, { role: 'agent', content: { type: 'codex', data: { type: 'tool-call-result', callId: 'call-1', output: 'passed' } } }),
+            createMessage(60, { role: 'agent', content: { type: 'codex', data: { type: 'message', message: 'All checks passed.' } } })
+        ]
+        const fakeStore = {
+            messages: {
+                getMessagesBySeqRange: (_sessionId: string, options: { startSeq?: number; endSeq?: number; limit?: number }) => rows.filter((row) => (
+                    (options.startSeq === undefined || row.seq >= options.startSeq)
+                    && (options.endSeq === undefined || row.seq <= options.endSeq)
+                )).slice(0, options.limit ?? 5000),
+                getMaxSeq: () => 60
+            }
+        }
+        const service = new MessageService(fakeStore as never, {} as never, {} as never)
+
+        const group = service.getTimelineSummary('session-1').items.find((item) => item.kind === 'work-group')
+
+        expect(group).toMatchObject({
+            id: 'work-group:2-20',
+            startedAt: 2_000,
+            completedAt: 60_000,
+            durationMs: 58_000
+        })
     })
 
     it('rejects malformed work-group ranges', () => {

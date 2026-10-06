@@ -167,7 +167,7 @@ function addBlockTiming(
     }
 }
 
-export function getWorkGroupTiming(blocks: WorkGroupChildBlock[], now: number) {
+export function getWorkGroupTiming(blocks: WorkGroupChildBlock[], now: number, completionAt: number | null = null) {
     const started: number[] = []
     const completed: number[] = []
     const explicitDurations: number[] = []
@@ -183,6 +183,14 @@ export function getWorkGroupTiming(blocks: WorkGroupChildBlock[], now: number) {
 
     const startedAt = started.length > 0 ? Math.min(...started) : null
     const active = counts.runningCount > 0 || counts.pendingCount > 0
+    if (
+        completionAt !== null
+        && Number.isFinite(completionAt)
+        && startedAt !== null
+        && completionAt >= startedAt
+    ) {
+        completed.push(completionAt)
+    }
     const completedAt = !active && completed.length > 0 ? Math.max(...completed) : null
     const end = active ? now : completedAt
     const rangeDuration = startedAt !== null && end !== null && end >= startedAt
@@ -190,10 +198,14 @@ export function getWorkGroupTiming(blocks: WorkGroupChildBlock[], now: number) {
         : null
     const explicitDuration = explicitDurations.length > 0 ? Math.max(...explicitDurations) : null
 
+    const durationMs = rangeDuration !== null && explicitDuration !== null
+        ? Math.max(rangeDuration, explicitDuration)
+        : rangeDuration ?? explicitDuration
+
     return {
         startedAt,
         completedAt,
-        durationMs: explicitDuration ?? rangeDuration,
+        durationMs,
         running: counts.runningCount > 0,
         pending: counts.pendingCount > 0,
         runningCount: counts.runningCount,
@@ -306,8 +318,10 @@ export function buildVisibleWorkGroups(
             cursor += 1
         }
 
+        const nextAnchor = blocks.slice(cursor).find((candidate) => !isWorkGroupChild(candidate)) as VisibleChatBlock | undefined
         const summary = summarizeWorkGroup(children)
-        const timing = getWorkGroupTiming(children, Date.now())
+        const completionAt = nextAnchor && !isTurnBoundary(nextAnchor) ? nextAnchor.createdAt : null
+        const timing = getWorkGroupTiming(children, Date.now(), completionAt)
         const needsOlderHistory = Boolean(options.hasMoreMessages && visibleBlocks.length === 0)
         const id = createWorkGroupId(children, previousGroups, usedGroupIds)
         usedGroupIds.add(id)
@@ -316,7 +330,6 @@ export function buildVisibleWorkGroups(
         const isLatestWorkGroup = !hasUserAfter && !hasExecutionAfter
         const active = timing.running || timing.pending || Boolean(options.isRunning && isLatestWorkGroup)
         const defaultOpen = active
-        const nextAnchor = blocks.slice(cursor).find((candidate) => !isWorkGroupChild(candidate)) as VisibleChatBlock | undefined
         const stateKey = nextAnchor
             ? `after:${nextAnchor.id}`
             : previousAnchorId

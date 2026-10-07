@@ -14,6 +14,7 @@ import { useVisibilityReporter } from '@/hooks/useVisibilityReporter'
 import { queryKeys } from '@/lib/query-keys'
 import { AppContextProvider } from '@/lib/app-context'
 import { clearMessageWindow, fetchLatestMessages } from '@/lib/message-window-store'
+import { reconcileQueuedStateAfterConnect } from '@/lib/queued-state-reconciliation'
 import { clearSessionAttention, clearSessionAttentionForSession, triggerSessionAttention } from '@/lib/sessionAttention'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
 import { playNotificationSound } from '@/lib/readyChime'
@@ -260,7 +261,10 @@ function AppInner() {
         const refreshMessages = selectedSessionId && api && !isCurrentSessionChat
             ? fetchLatestMessages(api, selectedSessionId)
             : Promise.resolve()
-        Promise.all([...invalidations, refreshMessages])
+        const reconcileQueued = selectedSessionId && api
+            ? reconcileQueuedStateAfterConnect(api, selectedSessionId)
+            : Promise.resolve()
+        Promise.all([...invalidations, refreshMessages, reconcileQueued])
             .catch((error) => {
                 console.error('Failed to invalidate queries on SSE connect:', error)
             })

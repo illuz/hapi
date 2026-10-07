@@ -12,6 +12,30 @@ function assistant(seq: number): TimelineSummaryItem {
     return { id: `assistant:${seq}`, kind: 'assistant', createdAt: seq, seqStart: seq, seqEnd: seq, text: `Answer ${seq}` }
 }
 
+function workGroup(seqStart: number, seqEnd: number): TimelineSummaryItem {
+    return {
+        id: `work-group:${seqStart}-${seqEnd}`,
+        kind: 'work-group',
+        createdAt: seqStart,
+        lastActivityAt: seqEnd,
+        seqStart,
+        seqEnd,
+        startedAt: seqStart,
+        completedAt: seqEnd,
+        durationMs: seqEnd - seqStart,
+        work: {
+            reasoningCount: 1,
+            reviewCount: 0,
+            eventCount: 0,
+            toolGroupCount: 1,
+            toolCount: 1,
+            errorCount: 0,
+            runningCount: seqEnd === seqStart ? 1 : 0,
+            pendingCount: 0
+        }
+    }
+}
+
 function page(items: TimelineSummaryItem[], hasMore = true): TimelineSummaryResponse {
     return { items, page: { limit: 500, nextBeforeSeq: items[0]?.seqStart ?? null, hasMore } }
 }
@@ -54,5 +78,52 @@ describe('useConversationTimeline', () => {
 
         await waitFor(() => expect(getTimelineSummary).toHaveBeenCalledTimes(2))
         await waitFor(() => expect(result.current.items.map((item) => item.kind)).toEqual(['user', 'assistant']))
+    })
+
+    it('keeps the final assistant reply visible after a collapsed work group completes', async () => {
+        const getTimelineSummary = vi.fn()
+            .mockResolvedValueOnce(page([user(1), workGroup(2, 2)]))
+            .mockResolvedValueOnce(page([user(1), workGroup(2, 4), assistant(5)], false))
+        const api = { getTimelineSummary } as unknown as ApiClient
+        const { result, rerender } = renderHook(
+            ({ thinking }) => useConversationTimeline({
+                api,
+                sessionId: 's1',
+                enabled: true,
+                sessionState: { active: true, thinking }
+            }),
+            { initialProps: { thinking: true } }
+        )
+        await waitFor(() => expect(result.current.items.map((item) => item.kind)).toEqual(['user', 'work-group']))
+
+        rerender({ thinking: false })
+
+        await waitFor(() => expect(result.current.items.map((item) => item.kind)).toEqual(['user', 'work-group', 'assistant']))
+        expect(result.current.items.at(-1)?.text).toBe('Answer 5')
+    })
+
+    it('retries when the final assistant reply lands after the first completion snapshot', async () => {
+        const getTimelineSummary = vi.fn()
+            .mockResolvedValueOnce(page([user(1), workGroup(2, 2)]))
+            .mockResolvedValueOnce(page([user(1), workGroup(2, 4)], false))
+            .mockResolvedValueOnce(page([user(1), workGroup(2, 4), assistant(5)], false))
+        const api = { getTimelineSummary } as unknown as ApiClient
+        const { result, rerender } = renderHook(
+            ({ thinking }) => useConversationTimeline({
+                api,
+                sessionId: 's1',
+                enabled: true,
+                sessionState: { active: true, thinking }
+            }),
+            { initialProps: { thinking: true } }
+        )
+        await waitFor(() => expect(result.current.items.map((item) => item.kind)).toEqual(['user', 'work-group']))
+
+        rerender({ thinking: false })
+
+        await waitFor(
+            () => expect(result.current.items.map((item) => item.kind)).toEqual(['user', 'work-group', 'assistant']),
+            { timeout: 1_000 }
+        )
     })
 })

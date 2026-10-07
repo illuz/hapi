@@ -5,7 +5,10 @@ import type { DecryptedMessage, TimelineSummaryItem } from '@/types/api'
 // 折叠态只携带摘要，不携带工具明细；一次多取一些可以让大纲定位停留在
 // 摘要时间轴内，而不是切回原始消息窗口后连续触发多次分页。
 const TIMELINE_PAGE_LIMIT = 500
-const COMPLETION_REFRESH_DELAY_MS = 160
+// CLI completion and the final assistant message can arrive in adjacent events.
+// A short bounded retry closes that persistence/event-ordering window without
+// turning the timeline into a polling loop.
+const COMPLETION_REFRESH_DELAYS_MS = [160, 320, 640] as const
 
 type TimelinePageState = {
     items: TimelineSummaryItem[]
@@ -82,8 +85,8 @@ export function useConversationTimeline(options: {
     currentSessionIdRef.current = options.sessionId
     enabledRef.current = options.enabled
 
-    const loadFirstPage = useCallback(async () => {
-        if (!options.api || !options.sessionId) return
+    const loadFirstPage = useCallback(async (): Promise<TimelineSummaryItem[] | null> => {
+        if (!options.api || !options.sessionId) return null
         const generation = ++requestGenerationRef.current
         setIsLoading(true)
         setError(null)
@@ -91,7 +94,7 @@ export function useConversationTimeline(options: {
             const response = await options.api.getTimelineSummary(options.sessionId, {
                 limit: TIMELINE_PAGE_LIMIT
             })
-            if (generation !== requestGenerationRef.current) return
+            if (generation !== requestGenerationRef.current) return null
             setPage((current) => {
                 const responseEpoch = response.page.epoch ?? null
                 const canMerge = current.items.length > 0 && current.epoch === responseEpoch
@@ -104,14 +107,41 @@ export function useConversationTimeline(options: {
                 }
             })
             setVersion((value) => value + 1)
+            return response.items
         } catch (cause) {
-            if (generation !== requestGenerationRef.current) return
+            if (generation !== requestGenerationRef.current) return null
             setPage(EMPTY_PAGE)
             setError(cause instanceof Error ? cause.message : 'Failed to load conversation timeline')
+            return null
         } finally {
             if (generation === requestGenerationRef.current) setIsLoading(false)
         }
     }, [options.api, options.sessionId])
+
+    const scheduleCompletionRefresh = useCallback((sessionId: string, attempt = 0) => {
+        if (completionRefreshTimerRef.current !== null) return
+
+        const delay = COMPLETION_REFRESH_DELAYS_MS[Math.min(attempt, COMPLETION_REFRESH_DELAYS_MS.length - 1)]
+        completionRefreshScheduledRef.current = true
+        completionRefreshTimerRef.current = setTimeout(() => {
+            completionRefreshTimerRef.current = null
+            if (!enabledRef.current || currentSessionIdRef.current !== sessionId) {
+                completionRefreshScheduledRef.current = false
+                return
+            }
+
+            void loadFirstPage().then((items) => {
+                const latest = items?.at(-1)
+                const hasFinalAssistantReply = latest?.kind === 'assistant'
+                const hasMoreAttempts = attempt < COMPLETION_REFRESH_DELAYS_MS.length - 1
+                if (hasFinalAssistantReply || !hasMoreAttempts) {
+                    completionRefreshScheduledRef.current = false
+                    return
+                }
+                scheduleCompletionRefresh(sessionId, attempt + 1)
+            })
+        }, delay)
+    }, [loadFirstPage])
 
     useEffect(() => {
         requestGenerationRef.current += 1
@@ -130,6 +160,10 @@ export function useConversationTimeline(options: {
         if (!options.enabled || !options.sessionId || !sessionState) {
             previousSessionStateRef.current = null
             completionRefreshScheduledRef.current = false
+            if (completionRefreshTimerRef.current !== null) {
+                clearTimeout(completionRefreshTimerRef.current)
+                completionRefreshTimerRef.current = null
+            }
             return
         }
 
@@ -141,13 +175,8 @@ export function useConversationTimeline(options: {
         const previous = previousSessionStateRef.current
         previousSessionStateRef.current = current
 
-        // A new turn starts a new completion cycle. Keep a pending refresh from
-        // the previous cycle so an automatic continuation cannot cancel the
-        // final assistant reply that just arrived.
-        if (current.thinking) {
-            completionRefreshScheduledRef.current = false
-        }
-
+        // A new turn must not cancel a pending refresh from the previous cycle;
+        // automatic continuation can start before its final assistant reply is persisted.
         const completed = previous
             && previous.sessionId === current.sessionId
             && previous.thinking
@@ -160,13 +189,8 @@ export function useConversationTimeline(options: {
             return
         }
 
-        completionRefreshScheduledRef.current = true
-        completionRefreshTimerRef.current = setTimeout(() => {
-            completionRefreshTimerRef.current = null
-            if (!enabledRef.current || currentSessionIdRef.current !== current.sessionId) return
-            void loadFirstPage()
-        }, COMPLETION_REFRESH_DELAY_MS)
-    }, [loadFirstPage, options.enabled, options.sessionId, options.sessionState?.active, options.sessionState?.thinking])
+        scheduleCompletionRefresh(current.sessionId)
+    }, [options.enabled, options.sessionId, options.sessionState?.active, options.sessionState?.thinking, scheduleCompletionRefresh])
 
     useEffect(() => {
         return () => {
@@ -174,6 +198,7 @@ export function useConversationTimeline(options: {
                 clearTimeout(completionRefreshTimerRef.current)
                 completionRefreshTimerRef.current = null
             }
+            completionRefreshScheduledRef.current = false
         }
     }, [])
 

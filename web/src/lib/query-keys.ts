@@ -10,6 +10,13 @@ export const queryKeys = {
     sessionFiles: (sessionId: string, query: string) => ['session-files', sessionId, query] as const,
     sessionDirectory: (sessionId: string, path: string) => ['session-directory', sessionId, path] as const,
     sessionFile: (sessionId: string, path: string) => ['session-file', sessionId, path] as const,
+    sessionSpreadsheetRange: (sessionId: string, path: string, sheet?: string, range?: string) => [
+        'session-spreadsheet-range',
+        sessionId,
+        path,
+        sheet ?? '',
+        range ?? ''
+    ] as const,
     sessionFileThumbnail: (sessionId: string, path: string, maxDimension: number) => [
         'session-file-thumbnail',
         sessionId,

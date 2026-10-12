@@ -86,6 +86,25 @@ describe('RpcGateway RPC timeouts', () => {
         }])
     })
 
+    it('forwards bounded spreadsheet range options through the session RPC', async () => {
+        const { gateway, requests, timeouts } = createGateway()
+
+        await gateway.readSessionSpreadsheetRange('session-1', 'docs/report.xlsx', {
+            sheet: '汇总表',
+            range: 'B1:X106'
+        })
+
+        expect(requests).toEqual([{
+            method: 'session-1:readSpreadsheetRange',
+            params: {
+                path: 'docs/report.xlsx',
+                sheet: '汇总表',
+                range: 'B1:X106'
+            }
+        }])
+        expect(timeouts).toEqual([120_000])
+    })
+
     it('routes native steer and rewind through the session RPC namespace', async () => {
         const { gateway, requests, timeouts } = createGateway(JSON.stringify({
             success: true,

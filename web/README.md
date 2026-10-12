@@ -120,6 +120,44 @@ React 19 + Vite + TanStack Router/Query + Tailwind + @assistant-ui/react + xterm
 - `src/api/client.ts` - API client.
 - `src/types/api.ts` - Type definitions.
 
+## Codex rich-text directives
+
+Both streaming assistant messages and static Markdown use
+`src/lib/remark-codex-directives.ts`. This is a compatibility renderer, not an
+implementation of the Codex desktop application's private APIs.
+
+| Markup | HAPI behavior |
+| --- | --- |
+| `:codex-followup[label]{prompt="..."}` | Button appends the complete prompt to the active session's composer. Existing drafts are preserved; the user must send explicitly. Disabled in read-only previews. |
+| `:codex-file-citation{path="..."}` (also `::`) | File chip using the existing session file access rules. Workbook `sheet`/`range` locators reach the Runner range endpoint; no automatic full-workbook download. Page, slide and line locators are displayed, but are not yet navigation targets. |
+| `::code-comment{title="..." body="..." file="..." start=10 end=12 priority=2}` | Review card with severity, literal body and a safe file link. Line numbers are displayed, not scrolled to. |
+| `::inbox-item{title="..." summary="..."}` | Summary card only; does not create an inbox record. |
+| `:::writing{variant="email" id="12345"}` + body + closing `:::` | Copyable plain-text draft card. Does not send email or enable native document editing. |
+| `::git-stage`, `::git-commit`, `::git-create-branch`, `::git-push`, `::git-create-pr` | Read-only operation cards; never run Git from Markdown. |
+| `::codex-inline-vis{file="..."}`, `::codex-live-vis{path="..."}` | Metadata and an authorized file-preview link when possible. No automatic HTML execution or live runtime. |
+| `::artifact-template`, `::automation-update`, `::archive-thread` | Read-only compatibility cards; no installation, scheduling or archiving. |
+| `:codex-annotation{index="1"}`, `:codex-resource{...}` | Reference metadata only. Native Codex sidecar resources are not available in HAPI. |
+
+The parser accepts quoted attributes (including escaped quotes and braces),
+unquoted numeric/boolean attributes, and complete multiline values. Code spans,
+fenced examples, links, HTML and escaped markers are not interpreted. Unknown,
+invalid, incomplete or oversized directives remain visible as Markdown instead
+of being silently removed. Individual directives are limited to 32,768 JavaScript
+code units.
+Writing blocks are recognized only with standalone opening/closing fences.
+Persisted message content and copy-message behavior remain unchanged.
+
+Sources checked on 2026-10-12:
+
+- [Follow-up rendering report in the official Codex repository](https://github.com/openai/codex/issues/44983) — user-reported syntax, not a formal specification.
+- [Codex Git/review directive implementation](https://github.com/openai/codex/blob/main/codex-rs/tui/src/git_action_directives.rs).
+- [Codex inline visualization fallback](https://github.com/openai/codex/blob/main/codex-rs/tui/src/inline_visualization.rs).
+- Installed ChatGPT/Codex application resources and bundled artifact-template skills were inspected read-only to cross-check writing, annotation, resource, inbox and template markers. Older automation/archive names receive display-only fallback.
+
+No complete, stable public specification was found for all desktop directives.
+The compatibility list is therefore deliberately explicit; unknown markers and
+new native capabilities must not acquire execution privileges by default.
+
 ## Development
 
 From the repo root:

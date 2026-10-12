@@ -16,6 +16,7 @@ import type { RpcRegistry } from '../socket/rpcRegistry'
 
 const DEFAULT_RPC_TIMEOUT_MS = 30_000
 const MODEL_LIST_RPC_TIMEOUT_MS = 120_000
+const SPREADSHEET_PREVIEW_RPC_TIMEOUT_MS = 120_000
 
 export type RpcCommandResponse = {
     success: boolean
@@ -37,6 +38,24 @@ export type RpcReadFileResponse = {
 export type RpcReadFileOptions = {
     thumbnail?: boolean
     maxDimension?: number
+}
+
+export type RpcReadSpreadsheetRangeOptions = {
+    sheet?: string
+    range?: string
+}
+
+export type RpcSpreadsheetCellValue = string | number | boolean | null
+
+export type RpcReadSpreadsheetRangeResponse = {
+    success: boolean
+    sheet?: string
+    range?: string
+    startRow?: number
+    startColumn?: number
+    data?: RpcSpreadsheetCellValue[][]
+    truncated?: boolean
+    error?: string
 }
 
 export type RpcUploadFileResponse = {
@@ -374,6 +393,19 @@ export class RpcGateway {
 
     async readSessionFile(sessionId: string, path: string, options?: RpcReadFileOptions): Promise<RpcReadFileResponse> {
         return await this.sessionRpc(sessionId, 'readFile', { path, ...options }) as RpcReadFileResponse
+    }
+
+    async readSessionSpreadsheetRange(
+        sessionId: string,
+        path: string,
+        options?: RpcReadSpreadsheetRangeOptions
+    ): Promise<RpcReadSpreadsheetRangeResponse> {
+        return await this.sessionRpc(
+            sessionId,
+            'readSpreadsheetRange',
+            { path, ...options },
+            SPREADSHEET_PREVIEW_RPC_TIMEOUT_MS
+        ) as RpcReadSpreadsheetRangeResponse
     }
 
     async listDirectory(sessionId: string, path: string): Promise<RpcListDirectoryResponse> {

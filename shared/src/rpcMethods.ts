@@ -16,6 +16,7 @@ export const RPC_METHODS = {
     GitDiffNumstat: 'git-diff-numstat',
     GitDiffFile: 'git-diff-file',
     ReadFile: 'readFile',
+    ReadSpreadsheetRange: 'readSpreadsheetRange',
     ReadGeneratedImage: 'readGeneratedImage',
     WriteFile: 'writeFile',
     ListDirectory: 'listDirectory',

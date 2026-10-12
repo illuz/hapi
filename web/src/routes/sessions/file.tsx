@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useParams, useSearch } from '@tanstack/react-router'
-import type { GitCommandResponse } from '@/types/api'
+import type { GitCommandResponse, SpreadsheetRangeResponse } from '@/types/api'
 import { FileIcon } from '@/components/FileIcon'
 import { MarkdownRenderer } from '@/components/MarkdownRenderer'
 import { Spinner } from '@/components/Spinner'
-import DocumentPreview, { type DocumentPreviewKind } from '@/components/FilePreview/DocumentPreview'
+import DocumentPreview, { SpreadsheetRangePreview, type DocumentPreviewKind } from '@/components/FilePreview/DocumentPreview'
 import { CopyIcon, CheckIcon, DownloadIcon } from '@/components/icons'
 import { useAppContext } from '@/lib/app-context'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
@@ -438,6 +438,8 @@ export default function FilePage() {
     const search = useSearch({ from: '/sessions/$sessionId/file' })
     const encodedPath = typeof search.path === 'string' ? search.path : ''
     const staged = search.staged
+    const sheet = typeof search.sheet === 'string' ? search.sheet : undefined
+    const range = typeof search.range === 'string' ? search.range : undefined
 
     const filePath = useMemo(() => decodePath(encodedPath), [encodedPath])
     const fileName = filePath.split('/').pop() || filePath || 'File'
@@ -446,6 +448,8 @@ export default function FilePage() {
     const imageMimeType = useMemo(() => getImageMimeType(filePath), [filePath])
     const documentKind = useMemo(() => getDocumentPreviewKind(filePath), [filePath])
     const documentFile = documentKind !== null
+    // XLSX 字节留在 Runner；即使没有引用信息，浏览器也只接收有上限的 JSON 单元格投影。
+    const spreadsheetRangeRequested = documentKind === 'spreadsheet'
     const [originalImagePath, setOriginalImagePath] = useState<string | null>(null)
     const [isDownloading, setIsDownloading] = useState(false)
     const [downloadError, setDownloadError] = useState<string | null>(null)
@@ -459,7 +463,7 @@ export default function FilePage() {
             }
             return await api.getGitDiffFile(sessionId, filePath, staged)
         },
-        enabled: Boolean(api && sessionId && filePath)
+        enabled: Boolean(api && sessionId && filePath && !spreadsheetRangeRequested)
     })
 
     const fileQuery = useQuery({
@@ -470,7 +474,19 @@ export default function FilePage() {
             }
             return await api.readSessionFile(sessionId, filePath)
         },
-        enabled: Boolean(api && sessionId && filePath && (!imageFile || originalImageRequested))
+        enabled: Boolean(api && sessionId && filePath && (!imageFile || originalImageRequested) && !spreadsheetRangeRequested)
+    })
+
+    const spreadsheetRangeQuery = useQuery<SpreadsheetRangeResponse>({
+        queryKey: queryKeys.sessionSpreadsheetRange(sessionId, filePath, sheet, range),
+        queryFn: async () => {
+            if (!api || !sessionId || !filePath) {
+                throw new Error('Missing session or path')
+            }
+            return await api.readSessionSpreadsheetRange(sessionId, filePath, { sheet, range })
+        },
+        enabled: Boolean(api && sessionId && filePath && spreadsheetRangeRequested),
+        retry: false
     })
 
     const thumbnailQuery = useQuery({
@@ -540,7 +556,7 @@ export default function FilePage() {
     useEffect(() => {
         setDisplayMode(imageFile ? 'image' : documentFile ? 'document' : 'diff')
         setDownloadError(null)
-    }, [filePath, staged, imageFile, documentFile])
+    }, [filePath, staged, imageFile, documentFile, sheet, range])
 
     useEffect(() => {
         if (diffSuccess && !diffContent) {
@@ -570,8 +586,13 @@ export default function FilePage() {
         }
     }, [markdownFile, imageFile, documentFile, displayMode, diffContent, defaultDisplayMode])
 
-    const loading = diffQuery.isLoading || (imageFile ? thumbnailQuery.isLoading : fileQuery.isLoading)
-    const fileError = !imageFile
+    const loading = diffQuery.isLoading
+        || (spreadsheetRangeRequested ? spreadsheetRangeQuery.isLoading : imageFile ? thumbnailQuery.isLoading : fileQuery.isLoading)
+    const fileError = spreadsheetRangeRequested
+        ? spreadsheetRangeQuery.data && !spreadsheetRangeQuery.data.success
+            ? (spreadsheetRangeQuery.data.error ?? 'Failed to read spreadsheet range')
+            : extractQueryError(spreadsheetRangeQuery.error, 'Failed to read spreadsheet range')
+        : !imageFile
         ? fileContentResult && !fileContentResult.success
             ? (fileContentResult.error ?? 'Failed to read file')
             : extractQueryError(fileQuery.error, 'Failed to read file')
@@ -771,6 +792,16 @@ export default function FilePage() {
                                 onLoadOriginal={loadOriginalImage}
                             />
                         )
+                    ) : effectiveDisplayMode === 'document' && spreadsheetRangeRequested && spreadsheetRangeQuery.data?.success ? (
+                        <SpreadsheetRangePreview
+                            fileName={fileName}
+                            sheet={spreadsheetRangeQuery.data.sheet ?? sheet}
+                            range={spreadsheetRangeQuery.data.range ?? range}
+                            startRow={spreadsheetRangeQuery.data.startRow}
+                            startColumn={spreadsheetRangeQuery.data.startColumn}
+                            data={spreadsheetRangeQuery.data.data ?? []}
+                            truncated={spreadsheetRangeQuery.data.truncated}
+                        />
                     ) : effectiveDisplayMode === 'document' && documentFile && documentKind ? (
                         documentBytes ? (
                             <DocumentPreview

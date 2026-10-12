@@ -11,6 +11,7 @@ import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
+import remarkCodexDirectives from '@/lib/remark-codex-directives'
 import remarkDisableIndentedCode from '@/lib/remark-disable-indented-code'
 import remarkLatexBracketMath from '@/lib/remark-latex-bracket-math'
 import remarkRepairTables from '@/lib/remark-repair-tables'
@@ -40,6 +41,7 @@ const MARKDOWN_PLUGIN_TAIL = [
 
 export const MARKDOWN_PLUGINS = [
     remarkGfm,
+    remarkCodexDirectives,
     remarkRepairTables,
     remarkLatexBracketMath,
     ...MARKDOWN_PLUGIN_TAIL,
@@ -48,6 +50,7 @@ export const MARKDOWN_PLUGINS = [
 /** User-authored prompts preserve intentional single line breaks. */
 export const MARKDOWN_PLUGINS_WITH_BREAKS = [
     remarkGfm,
+    remarkCodexDirectives,
     remarkRepairTables,
     remarkLatexBracketMath,
     remarkBreaks,

@@ -2,10 +2,18 @@ import type { ComponentPropsWithoutRef, MouseEvent, ReactNode } from 'react'
 import { createContext, useCallback, useContext, useMemo } from 'react'
 import { defaultUrlTransform, type UrlTransform } from 'react-markdown'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
-import { resolveLocalFileHref } from '@/lib/filePathLinks'
+import { FileIcon } from '@/components/FileIcon'
+import { resolveCodexFileCitationHref, resolveLocalFileHref } from '@/lib/filePathLinks'
+import {
+    CODEX_FILE_CITATION_HREF_PREFIX,
+    decodeCodexFileCitationHref,
+    getCodexFileCitationLabel,
+} from '@/lib/codexFileCitation'
 import { decodeFilePathHref } from '@/lib/remark-file-path-links'
 import { I18nContext } from '@/lib/i18n-context'
 import { cn } from '@/lib/utils'
+import { CODEX_DIRECTIVE_HREF_PREFIX, decodeCodexDirectiveHref } from '@/lib/codexDirectives'
+import { CodexDirectiveView } from './codex-directive'
 
 export type MarkdownLinkBehavior = 'navigate' | 'copy-non-file'
 
@@ -55,6 +63,9 @@ export function useMarkdownLinkUrlTransform(): UrlTransform {
     const { behavior, sessionId, workingDirectory } = useContext(MarkdownLinkBehaviorContext)
 
     return useCallback<UrlTransform>((url, key) => {
+        if (key === 'href' && (url.startsWith(CODEX_FILE_CITATION_HREF_PREFIX) || url.startsWith(CODEX_DIRECTIVE_HREF_PREFIX))) {
+            return url
+        }
         if (key === 'href' && url.startsWith('hapi-file:')) {
             const filePath = decodeFilePathHref(url)
             const sessionFileHref = filePath
@@ -76,11 +87,18 @@ function shouldCopyMarkdownHref(href: string | undefined, behavior: MarkdownLink
 
 export function MarkdownAnchor(props: ComponentPropsWithoutRef<'a'>) {
     const { className, href, onClick, rel: relProp, target, title, ...rest } = props
-    const { behavior } = useContext(MarkdownLinkBehaviorContext)
+    const { behavior, sessionId, workingDirectory } = useContext(MarkdownLinkBehaviorContext)
     const i18n = useContext(I18nContext)
     const { copied, copy } = useCopyToClipboard()
-    const resolvedTarget = isSessionFileHref(href) ? undefined : target
-    const shouldCopy = shouldCopyMarkdownHref(href, behavior)
+    const directive = decodeCodexDirectiveHref(href)
+    const isDirectiveHref = href?.startsWith(CODEX_DIRECTIVE_HREF_PREFIX) || href?.startsWith(CODEX_FILE_CITATION_HREF_PREFIX)
+    const citation = decodeCodexFileCitationHref(href)
+    const resolvedTarget = citation ? undefined : isSessionFileHref(href) ? undefined : target
+    const shouldCopy = !isDirectiveHref && shouldCopyMarkdownHref(href, behavior)
+    const citationHref = citation
+        ? resolveCodexFileCitationHref(citation, sessionId, workingDirectory)
+        : null
+    const resolvedHref = citation ? citationHref ?? undefined : isDirectiveHref ? undefined : href
     const rel = resolvedTarget === '_blank' ? (relProp ?? 'noreferrer') : relProp
     const copyTitle = i18n?.t('markdown.copyLink') ?? 'Copy link'
     const copiedLabel = i18n?.t('markdown.linkCopied') ?? 'Copied'
@@ -94,16 +112,32 @@ export function MarkdownAnchor(props: ComponentPropsWithoutRef<'a'>) {
         void copy(href)
     }, [copy, href, onClick, shouldCopy])
 
+    if (directive) {
+        return <CodexDirectiveView directive={directive} sessionId={sessionId} workingDirectory={workingDirectory} />
+    }
+
     const link = (
         <a
             {...rest}
-            href={href}
+            href={resolvedHref}
             target={resolvedTarget}
             rel={rel}
-            title={title ?? (shouldCopy ? copyTitle : undefined)}
+            title={title ?? (citation ? getCodexFileCitationLabel(citation) : shouldCopy ? copyTitle : undefined)}
             onClick={handleClick}
-            className={cn('aui-md-a font-medium text-[var(--app-link)] underline decoration-[color:var(--app-link-muted)] underline-offset-3', className)}
-        />
+            className={cn(
+                citation
+                    ? 'aui-md-a inline-flex max-w-full items-center rounded-md border border-[var(--app-border)] bg-[var(--app-subtle-bg)] px-2 py-0.5 font-medium text-[var(--app-link)] no-underline transition-colors hover:bg-[var(--app-secondary-bg)]'
+                    : 'aui-md-a font-medium text-[var(--app-link)] underline decoration-[color:var(--app-link-muted)] underline-offset-3',
+                className
+            )}
+        >
+            {citation ? (
+                <>
+                    <FileIcon fileName={citation.path} size={15} />
+                    <span className="min-w-0 truncate">{getCodexFileCitationLabel(citation)}</span>
+                </>
+            ) : rest.children}
+        </a>
     )
 
     if (!shouldCopy) return link

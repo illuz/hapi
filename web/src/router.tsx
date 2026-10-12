@@ -1060,6 +1060,8 @@ type SessionFileSearch = {
     path: string
     staged?: boolean
     tab?: 'changes' | 'directories'
+    sheet?: string
+    range?: string
 }
 
 const sessionFileRoute = createRoute({
@@ -1080,12 +1082,21 @@ const sessionFileRoute = createRoute({
                 ? 'changes'
                 : undefined
 
+        const sheet = typeof search.sheet === 'string' && search.sheet ? search.sheet : undefined
+        const range = typeof search.range === 'string' && search.range ? search.range : undefined
+
         const result: SessionFileSearch = { path }
         if (staged !== undefined) {
             result.staged = staged
         }
         if (tab !== undefined) {
             result.tab = tab
+        }
+        if (sheet !== undefined) {
+            result.sheet = sheet
+        }
+        if (range !== undefined) {
+            result.range = range
         }
         return result
     },

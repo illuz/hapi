@@ -23,6 +23,12 @@ const fileReadSchema = z.object({
     maxDimension: z.coerce.number().int().min(64).max(2048).optional()
 })
 
+const spreadsheetRangeSchema = z.object({
+    path: z.string().min(1),
+    sheet: z.string().min(1).max(255).optional(),
+    range: z.string().min(1).max(64).optional()
+})
+
 function parseBooleanParam(value: string | undefined): boolean | undefined {
     if (value === 'true') return true
     if (value === 'false') return false
@@ -135,6 +141,34 @@ export function createGitRoutes(getSyncEngine: () => SyncEngine | null): Hono<We
         const result = await runRpc(() => engine.readSessionFile(sessionResult.sessionId, parsed.data.path, {
             thumbnail: parsed.data.thumbnail,
             maxDimension: parsed.data.maxDimension
+        }))
+        return c.json(result)
+    })
+
+    app.get('/sessions/:id/spreadsheet-range', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) {
+            return engine
+        }
+
+        const sessionResult = requireSessionFromParam(c, engine)
+        if (sessionResult instanceof Response) {
+            return sessionResult
+        }
+
+        const sessionPath = sessionResult.session.metadata?.path
+        if (!sessionPath) {
+            return c.json({ success: false, error: 'Session path not available' })
+        }
+
+        const parsed = spreadsheetRangeSchema.safeParse(c.req.query())
+        if (!parsed.success) {
+            return c.json({ error: 'Invalid spreadsheet range request' }, 400)
+        }
+
+        const result = await runRpc(() => engine.readSessionSpreadsheetRange(sessionResult.sessionId, parsed.data.path, {
+            sheet: parsed.data.sheet,
+            range: parsed.data.range
         }))
         return c.json(result)
     })

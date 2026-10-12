@@ -42,6 +42,8 @@ import {
     type RpcProjectToolMutationResponse,
     type RpcReadFileOptions,
     type RpcReadFileResponse,
+    type RpcReadSpreadsheetRangeOptions,
+    type RpcReadSpreadsheetRangeResponse,
     type RpcUploadFileResponse
 } from './rpcGateway'
 import { ProjectToolsService } from './projectToolsService'
@@ -71,6 +73,7 @@ export type {
     RpcProjectToolListResponse,
     RpcProjectToolMutationResponse,
     RpcReadFileResponse,
+    RpcReadSpreadsheetRangeResponse,
     RpcUploadFileResponse
 } from './rpcGateway'
 
@@ -1542,6 +1545,14 @@ export class SyncEngine {
 
     async readSessionFile(sessionId: string, path: string, options?: RpcReadFileOptions): Promise<RpcReadFileResponse> {
         return await this.rpcGateway.readSessionFile(sessionId, path, options)
+    }
+
+    async readSessionSpreadsheetRange(
+        sessionId: string,
+        path: string,
+        options?: RpcReadSpreadsheetRangeOptions
+    ): Promise<RpcReadSpreadsheetRangeResponse> {
+        return await this.rpcGateway.readSessionSpreadsheetRange(sessionId, path, options)
     }
 
     async listDirectory(sessionId: string, path: string): Promise<RpcListDirectoryResponse> {

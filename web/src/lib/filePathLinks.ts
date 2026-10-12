@@ -1,4 +1,6 @@
 import { encodeBase64 } from '@/lib/utils'
+import type { CodexFileCitation } from '@/lib/codexFileCitation'
+import { parseCodexDirective } from '@/lib/codexDirectives'
 
 const LINKABLE_FILE_EXTENSIONS = [
     'md',
@@ -32,10 +34,29 @@ function escapeMarkdownLinkText(value: string): string {
     return value.replace(/([\\[\]])/g, '\\$1')
 }
 
-function buildSessionFileHref(sessionId: string, path: string): string {
+export function buildSessionFileHref(sessionId: string, path: string): string {
     const encodedSessionId = encodeURIComponent(sessionId)
     const encodedPath = encodeURIComponent(encodeBase64(path))
     return `/sessions/${encodedSessionId}/file?path=${encodedPath}`
+}
+
+export function resolveCodexFileCitationHref(
+    citation: CodexFileCitation,
+    sessionId: string | undefined,
+    workingDirectory?: string | null
+): string | null {
+    const fileHref = resolveLocalFileHref(citation.path, sessionId, workingDirectory)
+    if (!fileHref) return null
+
+    try {
+        const baseHref = typeof window !== 'undefined' ? window.location.href : 'https://hapi.local'
+        const url = new URL(fileHref, baseHref)
+        if (citation.sheet) url.searchParams.set('sheet', citation.sheet)
+        if (citation.range) url.searchParams.set('range', citation.range)
+        return `${url.pathname}${url.search}`
+    } catch {
+        return null
+    }
 }
 
 function decodeHrefPath(value: string): string | null {
@@ -278,5 +299,21 @@ function linkifyTextWithFencedBlocks(value: string, sessionId: string): string {
 
 export function linkAssistantFilePaths(text: string, sessionId: string): string {
     if (!text || !sessionId) return text
-    return linkifyTextWithFencedBlocks(text, sessionId)
+    // 路径自动链接早于 Markdown 解析运行，先保护指令中的路径和 prompt。
+    let prefix = '\uE000codex'
+    while (text.includes(prefix)) prefix += '_'
+    const directives: string[] = []
+    let cursor = 0
+    const parts: string[] = []
+    for (const match of text.matchAll(/:{1,3}[a-z][a-z0-9-]*(?=\[|\{)/g)) {
+        if (match.index < cursor) continue
+        const directive = parseCodexDirective(text.slice(match.index))
+        if (!directive) continue
+        parts.push(text.slice(cursor, match.index), prefix + directives.length + '\uE001')
+        directives.push(directive.raw)
+        cursor = match.index + directive.raw.length
+    }
+    parts.push(text.slice(cursor))
+    const linked = linkifyTextWithFencedBlocks(parts.join(''), sessionId)
+    return linked.replace(new RegExp(prefix + '(\\d+)\uE001', 'g'), (_match, index: string) => directives[Number(index)])
 }

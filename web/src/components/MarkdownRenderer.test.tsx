@@ -184,6 +184,28 @@ E = mc^2
         expect(screen.getByRole('link', { name: 'system file' })).toHaveAttribute('title', 'Copy link')
     })
 
+    it('renders Codex workbook citations as bounded preview links', () => {
+        render(
+            <MarkdownLinkBehaviorProvider
+                behavior="navigate"
+                sessionId="session-1"
+                workingDirectory="/workspace/project"
+            >
+                <MarkdownRenderer
+                    content={':codex-file-citation{path="/workspace/project/docs/report.xlsx" sheet="汇总表" range="B1:X106"}'}
+                />
+            </MarkdownLinkBehaviorProvider>
+        )
+
+        const link = screen.getByRole('link', { name: 'report.xlsx · 汇总表 · B1:X106' })
+        const href = link.getAttribute('href') ?? ''
+        const url = new URL(href, 'https://hapi.local')
+        expect(url.pathname).toBe('/sessions/session-1/file')
+        expect(url.searchParams.get('sheet')).toBe('汇总表')
+        expect(url.searchParams.get('range')).toBe('B1:X106')
+        expect(decodeBase64(url.searchParams.get('path') ?? '')).toEqual({ text: 'docs/report.xlsx', ok: true })
+    })
+
     it('does not treat external URLs with file-like paths as session file links', () => {
         expect(isSessionFileHref('https://example.com/sessions/session-1/file?path=abc')).toBe(false)
     })

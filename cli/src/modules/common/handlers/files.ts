@@ -5,6 +5,7 @@ import { resolve } from 'path'
 import type { RpcHandlerManager } from '@/api/rpc/RpcHandlerManager'
 import { resolveReadPath, validatePath } from '../pathSecurity'
 import { getErrorMessage, rpcError } from '../rpcResponses'
+import { readSpreadsheetRange, type SpreadsheetRangePreview } from '../spreadsheetPreview'
 
 const DEFAULT_THUMBNAIL_MAX_DIMENSION = 640
 const MIN_THUMBNAIL_MAX_DIMENSION = 64
@@ -25,6 +26,16 @@ interface ReadFileResponse {
     height?: number
     error?: string
 }
+
+interface ReadSpreadsheetRangeRequest {
+    path: string
+    sheet?: string
+    range?: string
+}
+
+type ReadSpreadsheetRangeResponse =
+    | ({ success: true } & SpreadsheetRangePreview)
+    | { success: false; error: string }
 
 interface WriteFileRequest {
     path: string
@@ -119,6 +130,33 @@ export function registerFileHandlers(rpcHandlerManager: RpcHandlerManager, worki
             return rpcError(getErrorMessage(error, 'Failed to read file'))
         }
     })
+
+    rpcHandlerManager.registerHandler<ReadSpreadsheetRangeRequest, ReadSpreadsheetRangeResponse>(
+        'readSpreadsheetRange',
+        async (data) => {
+            logger.debug('Read spreadsheet range request:', data.path, data.sheet, data.range)
+
+            const resolution = await resolveReadPath(data.path, workingDirectory)
+            if (!resolution.valid) {
+                return rpcError(resolution.error)
+            }
+
+            if (data.sheet !== undefined && (typeof data.sheet !== 'string' || data.sheet.length === 0 || data.sheet.length > 255)) {
+                return rpcError('Invalid worksheet name')
+            }
+            if (data.range !== undefined && (typeof data.range !== 'string' || data.range.length === 0 || data.range.length > 64)) {
+                return rpcError('Invalid spreadsheet range')
+            }
+
+            try {
+                const preview = await readSpreadsheetRange(resolution.path, data.sheet, data.range)
+                return { success: true, ...preview }
+            } catch (error) {
+                logger.debug('Failed to read spreadsheet range:', error)
+                return rpcError(getErrorMessage(error, 'Failed to read spreadsheet range'))
+            }
+        }
+    )
 
     rpcHandlerManager.registerHandler<WriteFileRequest, WriteFileResponse>('writeFile', async (data) => {
         logger.debug('Write file request:', data.path)

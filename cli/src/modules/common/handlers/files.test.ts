@@ -20,6 +20,11 @@ type ReadFileOptions = {
     maxDimension?: number
 }
 
+type ReadSpreadsheetRangeOptions = {
+    sheet?: string
+    range?: string
+}
+
 function createBmp(width: number, height: number): Buffer {
     const rowSize = Math.ceil((width * 3) / 4) * 4
     const pixelDataSize = rowSize * height
@@ -83,6 +88,14 @@ describe('file RPC handlers', () => {
         return JSON.parse(response) as ReadFileResponse
     }
 
+    async function readSpreadsheet(path: string, options?: ReadSpreadsheetRangeOptions): Promise<{ success: boolean; error?: string }> {
+        const response = await rpc.handleRequest({
+            method: 'session-test:readSpreadsheetRange',
+            params: JSON.stringify({ path, ...options })
+        })
+        return JSON.parse(response) as { success: boolean; error?: string }
+    }
+
     it('reads files inside the session working directory', async () => {
         const result = await read('README.md')
 
@@ -115,6 +128,12 @@ describe('file RPC handlers', () => {
         const result = await read('README.md', { thumbnail: true, maxDimension: 0 })
 
         expect(result).toEqual({ success: false, error: 'Invalid thumbnail max dimension' })
+    })
+
+    it('rejects malformed spreadsheet ranges before reading the workbook', async () => {
+        const result = await readSpreadsheet('README.md', { range: 'not-a-range' })
+
+        expect(result).toEqual({ success: false, error: 'Invalid spreadsheet range' })
     })
 
     it('rejects ordinary files outside the working and temporary directories', async () => {

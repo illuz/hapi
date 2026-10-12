@@ -14,6 +14,7 @@ import { linkAssistantFilePaths } from '@/lib/filePathLinks'
 import { MessageActions } from '@/components/AssistantChat/messages/MessageActions'
 import { CodexReviewCard } from '@/components/AssistantChat/messages/CodexReviewCard'
 import type { CodexReview } from '@/chat/types'
+import { AssistantFollowupProvider } from './AssistantFollowupProvider'
 
 const TOOL_COMPONENTS = {
     Fallback: HappyToolMessage
@@ -44,7 +45,11 @@ function AssistantMarkdownText() {
         return (text: string) => linkAssistantFilePaths(text, ctx.sessionId)
     }, [ctx.sessionId, shouldLinkFilePaths])
 
-    const markdown = <MarkdownText preprocess={preprocess} />
+    const markdown = (
+        <AssistantFollowupProvider disabled={ctx.disabled}>
+            <MarkdownText preprocess={preprocess} />
+        </AssistantFollowupProvider>
+    )
     if (!titleChange) return markdown
 
     return (

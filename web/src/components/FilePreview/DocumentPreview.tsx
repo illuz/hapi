@@ -10,11 +10,13 @@ type PreviewProps = {
     fileName: string
 }
 
-type SpreadsheetCell = string | number | boolean | Date | null
+export type SpreadsheetCell = string | number | boolean | Date | null
 
-type SpreadsheetSheet = {
+export type SpreadsheetSheet = {
     sheet: string
     data: SpreadsheetCell[][]
+    startRow?: number
+    startColumn?: number
 }
 
 const MAX_SPREADSHEET_ROWS = 500
@@ -160,7 +162,7 @@ function formatSpreadsheetCell(value: SpreadsheetCell | undefined): string {
     return String(value)
 }
 
-function SpreadsheetGrid(props: { sheet: SpreadsheetSheet }) {
+export function SpreadsheetGrid(props: { sheet: SpreadsheetSheet; truncated?: boolean }) {
     const visibleRows = props.sheet.data.slice(0, MAX_SPREADSHEET_ROWS)
     const sourceColumnCount = visibleRows.reduce((maximum, row) => Math.max(maximum, row.length), 0)
     const columnCount = Math.min(sourceColumnCount, MAX_SPREADSHEET_COLUMNS)
@@ -184,7 +186,7 @@ function SpreadsheetGrid(props: { sheet: SpreadsheetSheet }) {
                                     scope="col"
                                     className="h-7 min-w-24 border-b border-r border-[#d1d5db] bg-[#f3f4f6] px-2 text-center font-medium text-[#4b5563]"
                                 >
-                                    {getColumnLabel(columnIndex)}
+                                    {getColumnLabel((props.sheet.startColumn ?? 1) - 1 + columnIndex)}
                                 </th>
                             ))}
                         </tr>
@@ -196,7 +198,7 @@ function SpreadsheetGrid(props: { sheet: SpreadsheetSheet }) {
                                     scope="row"
                                     className="sticky left-0 z-10 h-7 border-b border-r border-[#d1d5db] bg-[#f3f4f6] px-2 text-right font-medium text-[#4b5563]"
                                 >
-                                    {rowIndex + 1}
+                                    {(props.sheet.startRow ?? 1) + rowIndex}
                                 </th>
                                 {Array.from({ length: columnCount }, (_, columnIndex) => (
                                     <td
@@ -211,12 +213,41 @@ function SpreadsheetGrid(props: { sheet: SpreadsheetSheet }) {
                     </tbody>
                 </table>
             </div>
-            {truncated ? (
+            {props.truncated || truncated ? (
                 <div className="border-t border-[var(--app-divider)] px-3 py-2 text-xs text-[var(--app-hint)]">
                     Preview limited to the first {MAX_SPREADSHEET_ROWS} rows and {MAX_SPREADSHEET_COLUMNS} columns.
                 </div>
             ) : null}
         </>
+    )
+}
+
+export function SpreadsheetRangePreview(props: {
+    fileName: string
+    sheet?: string
+    range?: string
+    startRow?: number
+    startColumn?: number
+    data: SpreadsheetCell[][]
+    truncated?: boolean
+}) {
+    const sheet: SpreadsheetSheet = {
+        sheet: props.sheet ?? 'Worksheet',
+        data: props.data,
+        startRow: props.startRow,
+        startColumn: props.startColumn
+    }
+
+    return (
+        <PreviewFrame fileName={props.fileName} busy={false}>
+            {props.sheet || props.range ? (
+                <div className="flex items-center justify-between gap-2 border-b border-[var(--app-divider)] bg-[var(--app-subtle-bg)] px-3 py-2 text-xs text-[var(--app-hint)]">
+                    <span className="truncate">{props.sheet ?? 'Worksheet'}</span>
+                    {props.range ? <span className="shrink-0 font-mono">{props.range}</span> : null}
+                </div>
+            ) : null}
+            <SpreadsheetGrid sheet={sheet} truncated={props.truncated} />
+        </PreviewFrame>
     )
 }
 

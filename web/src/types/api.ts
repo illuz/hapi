@@ -411,6 +411,19 @@ export type FileReadOptions = {
     maxDimension?: number
 }
 
+export type SpreadsheetCellValue = string | number | boolean | null
+
+export type SpreadsheetRangeResponse = {
+    success: boolean
+    sheet?: string
+    range?: string
+    startRow?: number
+    startColumn?: number
+    data?: SpreadsheetCellValue[][]
+    truncated?: boolean
+    error?: string
+}
+
 export type UploadFileResponse = {
     success: boolean
     path?: string

@@ -8,6 +8,7 @@ import type {
     FileReadOptions,
     FileReadResponse,
     FileSearchResponse,
+    SpreadsheetRangeResponse,
     GitCommandResponse,
     MachineListDirectoryResponse,
     MachinePathsExistsResponse,
@@ -390,6 +391,19 @@ export class ApiClient {
         if (options?.thumbnail !== undefined) params.set('thumbnail', String(options.thumbnail))
         if (options?.maxDimension !== undefined) params.set('maxDimension', String(options.maxDimension))
         return await this.request<FileReadResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/file?${params.toString()}`)
+    }
+
+    async readSessionSpreadsheetRange(sessionId: string, path: string, options?: {
+        sheet?: string
+        range?: string
+    }): Promise<SpreadsheetRangeResponse> {
+        const params = new URLSearchParams()
+        params.set('path', path)
+        if (options?.sheet) params.set('sheet', options.sheet)
+        if (options?.range) params.set('range', options.range)
+        return await this.request<SpreadsheetRangeResponse>(
+            `/api/sessions/${encodeURIComponent(sessionId)}/spreadsheet-range?${params.toString()}`
+        )
     }
 
     async listSessionDirectory(sessionId: string, path?: string): Promise<ListDirectoryResponse> {
